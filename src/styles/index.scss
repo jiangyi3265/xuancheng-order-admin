@@ -1,0 +1,64 @@
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei',
+    'PingFang SC', 'Hiragino Sans GB', Arial, sans-serif;
+  background-color: #f0f2f5;
+  color: #303133;
+}
+
+a {
+  text-decoration: none;
+}
+
+/* 路由切换淡入 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 通用页面容器 */
+.page {
+  padding: 16px;
+}
+
+/* 手机端：弹窗/抽屉自适应宽度 */
+@media (max-width: 768px) {
+  .el-dialog {
+    width: 92% !important;
+  }
+  .el-drawer.rtl,
+  .el-drawer.ltr {
+    width: 88% !important;
+  }
+  .el-message-box {
+    width: 90% !important;
+  }
+}
+
+/* 隐藏滚动条但可滚动 */
+.thin-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #c0c4cc;
+  border-radius: 3px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
