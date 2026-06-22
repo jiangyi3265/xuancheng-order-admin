@@ -35,6 +35,11 @@ const routes = [
     component: () => import('@/views/login/index.vue')
   },
   {
+    path: '/customer-login',
+    name: 'CustomerLogin',
+    component: () => import('@/views/customer-login/index.vue')
+  },
+  {
     path: '/intake',
     name: 'Intake',
     component: () => import('@/views/intake/index.vue')
@@ -52,10 +57,14 @@ const router = createRouter({
   routes
 })
 
-// 路由守卫：未登录跳登录；登录页 / 客户提交页 放行
-const OPEN = ['/login', '/intake']
 router.beforeEach((to) => {
-  if (OPEN.includes(to.path)) return true
+  if (to.path === '/login' || to.path === '/customer-login') return true
+  if (to.path === '/intake') {
+    if (!localStorage.getItem('customerToken')) {
+      return { path: '/customer-login', query: { redirect: to.fullPath } }
+    }
+    return true
+  }
   if (!localStorage.getItem('token')) return '/login'
   return true
 })

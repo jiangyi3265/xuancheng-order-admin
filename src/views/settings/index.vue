@@ -1,11 +1,13 @@
 <template>
   <div class="settings">
     <el-card shadow="never" class="card">
-      <template #header><span class="title"><el-icon><Bell /></el-icon> 微信推送提醒</span></template>
+      <template #header>
+        <span class="title"><el-icon><Bell /></el-icon> 微信推送提醒</span>
+      </template>
 
       <el-alert type="info" :closable="false" class="tip">
-        填上各自的 Server酱 SendKey，新单 / 待验收 / 改稿 / 催办 / 逾期 就会自动推到你的微信「服务通知」。
-        获取方式：手机微信扫码登录 <b>sct.ftqq.com</b> → 复制 SendKey 粘到下面即可（每人各一个）。
+        填上各自的 Server酱 SendKey，新单、待验收、改稿、催办、逾期都会自动推送到微信服务通知。
+        获取方式：手机微信扫码登录 <b>sct.ftqq.com</b>，复制 SendKey 粘贴到下面即可。
       </el-alert>
 
       <el-form label-width="120px" class="form">
@@ -15,7 +17,7 @@
 
         <el-form-item label="提前提醒天数">
           <el-input-number v-model="aheadDays" :min="0" :max="30" />
-          <span class="hint">截止前几天开始提醒（每天 9:00 自动检查）</span>
+          <span class="hint">截止前几天开始提醒，每天 9:00 自动检查</span>
         </el-form-item>
 
         <el-form-item v-for="m in MEMBERS" :key="m.id" :label="m.name + '（' + m.roleLabel + '）'">
@@ -33,20 +35,27 @@
     </el-card>
 
     <el-card shadow="never" class="card">
-      <template #header><span class="title"><el-icon><Share /></el-icon> 客户需求提交链接</span></template>
+      <template #header>
+        <span class="title"><el-icon><Share /></el-icon> 客户需求提交链接</span>
+      </template>
       <el-alert type="success" :closable="false" class="tip">
-        把这个链接发给客户，客户自己填需求（可传图/文件），<b>自动建单并通知你俩</b>——你不用再手动录入。
+        把这个链接发给客户，客户先用账号密码登录，再填写需求和上传资料。提交后会自动建单并提醒负责人。
       </el-alert>
       <div class="key-row">
         <el-input :model-value="intakeUrl" readonly />
         <el-button type="primary" :icon="CopyDocument" @click="copyIntake">复制链接</el-button>
         <el-button :icon="Link" @click="openIntake">预览</el-button>
       </div>
+      <p class="muted account-tip">默认客户账号：customer / customer123。正式使用时建议给不同客户单独创建账号。</p>
     </el-card>
 
     <el-card shadow="never" class="card">
-      <template #header><span class="title"><el-icon><User /></el-icon> 成员</span></template>
-      <p class="muted">当前为两人协作：左上角「角色切换」即代表当前操作人。如需改名字，改前端 <code>src/constants/options.js</code> 与后端成员映射即可。</p>
+      <template #header>
+        <span class="title"><el-icon><User /></el-icon> 成员</span>
+      </template>
+      <p class="muted">
+        当前为两人协作：左上角角色切换代表当前操作人。后续如果要给员工单独账号，可以新增 employee 角色并绑定到对应用户。
+      </p>
     </el-card>
   </div>
 </template>
@@ -56,7 +65,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Bell, User, Promotion, Check, AlarmClock, Share, CopyDocument, Link } from '@element-plus/icons-vue'
 import { MEMBERS } from '@/constants/options'
-import { getPushConfig, savePushConfig, testPush } from '@/mock/store'
+import { getPushConfig, savePushConfig, testPush, runDeadlineReminder } from '@/mock/store'
 
 const enabled = ref(true)
 const aheadDays = ref(1)
@@ -71,6 +80,7 @@ function copyIntake() {
     () => ElMessage.warning('复制失败，请手动复制')
   )
 }
+
 function openIntake() {
   window.open(intakeUrl, '_blank')
 }
@@ -109,7 +119,7 @@ async function doTest(memberId) {
   testing.value = memberId
   try {
     const msg = await testPush(memberId)
-    ElMessage({ message: msg, type: msg.includes('已发送') ? 'success' : 'warning', duration: 4000 })
+    ElMessage({ message: msg, type: String(msg).includes('已发送') ? 'success' : 'warning', duration: 4000 })
   } catch (e) {
     ElMessage.error('测试失败：' + e.message)
   } finally {
@@ -119,9 +129,8 @@ async function doTest(memberId) {
 
 async function triggerReminder() {
   try {
-    const res = await fetch('/jiedan/push/reminder', { method: 'POST' })
-    const j = await res.json()
-    ElMessage.success(j.msg || '已触发')
+    const msg = await runDeadlineReminder()
+    ElMessage.success(msg || '已触发')
   } catch (e) {
     ElMessage.error('触发失败：' + e.message)
   }
@@ -165,5 +174,8 @@ async function triggerReminder() {
   font-size: 13px;
   line-height: 1.7;
   margin: 0;
+}
+.account-tip {
+  margin-top: 10px;
 }
 </style>
