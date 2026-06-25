@@ -10,6 +10,7 @@ env:
   DOMAIN: kejiht.feipf.top
   SITE_DIR: /www/wwwroot/kejiht.feipf.top
   ARCHIVE: admin-dist.tar.gz
+  REMOTE_TMP: /tmp/xuancheng-admin-${{ github.run_id }}
 
 jobs:
   deploy:
@@ -42,7 +43,7 @@ jobs:
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT }}
           source: ${{ env.ARCHIVE }}
-          target: /tmp
+          target: ${{ env.REMOTE_TMP }}
           overwrite: true
 
       - name: Deploy on server
@@ -51,18 +52,19 @@ jobs:
           DOMAIN: ${{ env.DOMAIN }}
           SITE_DIR: ${{ env.SITE_DIR }}
           ARCHIVE: ${{ env.ARCHIVE }}
+          REMOTE_TMP: ${{ env.REMOTE_TMP }}
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           port: ${{ secrets.SERVER_PORT }}
-          envs: DOMAIN,SITE_DIR,ARCHIVE
+          envs: DOMAIN,SITE_DIR,ARCHIVE,REMOTE_TMP
           script: |
             set -e
             mkdir -p "$SITE_DIR"
             find "$SITE_DIR" -mindepth 1 -maxdepth 1 ! -name '.user.ini' -exec rm -rf {} +
-            tar -xzf "/tmp/$ARCHIVE" -C "$SITE_DIR"
-            rm -f "/tmp/$ARCHIVE"
+            tar -xzf "$REMOTE_TMP/$ARCHIVE" -C "$SITE_DIR"
+            rm -rf "$REMOTE_TMP"
 
             cat > "/etc/nginx/conf.d/$DOMAIN.conf" <<NGINX
             server {
