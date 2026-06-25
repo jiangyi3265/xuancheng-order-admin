@@ -1,0 +1,98 @@
+name: Deploy admin
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  DOMAIN: kejiht.feipf.top
+  SITE_DIR: /www/wwwroot/kejiht.feipf.top
+  ARCHIVE: admin-dist.tar.gz
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Pack dist
+        run: tar -czf "$ARCHIVE" -C dist .
+
+      - name: Upload dist archive
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          source: ${{ env.ARCHIVE }}
+          target: /tmp
+
+      - name: Deploy on server
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          DOMAIN: ${{ env.DOMAIN }}
+          SITE_DIR: ${{ env.SITE_DIR }}
+          ARCHIVE: ${{ env.ARCHIVE }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          port: ${{ secrets.SERVER_PORT }}
+          envs: DOMAIN,SITE_DIR,ARCHIVE
+          script: |
+            set -e
+            mkdir -p "$SITE_DIR"
+            find "$SITE_DIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+            tar -xzf "/tmp/$ARCHIVE" -C "$SITE_DIR"
+            rm -f "/tmp/$ARCHIVE"
+
+            cat > "/etc/nginx/conf.d/$DOMAIN.conf" <<NGINX
+            server {
+                listen 80;
+                server_name $DOMAIN www.$DOMAIN;
+
+                client_max_body_size 50m;
+                root $SITE_DIR;
+                index index.html;
+
+                location / {
+                    try_files \$uri \$uri/ /index.html;
+                }
+
+                location /jiedan/ {
+                    proxy_pass http://127.0.0.1:8080;
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                }
+
+                location /login {
+                    proxy_pass http://127.0.0.1:8080;
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                }
+            }
+            NGINX
+
+            nginx -t
+            systemctl reload nginx
