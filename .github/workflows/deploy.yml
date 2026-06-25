@@ -66,7 +66,14 @@ jobs:
             tar -xzf "$REMOTE_TMP/$ARCHIVE" -C "$SITE_DIR"
             rm -rf "$REMOTE_TMP"
 
-            cat > "/etc/nginx/conf.d/$DOMAIN.conf" <<NGINX
+            NGINX_CONF_DIR=/etc/nginx/conf.d
+            if [ -d /www/server/panel/vhost/nginx ]; then
+              NGINX_CONF_DIR=/www/server/panel/vhost/nginx
+            else
+              mkdir -p "$NGINX_CONF_DIR"
+            fi
+
+            cat > "$NGINX_CONF_DIR/$DOMAIN.conf" <<NGINX
             server {
                 listen 80;
                 server_name $DOMAIN www.$DOMAIN;
