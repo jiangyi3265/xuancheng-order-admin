@@ -15,19 +15,26 @@ export function isCustomerAuthed() {
   return !!customerToken.value
 }
 
-async function postLogin(username, password) {
+export async function getCaptcha() {
+  const res = await fetch('/captchaImage')
+  const json = await res.json()
+  if (json.code !== 200) throw new Error(json.msg || 'captcha failed')
+  return json
+}
+
+async function postLogin(username, password, captcha = {}) {
   const res = await fetch('/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, password, code: captcha.code || '', uuid: captcha.uuid || '' })
   })
   const j = await res.json()
   if (j.code !== 200) throw new Error(j.msg || '登录失败')
   return j.token
 }
 
-export async function login(username, password) {
-  const nextToken = await postLogin(username, password)
+export async function login(username, password, captcha) {
+  const nextToken = await postLogin(username, password, captcha)
   token.value = nextToken
   localStorage.setItem('token', nextToken)
   return true
@@ -38,8 +45,8 @@ export function logout() {
   localStorage.removeItem('token')
 }
 
-export async function customerLogin(username, password) {
-  const nextToken = await postLogin(username, password)
+export async function customerLogin(username, password, captcha) {
+  const nextToken = await postLogin(username, password, captcha)
   customerToken.value = nextToken
   customerName.value = username
   localStorage.setItem('customerToken', nextToken)

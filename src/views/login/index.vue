@@ -13,38 +13,64 @@
         <el-form-item>
           <el-input v-model="password" size="large" type="password" show-password placeholder="密码" :prefix-icon="Lock" @keyup.enter="doLogin" />
         </el-form-item>
-        <el-button type="primary" size="large" style="width: 100%" :loading="loading" @click="doLogin">登 录</el-button>
+        <el-form-item v-if="captchaEnabled">
+          <div class="captcha-row">
+            <el-input v-model="captchaCode" size="large" placeholder="验证码" @keyup.enter="doLogin" />
+            <img v-if="captchaImage" class="captcha-img" :src="captchaImage" alt="验证码" @click="loadCaptcha" />
+          </div>
+        </el-form-item>
+        <el-button type="primary" size="large" style="width: 100%" :loading="loading" @click="doLogin">登录</el-button>
       </el-form>
-      <p class="hint">默认账号 admin / admin123（可在若依后台改密、加人）</p>
+      <p class="hint">默认账号 admin / admin123</p>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { Histogram, User, Lock } from '@element-plus/icons-vue'
-import { login } from '@/mock/store'
+import { getCaptcha, login } from '@/mock/store'
 
 const router = useRouter()
 const username = ref('admin')
 const password = ref('')
 const loading = ref(false)
+const captchaEnabled = ref(false)
+const captchaImage = ref('')
+const captchaUuid = ref('')
+const captchaCode = ref('')
+
+async function loadCaptcha() {
+  try {
+    const data = await getCaptcha()
+    captchaEnabled.value = data.captchaEnabled !== false
+    captchaImage.value = data.img ? 'data:image/gif;base64,' + data.img : ''
+    captchaUuid.value = data.uuid || ''
+    captchaCode.value = ''
+  } catch (e) {
+    ElMessage.error(e.message || '验证码加载失败')
+  }
+}
 
 async function doLogin() {
   if (!username.value || !password.value) return ElMessage.warning('请输入账号和密码')
+  if (captchaEnabled.value && !captchaCode.value) return ElMessage.warning('请输入验证码')
   loading.value = true
   try {
-    await login(username.value, password.value)
+    await login(username.value, password.value, { code: captchaCode.value, uuid: captchaUuid.value })
     ElMessage.success('登录成功')
     router.push('/')
   } catch (e) {
     ElMessage.error(e.message || '登录失败')
+    if (captchaEnabled.value) loadCaptcha()
   } finally {
     loading.value = false
   }
 }
+
+onMounted(loadCaptcha)
 </script>
 
 <style scoped>
@@ -60,7 +86,7 @@ async function doLogin() {
   width: 100%;
   max-width: 380px;
   background: #fff;
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 32px 28px;
   box-shadow: 0 6px 30px rgba(0, 0, 0, 0.2);
 }
@@ -78,6 +104,18 @@ async function doLogin() {
   color: #909399;
   font-size: 14px;
   margin: 8px 0 24px;
+}
+.captcha-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+.captcha-img {
+  width: 118px;
+  height: 40px;
+  border-radius: 4px;
+  cursor: pointer;
+  object-fit: cover;
 }
 .hint {
   text-align: center;
