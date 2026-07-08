@@ -62,7 +62,7 @@ jobs:
           script: |
             set -e
             mkdir -p "$SITE_DIR"
-            find "$SITE_DIR" -mindepth 1 -maxdepth 1 ! -name '.user.ini' -exec rm -rf {} +
+            find "$SITE_DIR" -mindepth 1 -maxdepth 1 ! -name '.user.ini' ! -name 'client' -exec rm -rf {} +
             tar -xzf "$REMOTE_TMP/$ARCHIVE" -C "$SITE_DIR"
             rm -rf "$REMOTE_TMP"
 
