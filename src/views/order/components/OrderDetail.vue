@@ -232,7 +232,7 @@ async function sendReply() {
   }
 }
 function avatarOf(t) {
-  return (t.type === 'reply' ? currentMember.value.name : t.user || '客').slice(0, 1)
+  return (t.user || (t.type === 'reply' ? currentMember.value.name : '客')).slice(0, 1)
 }
 function dotColor(type) {
   return { create: '#909399', status: '#409eff', note: '#67c23a', message: '#e6a23c', reply: '#409eff' }[type] || '#909399'
