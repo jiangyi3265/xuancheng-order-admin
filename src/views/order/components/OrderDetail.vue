@@ -1,225 +1,243 @@
 <template>
   <el-drawer
     :model-value="visible"
-    :title="order ? order.title : '订单详情'"
-    size="520px"
+    size="100%"
+    direction="rtl"
+    :with-header="false"
+    class="order-workspace-drawer"
     @update:model-value="(v) => emit('update:visible', v)"
     @open="onOpen"
   >
-    <div v-if="order" class="detail">
-      <div class="tags">
-        <el-tag size="small" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag>
-        <el-tag size="small" effect="plain" :style="{ color: channelMap[order.channel]?.color, borderColor: channelMap[order.channel]?.color }">
-          {{ channelMap[order.channel]?.label }}
-        </el-tag>
-        <span class="no">{{ order.orderNo }}</span>
-      </div>
-
-      <el-descriptions :column="1" border size="small" class="desc">
-        <el-descriptions-item label="客户">{{ order.customer || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="客户账号">
-          <el-tag v-if="order.customerAccount" size="small" type="success" effect="plain">{{ order.customerAccount }}</el-tag>
-          <span v-else class="muted">未绑定</span>
-        </el-descriptions-item>
-        <el-descriptions-item label="联系方式">{{ order.contact || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="负责人">
-          {{ memberMap[order.ownerId]?.name }}（{{ memberMap[order.ownerId]?.roleLabel }}）
-        </el-descriptions-item>
-        <el-descriptions-item label="报价">¥{{ order.amount || 0 }}</el-descriptions-item>
-        <el-descriptions-item label="优先级">{{ priorityMap[order.priority]?.label || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="改稿次数">
-          {{ order.revisions || 0 }} 次
-          <el-tag v-if="(order.revisions || 0) >= 3" type="danger" size="small" effect="plain" style="margin-left:6px">改稿较多</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="截止日期">
-          <span :class="{ red: isOverdue }">{{ order.deadline || '-' }}</span>
-          <el-tag v-if="isOverdue" type="danger" size="small" style="margin-left: 6px">已逾期</el-tag>
-        </el-descriptions-item>
-        <el-descriptions-item label="需求">{{ order.requirement || '-' }}</el-descriptions-item>
-      </el-descriptions>
-
-      <div v-if="order.attachments && order.attachments.length" class="gallery">
-        <div class="gallery-label"><el-icon><Paperclip /></el-icon> 需求材料（{{ order.attachments.length }}）</div>
-        <AttachmentView :items="order.attachments" :size="84" />
-      </div>
-
-      <div class="status-bar">
-        <el-button v-if="na" type="primary" :icon="Promotion" @click="doNext">
-          {{ na.label }}
-        </el-button>
-        <span class="label">{{ na ? '或手动设为' : '更新状态' }}</span>
-        <el-select v-model="statusModel" size="small" style="width: 120px" @change="onStatus">
-          <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
-        </el-select>
-      </div>
-
-      <div class="action-row">
-        <el-button size="small" type="warning" plain :icon="Notebook" @click="emit('notebook', order)">项目记事本</el-button>
-        <el-button size="small" :icon="EditPen" @click="doRevision">改稿 +1</el-button>
-        <el-button size="small" :icon="Bell" @click="doNudge">催一下</el-button>
-      </div>
-
-      <section class="section">
-        <div class="section-head">
-          <div>
-            <h3>Bug 清单</h3>
-            <p>独立于客户沟通和内部记录。</p>
+    <div v-if="order" class="workspace">
+      <header class="workspace-head">
+        <div class="title-block">
+          <div class="title-line">
+            <h2>{{ order.title }}</h2>
+            <span class="order-no">{{ order.orderNo }}</span>
           </div>
-          <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
-            {{ bugOpen ? '收起' : '快速创建 Bug' }}
-          </el-button>
+          <div class="head-tags">
+            <el-tag size="small" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag>
+            <el-tag size="small" effect="plain" :style="{ color: channelMap[order.channel]?.color, borderColor: channelMap[order.channel]?.color }">
+              {{ channelMap[order.channel]?.label }}
+            </el-tag>
+            <el-tag v-if="order.customerAccount" size="small" type="success" effect="plain">{{ order.customerAccount }}</el-tag>
+            <el-tag v-if="isOverdue" size="small" type="danger">已逾期</el-tag>
+          </div>
         </div>
 
-        <div v-if="bugOpen" class="bug-form">
-          <el-input
-            v-model="bugText"
-            type="textarea"
-            :rows="2"
-            resize="none"
-            placeholder="写 Bug 说明，可以直接粘贴截图"
-          />
-          <AttachmentUploader v-model="bugFiles" :limit="6" class="note-upload" />
-          <el-button type="primary" plain :icon="Promotion" :loading="bugSubmitting" @click="submitBug">创建 Bug</el-button>
+        <div class="head-actions">
+          <el-button v-if="na" type="primary" :icon="Promotion" @click="doNext">{{ na.label }}</el-button>
+          <span class="inline-label">手动设为</span>
+          <el-select v-model="statusModel" size="small" class="status-select" @change="onStatus">
+            <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
+          </el-select>
+          <el-button size="small" type="warning" plain :icon="Notebook" @click="emit('notebook', order)">项目记事本</el-button>
+          <el-button size="small" plain :icon="EditPen" @click="doRevision">改稿 +1</el-button>
+          <el-button size="small" plain :icon="Bell" @click="doNudge">催一下</el-button>
+          <el-button size="small" plain :icon="Edit" @click="emit('edit', order)">编辑</el-button>
+          <el-button size="small" type="danger" plain :icon="Delete" @click="emit('delete', order)">删除</el-button>
+          <el-button circle class="close-btn" :icon="Close" @click="emit('update:visible', false)" />
         </div>
+      </header>
 
-        <div class="bug-list">
-          <div v-for="bug in bugItems" :key="bug.id" class="bug-item">
-            <div class="bug-body">
-              <p>{{ bug.content || '只有附件' }}</p>
-              <AttachmentView v-if="bug.attachments && bug.attachments.length" :items="bug.attachments" :size="64" />
-              <div class="bug-meta">{{ bug.createdBy || '客户' }} · {{ bug.time }}</div>
+      <div class="workspace-body">
+        <main class="left-pane">
+          <section class="panel overview-panel">
+            <div class="section-head compact">
+              <div>
+                <h3>订单信息</h3>
+                <p>核心字段集中展示，处理时不用来回找。</p>
+              </div>
+            </div>
 
-              <div v-if="bug.updates && bug.updates.length" class="bug-updates">
-                <div v-for="u in bug.updates" :key="u.id" class="bug-update">
-                  <div class="update-meta">追加 QA · {{ u.createdBy || '客户' }} · {{ u.time }}</div>
-                  <p>{{ u.content || '只有附件' }}</p>
-                  <AttachmentView v-if="u.attachments && u.attachments.length" :items="u.attachments" :size="64" />
+            <el-descriptions :column="3" border size="small" class="desc">
+              <el-descriptions-item label="客户">{{ order.customer || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="联系方式">{{ order.contact || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="负责人">
+                {{ memberMap[order.ownerId]?.name }}（{{ memberMap[order.ownerId]?.roleLabel }}）
+              </el-descriptions-item>
+              <el-descriptions-item label="报价">¥{{ order.amount || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="优先级">{{ priorityMap[order.priority]?.label || '-' }}</el-descriptions-item>
+              <el-descriptions-item label="改稿次数">
+                {{ order.revisions || 0 }} 次
+                <el-tag v-if="(order.revisions || 0) >= 3" type="danger" size="small" effect="plain" class="inline-tag">改稿较多</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="截止日期">
+                <span :class="{ red: isOverdue }">{{ order.deadline || '-' }}</span>
+              </el-descriptions-item>
+              <el-descriptions-item label="需求" :span="2">
+                <span class="requirement">{{ order.requirement || '-' }}</span>
+              </el-descriptions-item>
+            </el-descriptions>
+
+            <div v-if="order.attachments && order.attachments.length" class="gallery">
+              <div class="gallery-label"><el-icon><Paperclip /></el-icon> 需求材料（{{ order.attachments.length }}）</div>
+              <AttachmentView :items="order.attachments" :size="76" />
+            </div>
+          </section>
+
+          <div class="left-grid">
+            <section class="panel bug-panel">
+              <div class="section-head">
+                <div>
+                  <h3>Bug 清单</h3>
+                  <p>客户问题和追加 QA 统一沉淀在这里。</p>
                 </div>
+                <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
+                  {{ bugOpen ? '收起' : '快速创建 Bug' }}
+                </el-button>
               </div>
 
-              <div v-if="activeUpdateBugId === bug.id" class="bug-update-form">
+              <div v-if="bugOpen" class="bug-form">
                 <el-input
-                  v-model="updateText"
+                  v-model="bugText"
                   type="textarea"
                   :rows="2"
                   resize="none"
-                  placeholder="补充新的 QA / 变更说明，可以粘贴截图"
+                  placeholder="写 Bug 说明，可以直接粘贴截图"
                 />
-                <AttachmentUploader v-model="updateFiles" :limit="6" class="note-upload" />
-                <el-button type="primary" plain :loading="updateSubmittingId === bug.id" @click="submitBugUpdate(bug)">
-                  提交追加
-                </el-button>
+                <AttachmentUploader v-model="bugFiles" :limit="6" class="note-upload" />
+                <el-button type="primary" plain :icon="Promotion" :loading="bugSubmitting" @click="submitBug">创建 Bug</el-button>
               </div>
-            </div>
-            <div class="bug-actions">
-              <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
-                {{ activeUpdateBugId === bug.id ? '收起' : '追加 QA' }}
-              </el-button>
-              <el-button
-                text
-                type="danger"
-                :icon="Delete"
-                :loading="deletingBugId === bug.id"
-                @click="removeBug(bug)"
-              >
-                删除
-              </el-button>
-            </div>
-          </div>
-          <div v-if="!bugItems.length" class="empty">暂无 Bug</div>
-        </div>
-      </section>
 
-      <section class="section">
-        <div class="section-head">
-          <div>
-            <h3>客户沟通</h3>
-            <p>这里发送的消息客户能看到，总裁和副总裁也都能看到。</p>
-          </div>
-          <el-tag size="small" effect="plain">{{ chatItems.length }} 条</el-tag>
-        </div>
+              <div class="bug-list">
+                <div v-for="bug in bugItems" :key="bug.id" class="bug-item">
+                  <div class="bug-body">
+                    <p>{{ bug.content || '只有附件' }}</p>
+                    <AttachmentView v-if="bug.attachments && bug.attachments.length" :items="bug.attachments" :size="64" />
+                    <div class="bug-meta">{{ bug.createdBy || '客户' }} · {{ bug.time }}</div>
 
-        <div class="chat-list">
-          <div v-for="(t, i) in chatItems" :key="i" class="chat-row" :class="{ team: t.type === 'reply' }">
-            <div class="avatar">{{ avatarOf(t) }}</div>
-            <div class="bubble-wrap">
-              <div class="meta">
-                <span>{{ t.type === 'reply' ? t.user : '客户 · ' + t.user }}</span>
-                <em>{{ t.time }}</em>
+                    <div v-if="bug.updates && bug.updates.length" class="bug-updates">
+                      <div v-for="u in bug.updates" :key="u.id" class="bug-update">
+                        <div class="update-meta">追加 QA · {{ u.createdBy || '客户' }} · {{ u.time }}</div>
+                        <p>{{ u.content || '只有附件' }}</p>
+                        <AttachmentView v-if="u.attachments && u.attachments.length" :items="u.attachments" :size="64" />
+                      </div>
+                    </div>
+
+                    <div v-if="activeUpdateBugId === bug.id" class="bug-update-form">
+                      <el-input
+                        v-model="updateText"
+                        type="textarea"
+                        :rows="2"
+                        resize="none"
+                        placeholder="补充新的 QA / 变更说明，可以粘贴截图"
+                      />
+                      <AttachmentUploader v-model="updateFiles" :limit="6" class="note-upload" />
+                      <el-button type="primary" plain :loading="updateSubmittingId === bug.id" @click="submitBugUpdate(bug)">
+                        提交追加
+                      </el-button>
+                    </div>
+                  </div>
+                  <div class="bug-actions">
+                    <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
+                      {{ activeUpdateBugId === bug.id ? '收起' : '追加 QA' }}
+                    </el-button>
+                    <el-button
+                      text
+                      type="danger"
+                      :icon="Delete"
+                      :loading="deletingBugId === bug.id"
+                      @click="removeBug(bug)"
+                    >
+                      删除
+                    </el-button>
+                  </div>
+                </div>
+                <div v-if="!bugItems.length" class="empty">暂无 Bug</div>
               </div>
-              <div class="bubble">
-                <p v-if="t.content">{{ t.content }}</p>
-                <AttachmentView v-if="t.attachments && t.attachments.length" :items="t.attachments" :size="64" />
+            </section>
+
+            <section class="panel record-panel">
+              <div class="section-head">
+                <div>
+                  <h3>内部记录</h3>
+                  <p>只给总裁和副总裁看，不同步给客户。</p>
+                </div>
+                <el-tag size="small" type="info" effect="plain">{{ recordItems.length }} 条</el-tag>
               </div>
-            </div>
+
+              <div class="add-progress">
+                <el-input
+                  v-model="note"
+                  size="small"
+                  type="textarea"
+                  :rows="2"
+                  resize="none"
+                  placeholder="记录内部进度、改稿点、注意事项..."
+                />
+                <AttachmentUploader v-model="noteFiles" :limit="3" class="note-upload" />
+                <el-button type="primary" plain size="small" :icon="Promotion" @click="addNote">记录</el-button>
+              </div>
+
+              <el-timeline class="timeline">
+                <el-timeline-item
+                  v-for="(t, i) in recordItems"
+                  :key="i"
+                  :timestamp="t.time"
+                  :color="dotColor(t.type)"
+                  placement="top"
+                >
+                  <div>
+                    <span class="t-user">{{ t.user }}</span> {{ t.content }}
+                  </div>
+                  <div v-if="t.attachments && t.attachments.length" class="t-imgs">
+                    <AttachmentView :items="t.attachments" :size="64" />
+                  </div>
+                </el-timeline-item>
+              </el-timeline>
+            </section>
           </div>
-          <div v-if="!chatItems.length" class="empty">还没有客户沟通消息</div>
-        </div>
+        </main>
 
-        <div class="composer">
-          <el-input
-            v-model="replyText"
-            type="textarea"
-            :rows="2"
-            resize="none"
-            placeholder="回复客户，支持粘贴图片..."
-          />
-          <AttachmentUploader v-model="replyFiles" :limit="6" class="note-upload" />
-          <el-button type="primary" :icon="Promotion" :loading="replying" @click="sendReply">发送给客户</el-button>
-        </div>
-      </section>
-
-      <section class="section">
-        <div class="section-head">
-          <div>
-            <h3>内部记录</h3>
-            <p>只给总裁和副总裁看，不同步给客户。</p>
-          </div>
-          <el-tag size="small" type="info" effect="plain">{{ recordItems.length }} 条</el-tag>
-        </div>
-
-        <div class="add-progress">
-          <el-input
-            v-model="note"
-            size="small"
-            type="textarea"
-            :rows="2"
-            resize="none"
-            placeholder="记录内部进度、改稿点、注意事项..."
-          />
-          <AttachmentUploader v-model="noteFiles" :limit="3" class="note-upload" />
-          <el-button type="primary" plain size="small" :icon="Promotion" @click="addNote">记录</el-button>
-        </div>
-
-        <el-timeline class="timeline">
-          <el-timeline-item
-            v-for="(t, i) in recordItems"
-            :key="i"
-            :timestamp="t.time"
-            :color="dotColor(t.type)"
-            placement="top"
-          >
-            <div>
-              <span class="t-user">{{ t.user }}</span> {{ t.content }}
+        <aside class="right-pane">
+          <section class="panel chat-panel">
+            <div class="section-head">
+              <div>
+                <h3>客户沟通</h3>
+                <p>这里发送的消息客户能看到，总裁和副总裁也能看到。</p>
+              </div>
+              <el-tag size="small" effect="plain">{{ chatItems.length }} 条</el-tag>
             </div>
-            <div v-if="t.attachments && t.attachments.length" class="t-imgs">
-              <AttachmentView :items="t.attachments" :size="64" />
+
+            <div class="chat-list">
+              <div v-for="(t, i) in chatItems" :key="i" class="chat-row" :class="{ team: t.type === 'reply' }">
+                <div class="avatar">{{ avatarOf(t) }}</div>
+                <div class="bubble-wrap">
+                  <div class="meta">
+                    <span>{{ t.type === 'reply' ? t.user : '客户 · ' + t.user }}</span>
+                    <em>{{ t.time }}</em>
+                  </div>
+                  <div class="bubble">
+                    <p v-if="t.content">{{ t.content }}</p>
+                    <AttachmentView v-if="t.attachments && t.attachments.length" :items="t.attachments" :size="64" />
+                  </div>
+                </div>
+              </div>
+              <div v-if="!chatItems.length" class="empty">还没有客户沟通消息</div>
             </div>
-          </el-timeline-item>
-        </el-timeline>
-      </section>
+
+            <div class="composer">
+              <el-input
+                v-model="replyText"
+                type="textarea"
+                :rows="2"
+                resize="none"
+                placeholder="回复客户，支持粘贴图片..."
+              />
+              <AttachmentUploader v-model="replyFiles" :limit="6" class="note-upload" />
+              <el-button type="primary" :icon="Promotion" :loading="replying" @click="sendReply">发送给客户</el-button>
+            </div>
+          </section>
+        </aside>
+      </div>
     </div>
-
-    <template #footer>
-      <el-button :icon="Edit" @click="emit('edit', order)">编辑</el-button>
-      <el-button type="danger" :icon="Delete" @click="emit('delete', order)">删除</el-button>
-    </template>
   </el-drawer>
 </template>
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus } from '@element-plus/icons-vue'
+import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
@@ -378,54 +396,124 @@ function dotColor(type) {
 </script>
 
 <style scoped>
-.tags {
+:deep(.el-drawer__body) {
+  height: 100%;
+  padding: 0;
+  overflow: hidden;
+  background: #f5f7fb;
+}
+:deep(.order-workspace-drawer) {
+  background: #f5f7fb;
+}
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-width: 0;
+  color: #303133;
+}
+.workspace-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 14px;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 24px;
+  background: #fdfefe;
+  border-bottom: 1px solid #e4e7ed;
+  box-shadow: 0 1px 8px rgba(31, 45, 61, 0.05);
+  flex: 0 0 auto;
 }
-.tags .no {
-  margin-left: auto;
-  color: #c0c4cc;
-  font-size: 12px;
+.title-block {
+  min-width: 260px;
 }
-.desc {
-  margin-bottom: 14px;
+.title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
 }
-.red {
-  color: #f56c6c;
-  font-weight: 600;
+.title-line h2 {
+  margin: 0;
+  color: #1f2d3d;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
 }
-.gallery {
-  margin-bottom: 16px;
-}
-.gallery-label {
+.order-no {
+  color: #a8abb2;
   font-size: 13px;
-  color: #606266;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-bottom: 8px;
 }
-.status-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 16px;
-}
-.status-bar .label {
-  font-size: 14px;
-  color: #606266;
-}
-.action-row {
+.head-tags {
   display: flex;
   gap: 8px;
-  margin-bottom: 16px;
+  flex-wrap: wrap;
+  margin-top: 8px;
 }
-.section {
-  border-top: 1px solid #ebeef5;
-  padding-top: 16px;
-  margin-top: 18px;
+.head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.inline-label {
+  color: #909399;
+  font-size: 13px;
+}
+.status-select {
+  width: 124px;
+}
+.close-btn {
+  margin-left: 4px;
+}
+.workspace-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+  gap: 16px;
+  min-height: 0;
+  padding: 16px;
+  flex: 1;
+}
+.left-pane,
+.right-pane {
+  min-width: 0;
+  min-height: 0;
+}
+.left-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow: auto;
+  padding-right: 2px;
+}
+.right-pane {
+  display: flex;
+}
+.panel {
+  background: #fdfefe;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(31, 45, 61, 0.05);
+}
+.overview-panel {
+  padding: 14px;
+}
+.left-grid {
+  display: grid;
+  grid-template-columns: minmax(360px, 1fr) minmax(360px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.bug-panel,
+.record-panel {
+  padding: 14px;
+}
+.chat-panel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px;
 }
 .section-head {
   display: flex;
@@ -433,6 +521,9 @@ function dotColor(type) {
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+}
+.section-head.compact {
+  margin-bottom: 10px;
 }
 .section-head h3 {
   margin: 0;
@@ -444,7 +535,43 @@ function dotColor(type) {
   color: #909399;
   font-size: 12px;
 }
+.desc {
+  margin-bottom: 12px;
+}
+:deep(.desc .el-descriptions__label) {
+  width: 96px;
+  color: #606266;
+  font-weight: 600;
+}
+:deep(.desc .el-descriptions__content) {
+  color: #303133;
+}
+.requirement {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.inline-tag {
+  margin-left: 6px;
+}
+.red {
+  color: #f56c6c;
+  font-weight: 600;
+}
+.gallery {
+  margin-top: 10px;
+}
+.gallery-label {
+  font-size: 13px;
+  color: #606266;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
 .chat-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
   background: #f5f7fa;
   border-radius: 8px;
   padding: 10px;
@@ -512,6 +639,11 @@ function dotColor(type) {
 .bug-form,
 .add-progress {
   margin-bottom: 12px;
+}
+.composer {
+  flex: 0 0 auto;
+  border-top: 1px solid #ebeef5;
+  padding-top: 12px;
 }
 .bug-list {
   display: flex;
@@ -594,18 +726,53 @@ function dotColor(type) {
 .add-progress .el-button {
   width: 100%;
 }
+.timeline {
+  padding-left: 2px;
+}
 .t-user {
   font-weight: 600;
   color: #409eff;
   margin-right: 4px;
-}
-.muted {
-  color: #c0c4cc;
 }
 .t-imgs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
+}
+.muted {
+  color: #c0c4cc;
+}
+
+@media (max-width: 1180px) {
+  .workspace-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .head-actions {
+    justify-content: flex-start;
+  }
+  .workspace-body {
+    grid-template-columns: 1fr;
+    overflow: auto;
+  }
+  .left-pane {
+    overflow: visible;
+  }
+  .right-pane {
+    min-height: 520px;
+  }
+}
+
+@media (max-width: 860px) {
+  .workspace-body {
+    padding: 10px;
+  }
+  .left-grid {
+    grid-template-columns: 1fr;
+  }
+  :deep(.desc .el-descriptions__body) {
+    overflow-x: auto;
+  }
 }
 </style>
