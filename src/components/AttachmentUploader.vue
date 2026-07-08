@@ -98,7 +98,7 @@ async function addFiles(files) {
       break
     }
     if (f.size > 50 * 1024 * 1024) {
-      ElMessage.warning(`「${f.name}」超过 50MB，演示环境可能较卡（接后端走 OSS 后无此限制）`)
+      ElMessage.warning(`「${f.name}」超过 50MB，上传和预览可能较慢`)
     }
     const type = attType(f.type, f.name)
     const url = await fileToDataUrl(f)

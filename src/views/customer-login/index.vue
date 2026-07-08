@@ -27,7 +27,6 @@
         </el-button>
       </el-form>
 
-      <p class="hint">默认客户账号：customer / customer123</p>
     </section>
   </div>
 </template>
@@ -41,7 +40,7 @@ import { customerLogin, getCaptcha } from '@/mock/store'
 
 const route = useRoute()
 const router = useRouter()
-const username = ref('customer')
+const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const captchaEnabled = ref(false)
@@ -132,12 +131,5 @@ onMounted(loadCaptcha)
   border-radius: 4px;
   cursor: pointer;
   object-fit: cover;
-}
-.hint {
-  margin: 14px 0 0;
-  color: #909399;
-  font-size: 12px;
-  line-height: 1.7;
-  text-align: center;
 }
 </style>

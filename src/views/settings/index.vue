@@ -46,7 +46,6 @@
         <el-button type="primary" :icon="CopyDocument" @click="copyIntake">复制链接</el-button>
         <el-button :icon="Link" @click="openIntake">预览</el-button>
       </div>
-      <p class="muted account-tip">默认客户账号：customer / customer123。正式使用时建议给不同客户单独创建账号。</p>
     </el-card>
 
     <el-card shadow="never" class="card">
@@ -174,8 +173,5 @@ async function triggerReminder() {
   font-size: 13px;
   line-height: 1.7;
   margin: 0;
-}
-.account-tip {
-  margin-top: 10px;
 }
 </style>

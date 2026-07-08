@@ -21,7 +21,6 @@
         </el-form-item>
         <el-button type="primary" size="large" style="width: 100%" :loading="loading" @click="doLogin">登录</el-button>
       </el-form>
-      <p class="hint">默认账号 admin / admin123</p>
     </div>
   </div>
 </template>
@@ -34,7 +33,7 @@ import { Histogram, User, Lock } from '@element-plus/icons-vue'
 import { getCaptcha, login } from '@/mock/store'
 
 const router = useRouter()
-const username = ref('admin')
+const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const captchaEnabled = ref(false)
@@ -116,11 +115,5 @@ onMounted(loadCaptcha)
   border-radius: 4px;
   cursor: pointer;
   object-fit: cover;
-}
-.hint {
-  text-align: center;
-  color: #c0c4cc;
-  font-size: 12px;
-  margin: 14px 0 0;
 }
 </style>
