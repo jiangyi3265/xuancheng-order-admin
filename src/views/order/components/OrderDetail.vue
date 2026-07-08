@@ -88,16 +88,43 @@
               <p>{{ bug.content || '只有附件' }}</p>
               <AttachmentView v-if="bug.attachments && bug.attachments.length" :items="bug.attachments" :size="64" />
               <div class="bug-meta">{{ bug.createdBy || '客户' }} · {{ bug.time }}</div>
+
+              <div v-if="bug.updates && bug.updates.length" class="bug-updates">
+                <div v-for="u in bug.updates" :key="u.id" class="bug-update">
+                  <div class="update-meta">追加 QA · {{ u.createdBy || '客户' }} · {{ u.time }}</div>
+                  <p>{{ u.content || '只有附件' }}</p>
+                  <AttachmentView v-if="u.attachments && u.attachments.length" :items="u.attachments" :size="64" />
+                </div>
+              </div>
+
+              <div v-if="activeUpdateBugId === bug.id" class="bug-update-form">
+                <el-input
+                  v-model="updateText"
+                  type="textarea"
+                  :rows="2"
+                  resize="none"
+                  placeholder="补充新的 QA / 变更说明，可以粘贴截图"
+                />
+                <AttachmentUploader v-model="updateFiles" :limit="6" class="note-upload" />
+                <el-button type="primary" plain :loading="updateSubmittingId === bug.id" @click="submitBugUpdate(bug)">
+                  提交追加
+                </el-button>
+              </div>
             </div>
-            <el-button
-              text
-              type="danger"
-              :icon="Delete"
-              :loading="deletingBugId === bug.id"
-              @click="removeBug(bug)"
-            >
-              删除
-            </el-button>
+            <div class="bug-actions">
+              <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
+                {{ activeUpdateBugId === bug.id ? '收起' : '追加 QA' }}
+              </el-button>
+              <el-button
+                text
+                type="danger"
+                :icon="Delete"
+                :loading="deletingBugId === bug.id"
+                @click="removeBug(bug)"
+              >
+                删除
+              </el-button>
+            </div>
           </div>
           <div v-if="!bugItems.length" class="empty">暂无 Bug</div>
         </div>
@@ -196,7 +223,7 @@ import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
-import { setStatus, addProgress, markRead, addRevision, nudge, createBug, deleteBug, currentMember } from '@/mock/store'
+import { setStatus, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate, currentMember } from '@/mock/store'
 import { STATUS, statusMap, channelMap, priorityMap, memberMap } from '@/constants/options'
 import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
@@ -217,6 +244,10 @@ const bugText = ref('')
 const bugFiles = ref([])
 const bugSubmitting = ref(false)
 const deletingBugId = ref(null)
+const activeUpdateBugId = ref(null)
+const updateText = ref('')
+const updateFiles = ref([])
+const updateSubmittingId = ref(null)
 const statusModel = ref('')
 
 const chatTypes = ['message', 'reply']
@@ -280,6 +311,32 @@ async function submitBug() {
     ElMessage.error(e.message || '创建失败')
   } finally {
     bugSubmitting.value = false
+  }
+}
+function toggleBugUpdate(bug) {
+  if (activeUpdateBugId.value === bug.id) {
+    activeUpdateBugId.value = null
+    updateText.value = ''
+    updateFiles.value = []
+    return
+  }
+  activeUpdateBugId.value = bug.id
+  updateText.value = ''
+  updateFiles.value = []
+}
+async function submitBugUpdate(bug) {
+  if (!updateText.value.trim() && !updateFiles.value.length) return
+  updateSubmittingId.value = bug.id
+  try {
+    await appendBugUpdate(bug.id, updateText.value.trim(), [...updateFiles.value])
+    updateText.value = ''
+    updateFiles.value = []
+    activeUpdateBugId.value = null
+    ElMessage.success('已追加 QA')
+  } catch (e) {
+    ElMessage.error(e.message || '追加失败')
+  } finally {
+    updateSubmittingId.value = null
   }
 }
 async function removeBug(bug) {
@@ -486,6 +543,48 @@ function dotColor(type) {
   margin-top: 8px;
   color: #a8abb2;
   font-size: 12px;
+}
+.bug-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+.bug-updates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed #dcdfe6;
+}
+.bug-update {
+  padding: 9px 10px;
+  background: #fdfefe;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+.bug-update p {
+  margin: 4px 0 8px;
+  color: #303133;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.update-meta {
+  color: #909399;
+  font-size: 12px;
+}
+.bug-update-form {
+  margin-top: 10px;
+  padding: 10px;
+  background: #fdfefe;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+}
+.bug-update-form .el-button {
+  width: 100%;
 }
 .note-upload {
   margin: 8px 0;

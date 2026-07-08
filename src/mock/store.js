@@ -154,6 +154,19 @@ export async function deleteBug(id) {
   return vo
 }
 
+export async function appendBugUpdate(id, content, attachments = []) {
+  const me = currentMember.value
+  const payload = {
+    content,
+    attachments: attachments || [],
+    byMemberId: me.id,
+    byUserName: me.name
+  }
+  const vo = await http(`${BASE}/bug/${id}/update`, { method: 'POST', body: JSON.stringify(payload) })
+  upsert(vo)
+  return vo
+}
+
 export async function addProgress(id, content, type = 'note', attachments = []) {
   const me = currentMember.value
   const payload = {
