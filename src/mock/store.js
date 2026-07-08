@@ -134,6 +134,26 @@ export async function removeOrder(id) {
   if (i > -1) orders.splice(i, 1)
 }
 
+export async function createBug(id, content, attachments = []) {
+  const me = currentMember.value
+  const payload = {
+    orderId: id,
+    content,
+    attachments: attachments || [],
+    byMemberId: me.id,
+    byUserName: me.name
+  }
+  const vo = await http(`${BASE}/bug`, { method: 'POST', body: JSON.stringify(payload) })
+  upsert(vo)
+  return vo
+}
+
+export async function deleteBug(id) {
+  const vo = await http(`${BASE}/bug/${id}`, { method: 'DELETE' })
+  upsert(vo)
+  return vo
+}
+
 export async function addProgress(id, content, type = 'note', attachments = []) {
   const me = currentMember.value
   const payload = {

@@ -62,6 +62,50 @@
       <section class="section">
         <div class="section-head">
           <div>
+            <h3>Bug 清单</h3>
+            <p>独立于客户沟通和内部记录。</p>
+          </div>
+          <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
+            {{ bugOpen ? '收起' : '快速创建 Bug' }}
+          </el-button>
+        </div>
+
+        <div v-if="bugOpen" class="bug-form">
+          <el-input
+            v-model="bugText"
+            type="textarea"
+            :rows="2"
+            resize="none"
+            placeholder="写 Bug 说明，可以直接粘贴截图"
+          />
+          <AttachmentUploader v-model="bugFiles" :limit="6" class="note-upload" />
+          <el-button type="primary" plain :icon="Promotion" :loading="bugSubmitting" @click="submitBug">创建 Bug</el-button>
+        </div>
+
+        <div class="bug-list">
+          <div v-for="bug in bugItems" :key="bug.id" class="bug-item">
+            <div class="bug-body">
+              <p>{{ bug.content || '只有附件' }}</p>
+              <AttachmentView v-if="bug.attachments && bug.attachments.length" :items="bug.attachments" :size="64" />
+              <div class="bug-meta">{{ bug.createdBy || '客户' }} · {{ bug.time }}</div>
+            </div>
+            <el-button
+              text
+              type="danger"
+              :icon="Delete"
+              :loading="deletingBugId === bug.id"
+              @click="removeBug(bug)"
+            >
+              删除
+            </el-button>
+          </div>
+          <div v-if="!bugItems.length" class="empty">暂无 Bug</div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
             <h3>客户沟通</h3>
             <p>这里发送的消息客户能看到，总裁和副总裁也都能看到。</p>
           </div>
@@ -148,11 +192,11 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
-import { setStatus, addProgress, markRead, addRevision, nudge, currentMember } from '@/mock/store'
+import { setStatus, addProgress, markRead, addRevision, nudge, createBug, deleteBug, currentMember } from '@/mock/store'
 import { STATUS, statusMap, channelMap, priorityMap, memberMap } from '@/constants/options'
 import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
@@ -168,11 +212,17 @@ const noteFiles = ref([])
 const replyText = ref('')
 const replyFiles = ref([])
 const replying = ref(false)
+const bugOpen = ref(false)
+const bugText = ref('')
+const bugFiles = ref([])
+const bugSubmitting = ref(false)
+const deletingBugId = ref(null)
 const statusModel = ref('')
 
 const chatTypes = ['message', 'reply']
 const chatItems = computed(() => (props.order?.timeline || []).filter((t) => chatTypes.includes(t.type)))
 const recordItems = computed(() => (props.order?.timeline || []).filter((t) => !chatTypes.includes(t.type)))
+const bugItems = computed(() => props.order?.bugs || [])
 
 watch(
   () => props.order,
@@ -216,6 +266,37 @@ async function addNote() {
   await addProgress(props.order.id, note.value.trim(), 'note', [...noteFiles.value])
   note.value = ''
   noteFiles.value = []
+}
+async function submitBug() {
+  if (!bugText.value.trim() && !bugFiles.value.length) return
+  bugSubmitting.value = true
+  try {
+    await createBug(props.order.id, bugText.value.trim(), [...bugFiles.value])
+    bugText.value = ''
+    bugFiles.value = []
+    bugOpen.value = false
+    ElMessage.success('Bug 已创建')
+  } catch (e) {
+    ElMessage.error(e.message || '创建失败')
+  } finally {
+    bugSubmitting.value = false
+  }
+}
+async function removeBug(bug) {
+  try {
+    await ElMessageBox.confirm('删除后客户和后台都看不到这条 Bug，确定删除吗？', '删除 Bug', {
+      type: 'warning',
+      confirmButtonText: '删除',
+      cancelButtonText: '取消'
+    })
+    deletingBugId.value = bug.id
+    await deleteBug(bug.id)
+    ElMessage.success('Bug 已删除')
+  } catch (e) {
+    if (e !== 'cancel') ElMessage.error(e.message || '删除失败')
+  } finally {
+    deletingBugId.value = null
+  }
 }
 async function sendReply() {
   if (!replyText.value.trim() && !replyFiles.value.length) return
@@ -371,13 +452,46 @@ function dotColor(type) {
   padding: 18px 0;
 }
 .composer,
+.bug-form,
 .add-progress {
   margin-bottom: 12px;
+}
+.bug-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.bug-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  background: #f7f9fc;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+.bug-body {
+  flex: 1;
+  min-width: 0;
+}
+.bug-body p {
+  margin: 0 0 8px;
+  color: #303133;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.bug-meta {
+  margin-top: 8px;
+  color: #a8abb2;
+  font-size: 12px;
 }
 .note-upload {
   margin: 8px 0;
 }
 .composer .el-button,
+.bug-form .el-button,
 .add-progress .el-button {
   width: 100%;
 }
