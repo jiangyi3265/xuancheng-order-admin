@@ -2,12 +2,11 @@
   <el-drawer
     :model-value="visible"
     :title="order ? order.title : '订单详情'"
-    size="480px"
+    size="520px"
     @update:model-value="(v) => emit('update:visible', v)"
     @open="onOpen"
   >
     <div v-if="order" class="detail">
-      <!-- 头部标签 -->
       <div class="tags">
         <el-tag size="small" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag>
         <el-tag size="small" effect="plain" :style="{ color: channelMap[order.channel]?.color, borderColor: channelMap[order.channel]?.color }">
@@ -16,7 +15,6 @@
         <span class="no">{{ order.orderNo }}</span>
       </div>
 
-      <!-- 基本信息 -->
       <el-descriptions :column="1" border size="small" class="desc">
         <el-descriptions-item label="客户">{{ order.customer || '-' }}</el-descriptions-item>
         <el-descriptions-item label="客户账号">
@@ -40,13 +38,11 @@
         <el-descriptions-item label="需求">{{ order.requirement || '-' }}</el-descriptions-item>
       </el-descriptions>
 
-      <!-- 需求材料（图片 / 视频 / 文件） -->
       <div v-if="order.attachments && order.attachments.length" class="gallery">
         <div class="gallery-label"><el-icon><Paperclip /></el-icon> 需求材料（{{ order.attachments.length }}）</div>
         <AttachmentView :items="order.attachments" :size="84" />
       </div>
 
-      <!-- 一键下一步 + 改状态 -->
       <div class="status-bar">
         <el-button v-if="na" type="primary" :icon="Promotion" @click="doNext">
           {{ na.label }}
@@ -63,31 +59,84 @@
         <el-button size="small" :icon="Bell" @click="doNudge">催一下</el-button>
       </div>
 
-      <!-- 进度时间线 -->
-      <div class="timeline-title">进度 / 沟通记录</div>
-      <div class="add-progress">
-        <el-input v-model="note" size="small" type="textarea" :rows="2" placeholder="记一笔：转达需求、改稿、卡点、完成截图…" />
-        <AttachmentUploader v-model="noteFiles" :limit="3" class="note-upload" />
-        <el-button type="primary" size="small" :icon="Promotion" @click="addNote">记录</el-button>
-      </div>
-
-      <el-timeline class="timeline">
-        <el-timeline-item
-          v-for="(t, i) in order.timeline"
-          :key="i"
-          :timestamp="t.time"
-          :color="dotColor(t.type)"
-          placement="top"
-        >
+      <section class="section">
+        <div class="section-head">
           <div>
-            <el-tag v-if="t.type === 'message'" size="small" type="warning" effect="dark" class="cust-tag">客户</el-tag>
-            <span class="t-user" :class="{ 'cust-user': t.type === 'message' }">{{ t.user }}</span> {{ t.content }}
+            <h3>客户沟通</h3>
+            <p>这里发送的消息客户能看到，总裁和副总裁也都能看到。</p>
           </div>
-          <div v-if="t.attachments && t.attachments.length" class="t-imgs">
-            <AttachmentView :items="t.attachments" :size="64" />
+          <el-tag size="small" effect="plain">{{ chatItems.length }} 条</el-tag>
+        </div>
+
+        <div class="chat-list">
+          <div v-for="(t, i) in chatItems" :key="i" class="chat-row" :class="{ team: t.type === 'reply' }">
+            <div class="avatar">{{ avatarOf(t) }}</div>
+            <div class="bubble-wrap">
+              <div class="meta">
+                <span>{{ t.type === 'reply' ? t.user : '客户 · ' + t.user }}</span>
+                <em>{{ t.time }}</em>
+              </div>
+              <div class="bubble">
+                <p v-if="t.content">{{ t.content }}</p>
+                <AttachmentView v-if="t.attachments && t.attachments.length" :items="t.attachments" :size="64" />
+              </div>
+            </div>
           </div>
-        </el-timeline-item>
-      </el-timeline>
+          <div v-if="!chatItems.length" class="empty">还没有客户沟通消息</div>
+        </div>
+
+        <div class="composer">
+          <el-input
+            v-model="replyText"
+            type="textarea"
+            :rows="2"
+            resize="none"
+            placeholder="回复客户，支持粘贴图片..."
+          />
+          <AttachmentUploader v-model="replyFiles" :limit="6" class="note-upload" />
+          <el-button type="primary" :icon="Promotion" :loading="replying" @click="sendReply">发送给客户</el-button>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <div>
+            <h3>内部记录</h3>
+            <p>只给总裁和副总裁看，不同步给客户。</p>
+          </div>
+          <el-tag size="small" type="info" effect="plain">{{ recordItems.length }} 条</el-tag>
+        </div>
+
+        <div class="add-progress">
+          <el-input
+            v-model="note"
+            size="small"
+            type="textarea"
+            :rows="2"
+            resize="none"
+            placeholder="记录内部进度、改稿点、注意事项..."
+          />
+          <AttachmentUploader v-model="noteFiles" :limit="3" class="note-upload" />
+          <el-button type="primary" plain size="small" :icon="Promotion" @click="addNote">记录</el-button>
+        </div>
+
+        <el-timeline class="timeline">
+          <el-timeline-item
+            v-for="(t, i) in recordItems"
+            :key="i"
+            :timestamp="t.time"
+            :color="dotColor(t.type)"
+            placement="top"
+          >
+            <div>
+              <span class="t-user">{{ t.user }}</span> {{ t.content }}
+            </div>
+            <div v-if="t.attachments && t.attachments.length" class="t-imgs">
+              <AttachmentView :items="t.attachments" :size="64" />
+            </div>
+          </el-timeline-item>
+        </el-timeline>
+      </section>
     </div>
 
     <template #footer>
@@ -116,7 +165,14 @@ const emit = defineEmits(['update:visible', 'edit', 'delete', 'notebook'])
 
 const note = ref('')
 const noteFiles = ref([])
+const replyText = ref('')
+const replyFiles = ref([])
+const replying = ref(false)
 const statusModel = ref('')
+
+const chatTypes = ['message', 'reply']
+const chatItems = computed(() => (props.order?.timeline || []).filter((t) => chatTypes.includes(t.type)))
+const recordItems = computed(() => (props.order?.timeline || []).filter((t) => !chatTypes.includes(t.type)))
 
 watch(
   () => props.order,
@@ -127,7 +183,6 @@ watch(
 )
 
 function onOpen() {
-  // 打开即标记当前角色已读 —— 红点消除
   if (props.order) markRead(props.order.id, currentMember.value.id)
 }
 
@@ -156,14 +211,31 @@ async function doNudge() {
   await nudge(props.order.id)
   ElMessage.success('已催办，对方会收到提醒')
 }
-function addNote() {
+async function addNote() {
   if (!note.value.trim() && !noteFiles.value.length) return
-  addProgress(props.order.id, note.value.trim(), 'note', [...noteFiles.value])
+  await addProgress(props.order.id, note.value.trim(), 'note', [...noteFiles.value])
   note.value = ''
   noteFiles.value = []
 }
+async function sendReply() {
+  if (!replyText.value.trim() && !replyFiles.value.length) return
+  replying.value = true
+  try {
+    await addProgress(props.order.id, replyText.value.trim(), 'reply', [...replyFiles.value])
+    replyText.value = ''
+    replyFiles.value = []
+    ElMessage.success('已发送给客户')
+  } catch (e) {
+    ElMessage.error(e.message || '发送失败')
+  } finally {
+    replying.value = false
+  }
+}
+function avatarOf(t) {
+  return (t.type === 'reply' ? currentMember.value.name : t.user || '客').slice(0, 1)
+}
 function dotColor(type) {
-  return { create: '#909399', status: '#409eff', note: '#67c23a', message: '#e6a23c' }[type] || '#909399'
+  return { create: '#909399', status: '#409eff', note: '#67c23a', message: '#e6a23c', reply: '#409eff' }[type] || '#909399'
 }
 </script>
 
@@ -197,21 +269,10 @@ function dotColor(type) {
   gap: 4px;
   margin-bottom: 8px;
 }
-.gallery-imgs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.g-img {
-  width: 84px;
-  height: 84px;
-  border-radius: 6px;
-  border: 1px solid #ebeef5;
-  cursor: pointer;
-}
 .status-bar {
   display: flex;
   align-items: center;
+  gap: 8px;
   margin-bottom: 16px;
 }
 .status-bar .label {
@@ -223,19 +284,100 @@ function dotColor(type) {
   gap: 8px;
   margin-bottom: 16px;
 }
-.timeline-title {
-  font-weight: 600;
-  font-size: 15px;
-  margin-bottom: 12px;
-  padding-left: 8px;
-  border-left: 3px solid #409eff;
+.section {
+  border-top: 1px solid #ebeef5;
+  padding-top: 16px;
+  margin-top: 18px;
 }
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.section-head h3 {
+  margin: 0;
+  font-size: 16px;
+  color: #303133;
+}
+.section-head p {
+  margin: 4px 0 0;
+  color: #909399;
+  font-size: 12px;
+}
+.chat-list {
+  background: #f5f7fa;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+.chat-row {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+.chat-row.team {
+  flex-direction: row-reverse;
+}
+.avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: #fdfefe;
+  background: #909399;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+.chat-row.team .avatar {
+  background: #409eff;
+}
+.bubble-wrap {
+  max-width: 78%;
+}
+.meta {
+  display: flex;
+  gap: 8px;
+  color: #909399;
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+.chat-row.team .meta {
+  justify-content: flex-end;
+}
+.meta em {
+  font-style: normal;
+  color: #c0c4cc;
+}
+.bubble {
+  background: #fdfefe;
+  border-radius: 8px;
+  padding: 9px 11px;
+  color: #303133;
+}
+.chat-row.team .bubble {
+  background: #ecf5ff;
+}
+.bubble p {
+  margin: 0 0 6px;
+  white-space: pre-wrap;
+}
+.empty {
+  text-align: center;
+  color: #a8abb2;
+  font-size: 13px;
+  padding: 18px 0;
+}
+.composer,
 .add-progress {
-  margin-bottom: 18px;
+  margin-bottom: 12px;
 }
 .note-upload {
   margin: 8px 0;
 }
+.composer .el-button,
 .add-progress .el-button {
   width: 100%;
 }
@@ -243,12 +385,6 @@ function dotColor(type) {
   font-weight: 600;
   color: #409eff;
   margin-right: 4px;
-}
-.cust-user {
-  color: #e6a23c;
-}
-.cust-tag {
-  margin-right: 5px;
 }
 .muted {
   color: #c0c4cc;
@@ -258,12 +394,5 @@ function dotColor(type) {
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 6px;
-}
-.t-img {
-  width: 64px;
-  height: 64px;
-  border-radius: 4px;
-  border: 1px solid #ebeef5;
-  cursor: pointer;
 }
 </style>
