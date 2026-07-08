@@ -15,6 +15,12 @@ export const menuRoutes = [
     meta: { title: '接单管理', icon: 'Tickets' }
   },
   {
+    path: 'customers',
+    name: 'Customers',
+    component: () => import('@/views/customers/index.vue'),
+    meta: { title: '客户账号', icon: 'User' }
+  },
+  {
     path: 'dashboard',
     name: 'Dashboard',
     component: () => import('@/views/dashboard/index.vue'),

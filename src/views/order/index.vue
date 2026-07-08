@@ -124,9 +124,10 @@
             <span :class="{ 'red-text': isOverdue(row) }">{{ row.deadline || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" fixed="right">
+        <el-table-column label="操作" width="210" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
+            <el-button link type="warning" @click.stop="openNotebook(row)">记事本</el-button>
             <el-button link type="primary" @click.stop="openDialog(row)">编辑</el-button>
             <el-button link type="danger" @click.stop="handleDelete(row)">删除</el-button>
           </template>
@@ -138,7 +139,10 @@
     <OrderDialog v-model:visible="dialogVisible" :data="editing" @save="handleSave" />
 
     <!-- 详情抽屉 -->
-    <OrderDetail v-model:visible="detailVisible" :order="active" @edit="openDialog" @delete="handleDelete" />
+    <OrderDetail v-model:visible="detailVisible" :order="active" @edit="openDialog" @delete="handleDelete" @notebook="openNotebook" />
+
+    <!-- 项目记事本 -->
+    <NotebookDialog v-model:visible="notebookVisible" :order="notebookOrder" />
   </div>
 </template>
 
@@ -149,6 +153,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Grid, List } from '@element-plus/icons-vue'
 import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
+import NotebookDialog from '@/components/NotebookDialog.vue'
 import { orders, createOrder, editOrder, removeOrder, setStatus, currentMember } from '@/mock/store'
 import { todayStr as todayLocal } from '@/utils/date'
 import {
@@ -208,6 +213,13 @@ const dialogVisible = ref(false)
 const editing = ref(null)
 const detailVisible = ref(false)
 const active = ref(null)
+const notebookVisible = ref(false)
+const notebookOrder = ref(null)
+
+function openNotebook(row) {
+  notebookOrder.value = row
+  notebookVisible.value = true
+}
 
 function openDialog(row) {
   editing.value = row && row.id ? { ...row } : null

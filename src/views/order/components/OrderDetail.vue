@@ -19,6 +19,10 @@
       <!-- 基本信息 -->
       <el-descriptions :column="1" border size="small" class="desc">
         <el-descriptions-item label="客户">{{ order.customer || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="客户账号">
+          <el-tag v-if="order.customerAccount" size="small" type="success" effect="plain">{{ order.customerAccount }}</el-tag>
+          <span v-else class="muted">未绑定</span>
+        </el-descriptions-item>
         <el-descriptions-item label="联系方式">{{ order.contact || '-' }}</el-descriptions-item>
         <el-descriptions-item label="负责人">
           {{ memberMap[order.ownerId]?.name }}（{{ memberMap[order.ownerId]?.roleLabel }}）
@@ -54,6 +58,7 @@
       </div>
 
       <div class="action-row">
+        <el-button size="small" type="warning" plain :icon="Notebook" @click="emit('notebook', order)">项目记事本</el-button>
         <el-button size="small" :icon="EditPen" @click="doRevision">改稿 +1</el-button>
         <el-button size="small" :icon="Bell" @click="doNudge">催一下</el-button>
       </div>
@@ -74,7 +79,10 @@
           :color="dotColor(t.type)"
           placement="top"
         >
-          <div><span class="t-user">{{ t.user }}</span> {{ t.content }}</div>
+          <div>
+            <el-tag v-if="t.type === 'message'" size="small" type="warning" effect="dark" class="cust-tag">客户</el-tag>
+            <span class="t-user" :class="{ 'cust-user': t.type === 'message' }">{{ t.user }}</span> {{ t.content }}
+          </div>
           <div v-if="t.attachments && t.attachments.length" class="t-imgs">
             <AttachmentView :items="t.attachments" :size="64" />
           </div>
@@ -91,7 +99,7 @@
 
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { Edit, Delete, Paperclip, Promotion, EditPen, Bell } from '@element-plus/icons-vue'
+import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
@@ -104,7 +112,7 @@ const props = defineProps({
   visible: { type: Boolean, default: false },
   order: { type: Object, default: null }
 })
-const emit = defineEmits(['update:visible', 'edit', 'delete'])
+const emit = defineEmits(['update:visible', 'edit', 'delete', 'notebook'])
 
 const note = ref('')
 const noteFiles = ref([])
@@ -155,7 +163,7 @@ function addNote() {
   noteFiles.value = []
 }
 function dotColor(type) {
-  return { create: '#909399', status: '#409eff', note: '#67c23a' }[type] || '#909399'
+  return { create: '#909399', status: '#409eff', note: '#67c23a', message: '#e6a23c' }[type] || '#909399'
 }
 </script>
 
@@ -235,6 +243,15 @@ function dotColor(type) {
   font-weight: 600;
   color: #409eff;
   margin-right: 4px;
+}
+.cust-user {
+  color: #e6a23c;
+}
+.cust-tag {
+  margin-right: 5px;
+}
+.muted {
+  color: #c0c4cc;
 }
 .t-imgs {
   display: flex;

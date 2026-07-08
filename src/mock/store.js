@@ -207,6 +207,38 @@ export async function runDeadlineReminder() {
   return await http('/jiedan/push/reminder', { method: 'POST' })
 }
 
+// ---------- 项目记事本（内部台账） ----------
+export async function getOrderNotes(id) {
+  return await http(`${BASE}/notes/${id}`)
+}
+
+export async function saveOrderNotes(id, notes, noteAttachments = []) {
+  return await http(`${BASE}/notes`, {
+    method: 'PUT',
+    body: JSON.stringify({ id, notes, noteAttachments })
+  })
+}
+
+// ---------- 客户账号管理 ----------
+export async function listCustomers() {
+  return await http('/jiedan/customer/list')
+}
+
+export async function createCustomer(payload) {
+  return await http('/jiedan/customer', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function resetCustomerPwd(userId, password) {
+  return await http('/jiedan/customer/reset', {
+    method: 'PUT',
+    body: JSON.stringify({ userId, password })
+  })
+}
+
+export async function deleteCustomer(userId) {
+  return await http('/jiedan/customer/' + userId, { method: 'DELETE' })
+}
+
 export function now() {
   const d = new Date()
   const p = (n) => String(n).padStart(2, '0')
