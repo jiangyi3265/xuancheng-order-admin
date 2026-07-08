@@ -16,8 +16,16 @@
       >
         <el-menu-item v-for="r in menuRoutes" :key="r.path" :index="'/' + r.path">
           <el-icon><component :is="r.meta.icon" /></el-icon>
-          <span>{{ r.meta.title }}</span>
-          <el-badge v-if="badgeOf(r.path)" :value="badgeOf(r.path)" class="menu-badge" type="danger" />
+          <span class="menu-content">
+            <span class="menu-title">{{ r.meta.title }}</span>
+            <el-badge
+              v-if="badgeOf(r.path)"
+              :value="badgeOf(r.path)"
+              :max="99"
+              class="menu-badge"
+              type="danger"
+            />
+          </span>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -116,8 +124,40 @@ function badgeOf(path) {
 .side-menu {
   border-right: none;
 }
+.side-menu :deep(.el-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 18px;
+}
+.menu-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.menu-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .menu-badge {
-  margin-left: 8px;
+  flex: 0 0 auto;
+  line-height: 1;
+}
+.menu-badge :deep(.el-badge__content) {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid #fff;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 16px;
+  box-shadow: 0 2px 8px rgba(245, 108, 108, 0.24);
 }
 .header {
   height: 56px;
