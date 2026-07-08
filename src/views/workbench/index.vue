@@ -97,16 +97,16 @@ const waitingList = computed(() => orders.filter((o) => isWaitingOther(o, curren
 function reasonFor(o) {
   if (isUnread(o)) return '对方有新动态，点开查看'
   if (currentMember.value.id === BOSS_ID) {
-    if (o.status === 'review') return '员工已提交，待你验收'
-    if (o.status === 'pending') return '客户需求已录入，待确认 / 派给员工'
+    if (o.status === 'review') return '副总裁已提交，待你验收'
+    if (o.status === 'pending') return '客户需求已录入，待确认 / 派给副总裁'
   } else {
     if (o.status === 'doing') return '进行中，记得推进并回报进度'
   }
   return '待处理'
 }
 function waitReasonFor(o) {
-  if (currentMember.value.id === BOSS_ID) return '员工进行中，等交付'
-  return '已提交，等老板验收'
+  if (currentMember.value.id === BOSS_ID) return '副总裁进行中，等交付'
+  return '已提交，等总裁验收'
 }
 
 const naOf = (o) => nextAction(o, currentMember.value.id)

@@ -54,7 +54,7 @@
         <span class="title"><el-icon><User /></el-icon> 成员</span>
       </template>
       <p class="muted">
-        当前为两人协作：左上角角色切换代表当前操作人。后续如果要给员工单独账号，可以新增 employee 角色并绑定到对应用户。
+        当前为两人协作：左上角角色切换代表当前操作人，分别是总裁和副总裁。
       </p>
     </el-card>
   </div>

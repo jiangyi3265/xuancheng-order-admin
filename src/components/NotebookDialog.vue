@@ -11,7 +11,7 @@
     <div v-loading="loading" class="notebook">
       <div class="tip">
         <el-icon><InfoFilled /></el-icon>
-        随时记录客户说的话、需求、注意事项——只有你和员工能看到，客户端不可见。图片可直接 <b>Ctrl+V</b> 粘贴，文档点 + 上传。
+        随时记录客户说的话、需求、注意事项——仅总裁和副总裁可见，客户端不可见。图片可直接 <b>Ctrl+V</b> 粘贴，文档点 + 上传。
       </div>
 
       <el-input

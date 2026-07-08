@@ -33,8 +33,8 @@
         <div class="user">
           <span class="role-tip">当前视角</span>
           <el-radio-group :model-value="currentRole" size="small" @change="switchRole">
-            <el-radio-button value="boss">老板</el-radio-button>
-            <el-radio-button value="employee">员工</el-radio-button>
+            <el-radio-button value="boss">总裁</el-radio-button>
+            <el-radio-button value="employee">副总裁</el-radio-button>
           </el-radio-group>
           <el-avatar :size="30" :style="{ background: currentMember.color }">
             {{ currentMember.name.slice(-1) }}
