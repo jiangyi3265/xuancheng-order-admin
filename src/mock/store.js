@@ -167,6 +167,16 @@ export async function appendBugUpdate(id, content, attachments = []) {
   return vo
 }
 
+export async function updateBugStatus(id, status) {
+  const me = currentMember.value
+  const vo = await http(`${BASE}/bug/${id}/status`, {
+    method: 'PUT',
+    body: JSON.stringify({ status, byMemberId: me.id, byUserName: me.name })
+  })
+  upsert(vo)
+  return vo
+}
+
 export async function addProgress(id, content, type = 'note', attachments = []) {
   const me = currentMember.value
   const payload = {
