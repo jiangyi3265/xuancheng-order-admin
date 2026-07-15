@@ -29,8 +29,8 @@ export const PRIORITY = [
 
 // 团队成员（你们俩，名字随便改）
 export const MEMBERS = [
-  { id: 1, name: '阿成', role: 'boss', roleLabel: '总裁', color: '#409eff' },
-  { id: 2, name: '阿伟', role: 'employee', roleLabel: '副总裁', color: '#67c23a' }
+  { id: 1, name: '尚琦凯', role: 'boss', roleLabel: '总裁', color: '#409eff' },
+  { id: 2, name: '费鹏飞', role: 'employee', roleLabel: '副总裁', color: '#67c23a' }
 ]
 export const BOSS_ID = 1
 export const EMP_ID = 2
