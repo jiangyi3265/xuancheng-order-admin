@@ -62,7 +62,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { SwitchButton } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
@@ -76,9 +76,26 @@ const router = useRouter()
 const activeMenu = computed(() => route.path)
 const currentTitle = computed(() => route.meta.title || '玄成接单系统')
 const mobileOpen = ref(false)
+let orderPoller = null
+
+function refreshOrders(showError = false) {
+  if (document.visibilityState !== 'visible') return
+  loadOrders().catch((e) => {
+    if (showError === true) ElMessage.error('加载订单失败：' + e.message)
+  })
+}
 
 onMounted(() => {
-  loadOrders().catch((e) => ElMessage.error('加载订单失败：' + e.message))
+  refreshOrders(true)
+  orderPoller = setInterval(refreshOrders, 10000)
+  window.addEventListener('focus', refreshOrders)
+  document.addEventListener('visibilitychange', refreshOrders)
+})
+
+onBeforeUnmount(() => {
+  if (orderPoller) clearInterval(orderPoller)
+  window.removeEventListener('focus', refreshOrders)
+  document.removeEventListener('visibilitychange', refreshOrders)
 })
 
 function doLogout() {

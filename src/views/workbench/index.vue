@@ -26,7 +26,7 @@
         <div class="rc-main">
           <div class="rc-title">
             {{ o.title }}
-            <el-icon v-if="o.attachments && o.attachments.length" class="pic"><Paperclip /></el-icon>
+            <el-icon v-if="o.attachmentCount || (o.attachments && o.attachments.length)" class="pic"><Paperclip /></el-icon>
           </div>
           <div class="rc-reason">{{ reasonFor(o) }}</div>
         </div>
@@ -70,7 +70,7 @@
     </div>
     <el-empty v-else description="没有在等对方的单子" :image-size="80" />
 
-    <OrderDetail v-model:visible="detailVisible" :order="active" @edit="openDialog" @delete="handleDelete" />
+    <OrderDetail v-model:visible="detailVisible" :order="active" :loading="detailLoading" @edit="openDialog" @delete="handleDelete" />
     <OrderDialog v-model:visible="dialogVisible" :data="editing" @save="handleSave" />
   </div>
 </template>
@@ -81,7 +81,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Paperclip, Clock, Refresh, Promotion, Bell } from '@element-plus/icons-vue'
 import OrderDetail from '@/views/order/components/OrderDetail.vue'
 import OrderDialog from '@/views/order/components/OrderDialog.vue'
-import { orders, currentMember, editOrder, removeOrder, setStatus, nudge } from '@/mock/store'
+import { orders, getOrder, currentMember, editOrder, removeOrder, setStatus, nudge } from '@/mock/store'
 import { statusMap, BOSS_ID } from '@/constants/options'
 import { isMyTodo, isWaitingOther, nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
@@ -130,24 +130,41 @@ function dueTag(o) {
 }
 
 const detailVisible = ref(false)
+const detailLoading = ref(false)
 const active = ref(null)
 const dialogVisible = ref(false)
 const editing = ref(null)
 
-function openDetail(o) {
+async function openDetail(o) {
   active.value = o
   detailVisible.value = true
-}
-function openDialog(row) {
-  editing.value = row && row.id ? { ...row } : null
-  dialogVisible.value = true
-}
-function handleSave(data) {
-  if (data.id) {
-    editOrder(data)
-    ElMessage.success('已更新')
+  detailLoading.value = true
+  try {
+    active.value = await getOrder(o.id)
+  } catch (e) {
+    ElMessage.error('加载项目失败：' + e.message)
+  } finally {
+    detailLoading.value = false
   }
-  dialogVisible.value = false
+}
+async function openDialog(row) {
+  try {
+    editing.value = row?.id ? { ...(await getOrder(row.id)) } : null
+    dialogVisible.value = true
+  } catch (e) {
+    ElMessage.error('加载项目失败：' + e.message)
+  }
+}
+async function handleSave(data) {
+  try {
+    if (data.id) {
+      await editOrder(data)
+      ElMessage.success('已更新')
+    }
+    dialogVisible.value = false
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  }
 }
 function handleDelete(row) {
   ElMessageBox.confirm(`确定删除「${row.title}」吗？`, '提示', { type: 'warning' })

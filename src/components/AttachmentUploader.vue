@@ -12,15 +12,18 @@
       <div
         v-if="list.length < limit"
         class="add-zone"
-        :class="{ over: dragOver }"
+        :class="{ over: dragOver, uploading: uploadingCount > 0 }"
         @click="pickFile"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
         title="图片可直接 Ctrl+V 粘贴；视频/文件/压缩包点击或拖拽上传"
       >
-        <el-icon :size="20"><Plus /></el-icon>
-        <span class="az-text">粘贴 / 点击</span>
+        <el-icon :size="20" :class="{ spin: uploadingCount > 0 }">
+          <Loading v-if="uploadingCount > 0" />
+          <Plus v-else />
+        </el-icon>
+        <span class="az-text">{{ uploadingCount > 0 ? '上传中' : '粘贴 / 点击' }}</span>
       </div>
     </div>
 
@@ -44,10 +47,11 @@
 
 <script setup>
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
-import { Plus, InfoFilled, Close } from '@element-plus/icons-vue'
+import { Plus, InfoFilled, Close, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import MediaThumb from './MediaThumb.vue'
 import { attType, extOf, fmtSize, fileIcon } from '@/utils/file'
+import { uploadAttachment } from '@/utils/upload'
 
 const instances = []
 let bound = false
@@ -65,6 +69,7 @@ const emit = defineEmits(['update:modelValue'])
 const list = ref([])
 const fileInput = ref(null)
 const dragOver = ref(false)
+const uploadingCount = ref(0)
 
 const mediaItems = computed(() => list.value.filter((x) => x.type === 'image' || x.type === 'video'))
 const fileItems = computed(() => list.value.filter((x) => x.type === 'file'))
@@ -83,14 +88,6 @@ function emitValue() {
   emit('update:modelValue', list.value.map((x) => ({ ...x })))
 }
 
-function fileToDataUrl(file) {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.readAsDataURL(file)
-  })
-}
-
 async function addFiles(files) {
   for (const f of files) {
     if (list.value.length >= props.limit) {
@@ -98,13 +95,20 @@ async function addFiles(files) {
       break
     }
     if (f.size > 50 * 1024 * 1024) {
-      ElMessage.warning(`「${f.name}」超过 50MB，上传和预览可能较慢`)
+      ElMessage.warning(`「${f.name}」不能超过 50MB`)
+      continue
     }
-    const type = attType(f.type, f.name)
-    const url = await fileToDataUrl(f)
-    list.value.push({ name: f.name || '附件', url, type, size: f.size, ext: extOf(f.name) })
+    uploadingCount.value += 1
+    try {
+      const stored = await uploadAttachment(f)
+      list.value.push({ ...stored, type: attType(f.type, f.name), ext: extOf(f.name) || stored.ext })
+      emitValue()
+    } catch (e) {
+      ElMessage.error(e.message || '附件上传失败')
+    } finally {
+      uploadingCount.value -= 1
+    }
   }
-  emitValue()
 }
 
 function handlePaste(e) {
@@ -154,6 +158,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   const idx = instances.indexOf(self)
   if (idx > -1) instances.splice(idx, 1)
+  if (!instances.length && bound) {
+    window.removeEventListener('paste', globalPaste)
+    bound = false
+  }
 })
 
 defineExpose({ handlePaste })
@@ -184,6 +192,18 @@ defineExpose({ handlePaste })
   border-color: #409eff;
   color: #409eff;
   background: #ecf5ff;
+}
+.add-zone.uploading {
+  pointer-events: none;
+  border-color: #409eff;
+  color: #409eff;
+  background: #ecf5ff;
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 .az-text {
   font-size: 12px;

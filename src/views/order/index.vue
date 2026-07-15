@@ -67,8 +67,8 @@
               <div class="card-title">{{ element.title }}</div>
               <div class="card-customer">
                 <el-icon><User /></el-icon> {{ element.customer || '未填客户' }}
-                <span v-if="element.attachments && element.attachments.length" class="img-flag">
-                  <el-icon><Paperclip /></el-icon>{{ element.attachments.length }}
+                <span v-if="element.attachmentCount || (element.attachments && element.attachments.length)" class="img-flag">
+                  <el-icon><Paperclip /></el-icon>{{ element.attachmentCount || element.attachments.length }}
                 </span>
                 <span v-if="element.revisions > 0" class="rev-flag">改{{ element.revisions }}</span>
               </div>
@@ -95,7 +95,7 @@
           <template #default="{ row }">
             <span v-if="isUnread(row)" class="dot-unread"></span>
             {{ row.title }}
-            <el-icon v-if="row.attachments && row.attachments.length" class="inline-pic"><Paperclip /></el-icon>
+            <el-icon v-if="row.attachmentCount || (row.attachments && row.attachments.length)" class="inline-pic"><Paperclip /></el-icon>
           </template>
         </el-table-column>
         <el-table-column label="渠道" width="90">
@@ -139,7 +139,7 @@
     <OrderDialog v-model:visible="dialogVisible" :data="editing" @save="handleSave" />
 
     <!-- 详情抽屉 -->
-    <OrderDetail v-model:visible="detailVisible" :order="active" @edit="openDialog" @delete="handleDelete" @notebook="openNotebook" />
+    <OrderDetail v-model:visible="detailVisible" :order="active" :loading="detailLoading" @edit="openDialog" @delete="handleDelete" @notebook="openNotebook" />
 
     <!-- 项目记事本 -->
     <NotebookDialog v-model:visible="notebookVisible" :order="notebookOrder" />
@@ -154,7 +154,7 @@ import { Plus, Search, Grid, List } from '@element-plus/icons-vue'
 import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
-import { orders, createOrder, editOrder, removeOrder, setStatus, currentMember } from '@/mock/store'
+import { orders, getOrder, createOrder, editOrder, removeOrder, setStatus, currentMember } from '@/mock/store'
 import { todayStr as todayLocal } from '@/utils/date'
 import {
   STATUS, CHANNEL, MEMBERS, KANBAN_STATUS,
@@ -212,6 +212,7 @@ function onDragChange(evt, targetStatus) {
 const dialogVisible = ref(false)
 const editing = ref(null)
 const detailVisible = ref(false)
+const detailLoading = ref(false)
 const active = ref(null)
 const notebookVisible = ref(false)
 const notebookOrder = ref(null)
@@ -221,23 +222,44 @@ function openNotebook(row) {
   notebookVisible.value = true
 }
 
-function openDialog(row) {
-  editing.value = row && row.id ? { ...row } : null
-  dialogVisible.value = true
+async function openDialog(row) {
+  if (!row?.id) {
+    editing.value = null
+    dialogVisible.value = true
+    return
+  }
+  try {
+    editing.value = { ...(await getOrder(row.id)) }
+    dialogVisible.value = true
+  } catch (e) {
+    ElMessage.error('加载项目失败：' + e.message)
+  }
 }
-function openDetail(row) {
+async function openDetail(row) {
   active.value = row
   detailVisible.value = true
-}
-function handleSave(data) {
-  if (data.id) {
-    editOrder(data)
-    ElMessage.success('已更新')
-  } else {
-    createOrder(data)
-    ElMessage.success('接单成功')
+  detailLoading.value = true
+  try {
+    active.value = await getOrder(row.id)
+  } catch (e) {
+    ElMessage.error('加载项目失败：' + e.message)
+  } finally {
+    detailLoading.value = false
   }
-  dialogVisible.value = false
+}
+async function handleSave(data) {
+  try {
+    if (data.id) {
+      await editOrder(data)
+      ElMessage.success('已更新')
+    } else {
+      await createOrder(data)
+      ElMessage.success('接单成功')
+    }
+    dialogVisible.value = false
+  } catch (e) {
+    ElMessage.error(e.message || '保存失败')
+  }
 }
 function handleDelete(row) {
   ElMessageBox.confirm(`确定删除「${row.title}」吗？`, '提示', { type: 'warning' })

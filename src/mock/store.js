@@ -1,7 +1,9 @@
 import { reactive, ref, computed } from 'vue'
 import { MEMBERS } from '@/constants/options'
+import { hasPendingUploads } from '@/utils/upload'
 
 const BASE = '/jiedan/order'
+const REQUEST_TIMEOUT = 15000
 
 export const token = ref(localStorage.getItem('token') || '')
 export const customerToken = ref(localStorage.getItem('customerToken') || '')
@@ -62,16 +64,44 @@ export function customerLogout() {
 }
 
 async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, redirectHash = '#/login') {
-  const { headers: h, ...rest } = opts
-  const res = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(tokenRef.value ? { Authorization: 'Bearer ' + tokenRef.value } : {}),
-      ...(h || {})
-    },
-    ...rest
-  })
-  const json = await res.json()
+  const { headers: h, retry = true, ...rest } = opts
+  const method = String(rest.method || 'GET').toUpperCase()
+  if (!['GET', 'HEAD'].includes(method) && hasPendingUploads()) {
+    throw new Error('附件正在上传，请稍候')
+  }
+
+  let json
+  let lastError
+  const attempts = retry && method === 'GET' ? 2 : 1
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
+    try {
+      const res = await fetch(url, {
+        headers: {
+          'Content-Type': 'application/json',
+          ...(tokenRef.value ? { Authorization: 'Bearer ' + tokenRef.value } : {}),
+          ...(h || {})
+        },
+        signal: controller.signal,
+        ...rest
+      })
+      json = await res.json().catch(() => null)
+      if (!json) throw new Error(res.ok ? '服务器返回异常' : `服务器暂时不可用（${res.status}）`)
+      if (res.status >= 500 && attempt + 1 < attempts) throw new Error('服务器暂时繁忙')
+      break
+    } catch (e) {
+      json = null
+      lastError = e
+      if (attempt + 1 < attempts) await new Promise((resolve) => setTimeout(resolve, 450))
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+  if (!json) {
+    if (lastError?.name === 'AbortError') throw new Error('加载超时，请检查网络后重试')
+    throw new Error(lastError?.message || '网络连接失败，请稍后重试')
+  }
   if (json.code === 401) {
     onExpired()
     if (location.hash !== redirectHash) location.hash = redirectHash
@@ -101,16 +131,40 @@ export function switchRole(role) {
 export const orders = reactive([])
 
 function upsert(vo) {
-  if (!vo) return
+  if (!vo) return null
   const i = orders.findIndex((o) => o.id === vo.id)
-  if (i > -1) Object.assign(orders[i], vo)
-  else orders.unshift(vo)
+  if (i > -1) {
+    Object.assign(orders[i], vo)
+    return orders[i]
+  }
+  orders.unshift(vo)
+  return vo
 }
 
 export async function loadOrders() {
   const data = await http(`${BASE}/list`)
-  orders.splice(0, orders.length, ...(data || []))
+  const existing = new Map(orders.map((o) => [o.id, o]))
+  const next = (data || []).map((vo) => {
+    const current = existing.get(vo.id)
+    if (!current) return vo
+    const loadedVersion = current.version
+    const hasLoadedDetail = Array.isArray(current.timeline)
+    Object.assign(current, vo)
+    // The detail poll compares its loaded version with the server version.
+    // Do not let a lightweight list refresh acknowledge unseen detail changes.
+    if (hasLoadedDetail) current.version = loadedVersion
+    return current
+  })
+  orders.splice(0, orders.length, ...next)
   return orders
+}
+
+export async function getOrder(id) {
+  return upsert(await http(`${BASE}/${id}`))
+}
+
+export async function getOrderVersion(id) {
+  return await http(`${BASE}/${id}/version`)
 }
 
 export async function createOrder(data) {

@@ -7,8 +7,9 @@
     class="order-workspace-drawer"
     @update:model-value="(v) => emit('update:visible', v)"
     @open="onOpen"
+    @closed="onClosed"
   >
-    <div v-if="order" class="workspace">
+    <div v-if="order" v-loading="loading" class="workspace">
       <header class="workspace-head">
         <div class="title-block">
           <div class="title-line">
@@ -207,11 +208,16 @@
                 <h3>客户沟通</h3>
                 <p>这里发送的消息客户能看到，总裁和副总裁也能看到。</p>
               </div>
-              <el-tag size="small" effect="plain">{{ chatItems.length }} 条</el-tag>
+              <div class="sync-meta">
+                <span class="sync-state" :class="{ reconnecting: syncState === 'reconnecting' }">
+                  <i></i>{{ syncState === 'reconnecting' ? '重连中' : '实时' }}
+                </span>
+                <el-tag size="small" effect="plain">{{ chatItems.length }} 条</el-tag>
+              </div>
             </div>
 
-            <div class="chat-list">
-              <div v-for="(t, i) in chatItems" :key="i" class="chat-row" :class="{ team: t.type === 'reply' }">
+            <div ref="chatList" class="chat-list">
+              <div v-for="(t, i) in chatItems" :key="t.id || i" class="chat-row" :class="{ team: t.type === 'reply' }">
                 <div class="avatar">{{ avatarOf(t) }}</div>
                 <div class="bubble-wrap">
                   <div class="meta">
@@ -246,19 +252,20 @@
 </template>
 
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
 import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
-import { setStatus, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate, updateBugStatus, currentMember } from '@/mock/store'
+import { getOrder, getOrderVersion, setStatus, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate, updateBugStatus, currentMember } from '@/mock/store'
 import { STATUS, statusMap, channelMap, priorityMap, memberMap } from '@/constants/options'
 import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  order: { type: Object, default: null }
+  order: { type: Object, default: null },
+  loading: { type: Boolean, default: false }
 })
 const emit = defineEmits(['update:visible', 'edit', 'delete', 'notebook'])
 
@@ -278,6 +285,10 @@ const updateText = ref('')
 const updateFiles = ref([])
 const updateSubmittingId = ref(null)
 const statusModel = ref('')
+const chatList = ref(null)
+const syncState = ref('online')
+const syncing = ref(false)
+let poller = null
 
 const chatTypes = ['message', 'reply']
 const chatItems = computed(() => (props.order?.timeline || []).filter((t) => chatTypes.includes(t.type)))
@@ -300,9 +311,58 @@ watch(
   { immediate: true }
 )
 
-function onOpen() {
-  if (props.order) markRead(props.order.id, currentMember.value.id)
+function scrollChatBottom(smooth = false) {
+  nextTick(() => {
+    const el = chatList.value
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
+  })
 }
+
+async function syncNow(force = false) {
+  if (!props.visible || !props.order || props.loading || syncing.value || document.visibilityState !== 'visible') return
+  if (replying.value || bugSubmitting.value || deletingBugId.value || statusUpdatingBugId.value || updateSubmittingId.value) return
+  syncing.value = true
+  try {
+    const version = await getOrderVersion(props.order.id)
+    if (force || Number(version?.version || 0) !== Number(props.order.version || 0)) {
+      const before = chatItems.value.length
+      await getOrder(props.order.id)
+      if (chatItems.value.length > before) scrollChatBottom(true)
+    }
+    syncState.value = 'online'
+  } catch (e) {
+    syncState.value = 'reconnecting'
+  } finally {
+    syncing.value = false
+  }
+}
+
+function startSync() {
+  if (poller) clearInterval(poller)
+  poller = setInterval(syncNow, 2000)
+}
+
+function onOpen() {
+  if (props.order) {
+    markRead(props.order.id, currentMember.value.id).catch(() => {})
+    syncNow(false)
+  }
+  scrollChatBottom()
+  startSync()
+  window.addEventListener('focus', syncNow)
+  document.addEventListener('visibilitychange', syncNow)
+}
+
+function onClosed() {
+  if (poller) {
+    clearInterval(poller)
+    poller = null
+  }
+  window.removeEventListener('focus', syncNow)
+  document.removeEventListener('visibilitychange', syncNow)
+}
+
+onBeforeUnmount(onClosed)
 
 const todayStr = todayLocal()
 const isOverdue = computed(
@@ -412,6 +472,7 @@ async function sendReply() {
     replyText.value = ''
     replyFiles.value = []
     ElMessage.success('已发送给客户')
+    scrollChatBottom(true)
   } catch (e) {
     ElMessage.error(e.message || '发送失败')
   } finally {
@@ -565,6 +626,27 @@ function dotColor(type) {
   margin: 4px 0 0;
   color: #909399;
   font-size: 12px;
+}
+.sync-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sync-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #67c23a;
+  font-size: 12px;
+}
+.sync-state i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sync-state.reconnecting {
+  color: #e6a23c;
 }
 .desc {
   margin-bottom: 12px;
