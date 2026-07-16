@@ -70,7 +70,15 @@
     </div>
     <el-empty v-else description="没有在等对方的单子" :image-size="80" />
 
-    <OrderDetail v-model:visible="detailVisible" :order="active" :loading="detailLoading" @edit="openDialog" @delete="handleDelete" />
+    <OrderDetail
+      v-model:visible="detailVisible"
+      :order="active"
+      :loading="detailLoading"
+      @edit="openDialog"
+      @delete="handleDelete"
+      @notebook="openNotebook"
+    />
+    <NotebookDialog v-model:visible="notebookVisible" :order="notebookOrder" />
     <OrderDialog v-model:visible="dialogVisible" :data="editing" @save="handleSave" />
   </div>
 </template>
@@ -81,6 +89,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Paperclip, Clock, Refresh, Promotion, Bell } from '@element-plus/icons-vue'
 import OrderDetail from '@/views/order/components/OrderDetail.vue'
 import OrderDialog from '@/views/order/components/OrderDialog.vue'
+import NotebookDialog from '@/components/NotebookDialog.vue'
 import { orders, getOrder, currentMember, editOrder, removeOrder, setStatus, nudge } from '@/mock/store'
 import { statusMap, BOSS_ID } from '@/constants/options'
 import { isMyTodo, isWaitingOther, nextAction } from '@/utils/workbench'
@@ -134,6 +143,13 @@ const detailLoading = ref(false)
 const active = ref(null)
 const dialogVisible = ref(false)
 const editing = ref(null)
+const notebookVisible = ref(false)
+const notebookOrder = ref(null)
+
+function openNotebook(row) {
+  notebookOrder.value = row
+  notebookVisible.value = true
+}
 
 async function openDetail(o) {
   active.value = o
