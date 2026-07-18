@@ -2,11 +2,16 @@ import http from 'node:http'
 
 const now = new Date().toISOString()
 const projects = [
-  { id: 1, name: '接单系统后台', repoUrl: 'https://github.com/example/order-backend.git', provider: 'codex', model: '', profileKey: 'default', maxParallel: 1, enabled: 1, version: 1 },
-  { id: 2, name: '客户小程序', repoUrl: 'https://github.com/example/order-app.git', provider: 'claude', model: '', profileKey: 'claude', maxParallel: 1, enabled: 1, version: 1 }
+  { id: 1, name: '接单系统后台', repoUrl: 'https://github.com/example/order-backend.git', provider: 'codex', model: '', profileKey: 'default', orderId: 21, orderTitle: '玄成接单系统', automationMode: 'auto_deploy', deployWorkflow: 'deploy.yml', deployTimeoutMin: 20, productionUrl: 'https://example.com', maxParallel: 1, enabled: 1, version: 1 },
+  { id: 2, name: '客户小程序', repoUrl: 'https://github.com/example/order-app.git', provider: 'claude', model: '', profileKey: 'claude', orderId: 22, orderTitle: '客户门户', automationMode: 'auto_pr', deployWorkflow: 'deploy.yml', deployTimeoutMin: 20, productionUrl: '', maxParallel: 1, enabled: 1, version: 1 }
+]
+const orders = [
+  { id: 21, orderNo: 'XC-2026-0021', title: '玄成接单系统' },
+  { id: 22, orderNo: 'XC-2026-0022', title: '客户门户' }
 ]
 const tasks = [
-  { id: 108, projectId: 1, projectName: '接单系统后台', title: '修复订单状态并发覆盖问题', riskLevel: 'medium', status: 'awaiting_review', currentAttemptId: 801, workerId: 'mac-mini-01', prUrl: 'https://github.com/example/order-backend/pull/42', validationPassed: 1, updateTime: now },
+  { id: 109, projectId: 1, projectName: '接单系统后台', title: '客户问题：订单状态同步', riskLevel: 'low', sourceType: 'customer_bug', status: 'delivered', currentAttemptId: 802, workerId: 'mac-mini-01', prUrl: 'https://github.com/example/order-backend/pull/43', deploymentUrl: 'https://github.com/example/order-backend/actions/runs/10', deliveryUrl: 'https://example.com', validationPassed: 1, updateTime: now },
+  { id: 108, projectId: 1, projectName: '接单系统后台', title: '修复订单状态并发覆盖问题', riskLevel: 'medium', sourceType: 'manual', status: 'delivery_failed', currentAttemptId: 801, workerId: 'mac-mini-01', prUrl: 'https://github.com/example/order-backend/pull/42', deliveryError: '部署工作流未在 20 分钟内启动', validationPassed: 1, updateTime: now },
   { id: 107, projectId: 2, projectName: '客户小程序', title: '优化上传失败后的重试提示', riskLevel: 'low', status: 'running', currentAttemptId: 800, workerId: 'mac-mini-01', validationPassed: null, updateTime: now },
   { id: 106, projectId: 1, projectName: '接单系统后台', title: '补充订单导出字段校验', riskLevel: 'low', status: 'queued', currentAttemptId: null, workerId: null, updateTime: now },
   { id: 105, projectId: 1, projectName: '接单系统后台', title: '修复历史数据空字段兼容', riskLevel: 'low', status: 'failed', currentAttemptId: 799, workerId: 'mac-mini-01', errorMessage: '确定性验证失败：mvn test', updateTime: now },
@@ -18,7 +23,7 @@ function detail(id) {
   const attempt = {
     id: task.currentAttemptId || 801,
     attemptNo: 1,
-    status: task.status === 'awaiting_review' || task.status === 'approved' ? 'succeeded' : task.status === 'failed' ? 'failed' : 'running',
+    status: ['awaiting_review', 'approved', 'delivered', 'delivery_failed'].includes(task.status) ? 'succeeded' : task.status === 'failed' ? 'failed' : 'running',
     workerId: task.workerId,
     branchName: `ai/task-${task.id}/attempt-1`,
     baseSha: '11aabbccddeeff00112233445566778899aabbcc',
@@ -33,6 +38,8 @@ function detail(id) {
   }
   return {
     ...task,
+    mergedSha: task.status === 'delivered' ? '44aabbccddeeff00112233445566778899aabbcc' : null,
+    deliveredAt: task.status === 'delivered' ? now : null,
     prompt: '并发更新订单状态时，旧请求不能覆盖新状态。请复用现有 version 字段完成乐观锁校验，并补充成功与冲突两组测试。',
     promptHash: '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08',
     createdBy: 'admin',
@@ -61,7 +68,7 @@ http.createServer((request, response) => {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
     return response.end(JSON.stringify({ code: 200, token: 'local-visual-test' }))
   }
-  if (url.pathname === '/jiedan/order/list') return send(response, [])
+  if (url.pathname === '/jiedan/order/list') return send(response, orders)
   if (url.pathname === '/jiedan/ai/projects') return send(response, projects)
   if (url.pathname === '/jiedan/ai/tasks') return send(response, tasks)
   const taskMatch = url.pathname.match(/^\/jiedan\/ai\/tasks\/(\d+)$/)

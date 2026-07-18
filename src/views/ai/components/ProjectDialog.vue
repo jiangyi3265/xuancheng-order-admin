@@ -8,8 +8,8 @@
     @update:model-value="$emit('update:visible', $event)"
     @open="fill"
   >
-    <el-alert type="warning" :closable="false" class="project-tip">
-      这里只保存不含凭证的 GitHub 地址。GitHub 和模型密钥只放在 Worker 主机环境变量中。
+    <el-alert :type="form.automationMode === 'auto_deploy' ? 'warning' : 'info'" :closable="false" class="project-tip">
+      {{ automationHint }}
     </el-alert>
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
       <div class="form-grid">
@@ -23,6 +23,42 @@
       <el-form-item label="GitHub 仓库" prop="repoUrl">
         <el-input v-model="form.repoUrl" placeholder="https://github.com/org/repo.git" />
       </el-form-item>
+      <div class="section-label">客户需求自动化</div>
+      <div class="form-grid automation-grid">
+        <el-form-item label="绑定客户项目" prop="orderId">
+          <el-select v-model="form.orderId" clearable filterable placeholder="选择接单系统中的项目" style="width: 100%">
+            <el-option
+              v-for="order in orders"
+              :key="order.id"
+              :label="`${order.orderNo || `#${order.id}`} · ${order.title}`"
+              :value="order.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="运行方式" prop="automationMode">
+          <el-select v-model="form.automationMode" style="width: 100%">
+            <el-option label="人工派单与审核" value="manual" />
+            <el-option label="客户提交后自动产出 PR" value="auto_pr" />
+            <el-option label="全自动部署并通知客户" value="auto_deploy" />
+          </el-select>
+        </el-form-item>
+      </div>
+      <template v-if="form.automationMode === 'auto_deploy'">
+        <div class="form-grid delivery-grid">
+          <el-form-item label="部署工作流" prop="deployWorkflow">
+            <el-input v-model="form.deployWorkflow" placeholder="deploy.yml" />
+            <span class="field-hint">仓库 .github/workflows 下的文件名</span>
+          </el-form-item>
+          <el-form-item label="最长等待部署">
+            <el-input-number v-model="form.deployTimeoutMin" :min="5" :max="120" />
+            <span class="hint">分钟</span>
+          </el-form-item>
+        </div>
+        <el-form-item label="客户验收地址" prop="productionUrl">
+          <el-input v-model="form.productionUrl" placeholder="https://客户实际访问的线上地址" />
+        </el-form-item>
+      </template>
+      <div class="section-label">执行环境</div>
       <div class="form-grid three">
         <el-form-item label="执行器">
           <el-select v-model="form.provider" style="width: 100%">
@@ -73,9 +109,14 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 
-const props = defineProps({ visible: Boolean, data: Object, saving: Boolean })
+const props = defineProps({
+  visible: Boolean,
+  data: Object,
+  saving: Boolean,
+  orders: { type: Array, default: () => [] }
+})
 const emit = defineEmits(['update:visible', 'submit'])
 const formRef = ref()
 const initial = () => ({
@@ -87,6 +128,11 @@ const initial = () => ({
   provider: 'codex',
   model: '',
   profileKey: 'default',
+  orderId: null,
+  automationMode: 'manual',
+  deployWorkflow: 'deploy.yml',
+  deployTimeoutMin: 20,
+  productionUrl: '',
   validationText: '',
   forbiddenText: '',
   maxParallel: 1,
@@ -101,8 +147,32 @@ const rules = {
   ],
   defaultBranch: [{ required: true, message: '请填写默认分支', trigger: 'blur' }],
   profileKey: [{ required: true, message: '请填写 Worker 配置键', trigger: 'blur' }],
-  validationText: [{ required: true, message: '至少配置一条构建或测试命令', trigger: 'blur' }]
+  validationText: [{ required: true, message: '至少配置一条构建或测试命令', trigger: 'blur' }],
+  orderId: [{
+    validator: (_rule, value, callback) => {
+      if (form.automationMode !== 'manual' && !value) callback(new Error('自动模式必须绑定客户项目'))
+      else callback()
+    }, trigger: 'change'
+  }],
+  deployWorkflow: [{
+    validator: (_rule, value, callback) => {
+      if (form.automationMode === 'auto_deploy' && (!/^[A-Za-z0-9][A-Za-z0-9._/-]*\.ya?ml$/.test(value || '') || String(value).includes('..'))) callback(new Error('请填写仓库内的 yml/yaml 工作流文件名'))
+      else callback()
+    }, trigger: 'blur'
+  }],
+  productionUrl: [{
+    validator: (_rule, value, callback) => {
+      if (form.automationMode === 'auto_deploy' && !/^https?:\/\/\S+$/.test(value || '')) callback(new Error('请填写客户可访问的 http/https 地址'))
+      else callback()
+    }, trigger: 'blur'
+  }]
 }
+
+const automationHint = computed(() => ({
+  manual: '人工模式保留现有流程。GitHub 和模型密钥始终只放在 Worker 环境变量中。',
+  auto_pr: '客户提交或追加 Bug 后会自动改码、验证并创建 PR，部署前仍需人工处理。',
+  auto_deploy: '验证通过后将自动合并、等待部署成功并通知客户。失败任务会进入异常队列。'
+}[form.automationMode]))
 
 function lines(value) {
   if (Array.isArray(value)) return value.join('\n')
@@ -132,6 +202,11 @@ async function submit() {
     provider: form.provider,
     model: form.model,
     profileKey: form.profileKey,
+    orderId: form.orderId || null,
+    automationMode: form.automationMode,
+    deployWorkflow: form.deployWorkflow,
+    deployTimeoutMin: form.deployTimeoutMin,
+    productionUrl: form.productionUrl,
     validationCommands: array(form.validationText),
     forbiddenPaths: array(form.forbiddenText),
     maxParallel: form.maxParallel,
@@ -151,6 +226,20 @@ async function submit() {
 }
 .form-grid.three {
   grid-template-columns: 0.8fr 1fr 1fr;
+}
+.section-label {
+  margin: 20px 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #ebeef5;
+  color: #303133;
+  font-size: 13px;
+  font-weight: 700;
+}
+.field-hint {
+  display: block;
+  margin-top: 4px;
+  color: #909399;
+  font-size: 12px;
 }
 .hint {
   margin-left: 10px;

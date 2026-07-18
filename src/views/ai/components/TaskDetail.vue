@@ -23,11 +23,11 @@
       <template v-if="task">
         <div class="action-row">
           <el-button v-if="task.status === 'draft'" type="primary" @click="$emit('dispatch', task)">进入队列</el-button>
-          <el-button v-if="['failed', 'rejected'].includes(task.status)" type="primary" @click="$emit('retry', task)">重新执行</el-button>
+          <el-button v-if="['failed', 'rejected', 'delivery_failed'].includes(task.status)" type="primary" @click="$emit('retry', task)">重新执行</el-button>
           <el-button v-if="task.status === 'awaiting_review'" type="success" @click="$emit('approve', task)">批准候选</el-button>
           <el-button v-if="task.status === 'awaiting_review'" type="danger" plain @click="$emit('reject', task)">驳回</el-button>
           <el-button
-            v-if="['draft', 'queued', 'claimed', 'running', 'awaiting_review', 'failed', 'rejected'].includes(task.status)"
+            v-if="['draft', 'queued', 'claimed', 'running', 'awaiting_review', 'failed', 'rejected', 'delivery_failed'].includes(task.status)"
             plain
             @click="$emit('cancel', task)"
           >取消任务</el-button>
@@ -37,6 +37,12 @@
         <el-alert v-if="task.status === 'awaiting_review'" type="warning" :closable="false" class="review-tip">
           批准前请先打开 PR 审代码，并确认 Head 与 Diff 指纹未变化。批准不会自动合并或发布。
         </el-alert>
+        <el-alert v-if="task.status === 'delivery_failed'" type="error" :closable="false" class="review-tip">
+          自动改码已产出候选，但合并或部署没有完成：{{ task.deliveryError || '请检查部署记录和 Worker 日志。' }}
+        </el-alert>
+        <el-alert v-if="task.status === 'delivered'" type="success" :closable="false" class="review-tip">
+          修改已通过验证、完成部署并同步给客户。
+        </el-alert>
 
         <el-descriptions :column="2" border class="meta">
           <el-descriptions-item label="代码项目">{{ task.projectName }}</el-descriptions-item>
@@ -44,10 +50,20 @@
             <el-tag size="small" :type="RISK[task.riskLevel]?.type">{{ RISK[task.riskLevel]?.label || task.riskLevel }}</el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="订单 / Bug">{{ task.orderId || '-' }} / {{ task.bugId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="来源">{{ sourceLabel(task.sourceType) }}</el-descriptions-item>
           <el-descriptions-item label="创建人">{{ task.createdBy || '-' }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{ formatTime(task.createTime) }}</el-descriptions-item>
           <el-descriptions-item label="更新时间">{{ formatTime(task.updateTime) }}</el-descriptions-item>
         </el-descriptions>
+
+        <section v-if="task.deploymentUrl || task.deliveryUrl" class="section delivery-section">
+          <div class="section-head"><h3>自动交付</h3><span class="hash">{{ shortSha(task.mergedSha) }}</span></div>
+          <div class="delivery-links">
+            <a v-if="task.deploymentUrl" :href="task.deploymentUrl" target="_blank" rel="noopener noreferrer">查看部署 Action</a>
+            <a v-if="task.deliveryUrl" :href="task.deliveryUrl" target="_blank" rel="noopener noreferrer">打开客户验收地址</a>
+            <span v-if="task.deliveredAt">{{ formatTime(task.deliveredAt) }}</span>
+          </div>
+        </section>
 
         <section class="section">
           <div class="section-head">
@@ -163,14 +179,26 @@ function eventLabel(value) {
     'task.dispatched': '进入队列',
     'task.retried': '重新执行',
     'task.cancelled': '取消任务',
+    'task.auto_created': '客户需求自动入队',
+    'task.auto_retried': '失败后自动重试',
     'attempt.claimed': 'Worker 认领',
     'attempt.succeeded': '产出候选 PR',
     'attempt.failed': '执行失败',
     'attempt.expired': '租约过期并回队列',
     'review.approved': '人工批准',
-    'review.rejected': '人工驳回'
+    'review.rejected': '人工驳回',
+    'delivery.succeeded': '部署成功并通知客户',
+    'delivery.failed': '自动交付异常'
   }
   return labels[value] || value
+}
+
+function sourceLabel(value) {
+  return {
+    manual: '后台手动创建',
+    customer_bug: '客户提交 Bug',
+    customer_bug_update: '客户追加说明'
+  }[value] || value || '-'
 }
 
 async function copyEvidence() {
@@ -298,6 +326,28 @@ onBeforeUnmount(() => window.removeEventListener('resize', syncDrawerSize))
   color: #409eff;
   font-weight: 600;
   text-decoration: none;
+}
+.delivery-section {
+  padding: 12px 14px;
+  border: 1px solid #d9ecff;
+  border-radius: 6px;
+  background: #f5f9ff;
+}
+.delivery-links {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.delivery-links a {
+  color: #409eff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.delivery-links span {
+  margin-left: auto;
+  color: #909399;
+  font-size: 12px;
 }
 .attempt-error {
   margin-top: 10px;

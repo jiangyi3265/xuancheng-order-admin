@@ -9,7 +9,7 @@
     @closed="reset"
   >
     <el-alert type="info" :closable="false" class="task-tip">
-      Worker 只会创建独立分支和 PR；批准不会自动合并或发布生产。
+      手动项目会停在 PR 审核；全自动项目验证通过后会自动部署并通知客户。
     </el-alert>
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
       <div class="form-grid">

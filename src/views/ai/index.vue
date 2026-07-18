@@ -3,7 +3,7 @@
     <div class="page-head">
       <div>
         <h1>AI 开发队列</h1>
-        <p>云端编排，自有算力执行；每个结果都以独立 PR 等待人工审核。</p>
+        <p>客户需求自动入队，自有执行机改码验证；正常任务部署后直接通知客户。</p>
       </div>
       <div class="head-actions">
         <el-button :icon="Setting" @click="projectDrawer = true">代码项目</el-button>
@@ -18,7 +18,7 @@
       </button>
       <div class="capacity-note">
         <el-icon><Monitor /></el-icon>
-        <span>{{ enabledProjectCount }} 个项目已启用 · Worker 建议并发 1–2</span>
+        <span>{{ autonomousProjectCount }} 个项目全自动 · {{ enabledProjectCount }} 个项目已启用</span>
       </div>
     </div>
 
@@ -27,7 +27,7 @@
         <el-option v-for="item in projects" :key="item.id" :label="item.name" :value="item.id" />
       </el-select>
       <el-select v-model="filter.status" placeholder="全部状态" clearable style="width: 150px">
-        <el-option label="失败 / 驳回" value="problem" />
+        <el-option label="需要人工处理" value="problem" />
         <el-option v-for="(item, key) in TASK_STATUS" :key="key" :label="item.label" :value="key" />
       </el-select>
       <el-input
@@ -81,7 +81,9 @@
         </el-table-column>
         <el-table-column label="结果" min-width="180" show-overflow-tooltip>
           <template #default="{ row }">
-            <a v-if="row.prUrl" :href="row.prUrl" target="_blank" rel="noopener noreferrer" @click.stop>查看 PR</a>
+            <span v-if="row.status === 'delivery_failed' && row.deliveryError" class="error-text">{{ row.deliveryError }}</span>
+            <a v-else-if="row.status === 'delivered' && row.deliveryUrl" :href="row.deliveryUrl" target="_blank" rel="noopener noreferrer" @click.stop>打开交付地址</a>
+            <a v-else-if="row.prUrl" :href="row.prUrl" target="_blank" rel="noopener noreferrer" @click.stop>查看 PR</a>
             <span v-else-if="row.errorMessage" class="error-text">{{ row.errorMessage }}</span>
             <span v-else class="muted">-</span>
           </template>
@@ -93,7 +95,7 @@
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openTask(row)">详情</el-button>
             <el-button v-if="row.status === 'draft'" link type="primary" @click.stop="doDispatch(row)">排队</el-button>
-            <el-button v-if="['failed', 'rejected'].includes(row.status)" link type="primary" @click.stop="doRetry(row)">重试</el-button>
+            <el-button v-if="['failed', 'rejected', 'delivery_failed'].includes(row.status)" link type="primary" @click.stop="doRetry(row)">重试</el-button>
             <el-button v-if="row.status === 'awaiting_review'" link type="success" @click.stop="doApprove(row)">审核</el-button>
           </template>
         </el-table-column>
@@ -114,6 +116,7 @@
     <ProjectDialog
       v-model:visible="projectDialog"
       :data="editingProject"
+      :orders="orders"
       :saving="savingProject"
       @submit="saveProject"
     />
@@ -135,8 +138,8 @@
     <el-drawer v-model="projectDrawer" class="ai-project-drawer" title="代码项目" :size="projectDrawerSize">
       <div class="project-toolbar">
         <div>
-          <b>项目与执行配置</b>
-          <span>仓库凭证不进入控制面</span>
+          <b>项目与自动交付策略</b>
+          <span>每个客户项目只需绑定一次仓库</span>
         </div>
         <el-button type="primary" :icon="Plus" @click="openProject()">添加项目</el-button>
       </div>
@@ -149,6 +152,16 @@
         </el-table-column>
         <el-table-column label="执行" width="130">
           <template #default="{ row }">{{ row.provider }}<span v-if="row.model"> / {{ row.model }}</span></template>
+        </el-table-column>
+        <el-table-column label="客户项目" min-width="170" show-overflow-tooltip>
+          <template #default="{ row }">{{ row.orderTitle || (row.orderId ? `项目 #${row.orderId}` : '未绑定') }}</template>
+        </el-table-column>
+        <el-table-column label="自动化" width="118">
+          <template #default="{ row }">
+            <el-tag size="small" :type="AUTOMATION_MODE[row.automationMode]?.type" effect="plain">
+              {{ AUTOMATION_MODE[row.automationMode]?.label || row.automationMode }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column prop="maxParallel" label="并发" width="64" align="center" />
         <el-table-column label="状态" width="76">
@@ -173,7 +186,7 @@ import { Monitor, Plus, Refresh, Search, Setting } from '@element-plus/icons-vue
 import TaskDialog from './components/TaskDialog.vue'
 import ProjectDialog from './components/ProjectDialog.vue'
 import TaskDetail from './components/TaskDetail.vue'
-import { RISK, TASK_STATUS, formatTime } from './options'
+import { AUTOMATION_MODE, RISK, TASK_STATUS, formatTime } from './options'
 import {
   approveAiTask,
   cancelAiTask,
@@ -182,6 +195,7 @@ import {
   dispatchAiTask,
   getAiProject,
   getAiTask,
+  listBindableOrders,
   listAiProjects,
   listAiTasks,
   listAttemptLogs,
@@ -191,6 +205,7 @@ import {
 } from '@/api/ai'
 
 const projects = ref([])
+const orders = ref([])
 const allTasks = ref([])
 const loading = ref(false)
 const lastUpdated = ref('')
@@ -207,13 +222,14 @@ const activeTask = ref(null)
 const logs = ref([])
 const logsLoading = ref(false)
 let poller = null
-const projectDrawerSize = ref(window.innerWidth <= 800 ? '100vw' : '760px')
-const syncProjectDrawerSize = () => { projectDrawerSize.value = window.innerWidth <= 800 ? '100vw' : '760px' }
+const projectDrawerSize = ref(window.innerWidth <= 960 ? '100vw' : '920px')
+const syncProjectDrawerSize = () => { projectDrawerSize.value = window.innerWidth <= 960 ? '100vw' : '920px' }
 
 const enabledProjectCount = computed(() => projects.value.filter((item) => Number(item.enabled) === 1).length)
+const autonomousProjectCount = computed(() => projects.value.filter((item) => Number(item.enabled) === 1 && item.automationMode === 'auto_deploy').length)
 const tasks = computed(() => allTasks.value.filter((item) => {
   if (filter.projectId && item.projectId !== filter.projectId) return false
-  if (filter.status === 'problem' && !['failed', 'rejected'].includes(item.status)) return false
+  if (filter.status === 'problem' && !['failed', 'rejected', 'delivery_failed'].includes(item.status)) return false
   if (filter.status && filter.status !== 'problem' && item.status !== filter.status) return false
   if (filter.keyword) {
     const keyword = filter.keyword.trim().toLowerCase()
@@ -224,15 +240,18 @@ const tasks = computed(() => allTasks.value.filter((item) => {
 const summary = computed(() => {
   const count = (states) => allTasks.value.filter((item) => states.includes(item.status)).length
   return [
-    { key: 'active', label: '执行队列', value: count(['queued', 'claimed', 'running']), filter: '' },
-    { key: 'review', label: '待审核', value: count(['awaiting_review']), filter: 'awaiting_review' },
-    { key: 'failed', label: '失败 / 驳回', value: count(['failed', 'rejected']), filter: 'problem' },
-    { key: 'approved', label: '已批准', value: count(['approved']), filter: 'approved' }
+    { key: 'active', label: '执行队列', value: count(['queued', 'claimed', 'running', 'deploying']), filter: '' },
+    { key: 'failed', label: '需要处理', value: count(['failed', 'rejected', 'delivery_failed']), filter: 'problem' },
+    { key: 'review', label: '人工审核', value: count(['awaiting_review']), filter: 'awaiting_review' },
+    { key: 'delivered', label: '已交付客户', value: count(['delivered']), filter: 'delivered' }
   ]
 })
 
 async function loadProjects() {
   projects.value = (await listAiProjects()) || []
+}
+async function loadOrders() {
+  orders.value = (await listBindableOrders()) || []
 }
 async function loadTasks(showError = false) {
   try {
@@ -246,7 +265,7 @@ async function loadAll(showError = false) {
   if (document.visibilityState !== 'visible') return
   loading.value = true
   try {
-    await Promise.all([loadProjects(), loadTasks(showError)])
+    await Promise.all([loadProjects(), loadOrders(), loadTasks(showError)])
     if (detailVisible.value && activeTask.value?.id) await refreshDetail()
   } catch (error) {
     if (showError) ElMessage.error(error.message || '加载 AI 开发队列失败')
@@ -281,13 +300,20 @@ async function openProject(row = null) {
 async function saveProject(data) {
   savingProject.value = true
   try {
+    if (data.automationMode === 'auto_deploy' && editingProject.value?.automationMode !== 'auto_deploy') {
+      await ElMessageBox.confirm(
+        '开启后，客户 Bug 会自动改码、合并并部署；只有部署成功才通知客户。请确认仓库分支规则和部署工作流已经配置。',
+        '开启全自动交付',
+        { type: 'warning', confirmButtonText: '确认开启', cancelButtonText: '暂不开启' }
+      )
+    }
     if (data.id) await updateAiProject(data)
     else await createAiProject(data)
     projectDialog.value = false
     ElMessage.success('代码项目已保存')
     await loadProjects()
   } catch (error) {
-    ElMessage.error(error.message || '保存项目失败')
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.message || '保存项目失败')
   } finally {
     savingProject.value = false
   }
@@ -453,6 +479,7 @@ onBeforeUnmount(() => {
 .status-strip button b.review { color: #e6a23c; }
 .status-strip button b.failed { color: #f56c6c; }
 .status-strip button b.approved { color: #67c23a; }
+.status-strip button b.delivered { color: #67c23a; }
 .capacity-note {
   display: flex;
   align-items: center;
@@ -553,6 +580,21 @@ onBeforeUnmount(() => {
   }
   .head-actions .el-button {
     flex: 1;
+  }
+  .status-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: hidden;
+  }
+  .status-strip button {
+    justify-content: space-between;
+    min-width: 0;
+  }
+  .status-strip button:nth-child(2n) {
+    border-right: 0;
+  }
+  .status-strip button:nth-child(-n + 2) {
+    border-bottom: 1px solid #ebeef5;
   }
   .filters :deep(.el-select),
   .filters :deep(.el-input) {

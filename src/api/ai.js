@@ -2,6 +2,8 @@ import { adminHttp } from '@/mock/store'
 
 const BASE = '/jiedan/ai'
 
+export const listBindableOrders = () => adminHttp('/jiedan/order/list')
+
 function queryString(params = {}) {
   const query = new URLSearchParams()
   Object.entries(params).forEach(([key, value]) => {
