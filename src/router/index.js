@@ -27,6 +27,12 @@ export const menuRoutes = [
     meta: { title: '数据站', icon: 'DataLine' }
   },
   {
+    path: 'ai',
+    name: 'AiPipeline',
+    component: () => import('@/views/ai/index.vue'),
+    meta: { title: 'AI 开发', icon: 'Cpu' }
+  },
+  {
     path: 'settings',
     name: 'Settings',
     component: () => import('@/views/settings/index.vue'),

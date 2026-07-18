@@ -115,6 +115,10 @@ async function http(url, opts = {}) {
   return authedHttp(url, opts, token, logout, '#/login')
 }
 
+export async function adminHttp(url, opts = {}) {
+  return http(url, opts)
+}
+
 export async function customerHttp(url, opts = {}) {
   return authedHttp(url, opts, customerToken, customerLogout, '#/customer-login')
 }

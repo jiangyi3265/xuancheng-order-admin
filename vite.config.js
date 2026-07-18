@@ -18,7 +18,8 @@ export default defineConfig({
     proxy: {
       // 前端调后端接口自动转发到若依，避免跨域
       '/jiedan': { target: BACKEND, changeOrigin: true },
-      '/login': { target: BACKEND, changeOrigin: true }
+      '/login': { target: BACKEND, changeOrigin: true },
+      '/captchaImage': { target: BACKEND, changeOrigin: true }
     }
   },
   preview: {
@@ -26,7 +27,8 @@ export default defineConfig({
     host: true,
     proxy: {
       '/jiedan': { target: BACKEND, changeOrigin: true },
-      '/login': { target: BACKEND, changeOrigin: true }
+      '/login': { target: BACKEND, changeOrigin: true },
+      '/captchaImage': { target: BACKEND, changeOrigin: true }
     }
   }
 })

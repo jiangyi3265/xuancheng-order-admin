@@ -5,6 +5,7 @@
   "description": "玄成科技接单系统管理后台，基于 Vue3、Vite、Element Plus 和 RuoYi 后端 API。",
   "scripts": {
     "dev": "vite",
+    "dev:mock-api": "node scripts/mock-ai-api.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
