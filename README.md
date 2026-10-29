@@ -35,3 +35,12 @@ npm run dev
 ## 简历描述示例
 
 使用 Vue3 + Element Plus 构建接单协同管理后台，实现订单看板、快捷建单、附件处理、数据图表和角色视角切换，提升小团队订单交付跟踪效率。
+
+## 当前部署（2026-10-29）
+
+- 管理后台：https://jiedanxt.oksja.cn/
+- 客户端：https://jiedanxt.oksja.cn/client/
+- 后端由同域名 `/jiedan/**`、`/login`、`/captchaImage` 代理，服务监听 `127.0.0.1:18091`。
+- AI 改码流水线已移除；订单、客户账号、双向沟通、Bug 跟进和附件功能保留。
+- GitHub Actions 负责构建并保存产物，已移除指向旧域名的自动部署。发布操作见后端 `deploy/production.md`。
+- 正式管理员密码单独交付；客户账号由管理员在「客户账号」中创建。线上没有预置演示客户和演示订单。
