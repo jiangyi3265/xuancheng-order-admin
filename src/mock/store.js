@@ -1,5 +1,5 @@
 import { reactive, ref, computed } from 'vue'
-import { MEMBERS } from '@/constants/options'
+import { setStaff, memberMap } from '@/constants/options'
 import { hasPendingUploads } from '@/utils/upload'
 
 const BASE = '/jiedan/order'
@@ -39,12 +39,26 @@ export async function login(username, password, captcha) {
   const nextToken = await postLogin(username, password, captcha)
   token.value = nextToken
   localStorage.setItem('token', nextToken)
+  try {
+    await loadMe()
+  } catch (e) {
+    logout()
+    // 客户账号能登录成功，但没有后台权限
+    if (String(e.message || '').includes('没有权限')) {
+      throw new Error('该账号不是后台账号，客户请从客户端登录')
+    }
+    throw e
+  }
   return true
 }
 
 export function logout() {
   token.value = ''
   localStorage.removeItem('token')
+  // 清掉内存里的身份和项目，避免同一浏览器换账号登录后看到上一个人的数据
+  me.value = null
+  orders.splice(0, orders.length)
+  setStaff([])
 }
 
 export async function customerLogin(username, password, captcha) {
@@ -123,13 +137,68 @@ export async function customerHttp(url, opts = {}) {
   return authedHttp(url, opts, customerToken, customerLogout, '#/customer-login')
 }
 
-export const currentRole = ref('boss')
-export const currentMember = computed(
-  () => MEMBERS.find((m) => m.role === currentRole.value) || MEMBERS[0]
-)
+// 当前登录人：身份来自登录令牌，由后端 /jiedan/staff/me 返回，页面上不能手动切换
+export const me = ref(null)
+export const isBoss = computed(() => me.value?.role === 'boss')
+export const currentMember = computed(() => {
+  const m = me.value
+  if (!m) return { id: 0, name: '', role: 'employee', roleLabel: '', color: '#909399' }
+  return (
+    memberMap[m.id] || {
+      id: m.id,
+      name: m.nickName || m.userName,
+      role: m.role,
+      roleLabel: m.roleLabel,
+      color: m.role === 'boss' ? '#409eff' : '#67c23a'
+    }
+  )
+})
 
-export function switchRole(role) {
-  currentRole.value = role
+export async function loadStaff() {
+  const list = await http('/jiedan/staff/list')
+  setStaff(list || [])
+  return list
+}
+
+export async function loadMe() {
+  me.value = await http('/jiedan/staff/me')
+  await loadStaff().catch(() => {})
+}
+
+// 路由守卫用：有令牌但还没取过身份时去取一次；失败（过期/无权限）就清掉令牌
+export async function ensureMe() {
+  if (!token.value) return false
+  if (me.value) return true
+  try {
+    await loadMe()
+    return true
+  } catch (e) {
+    logout()
+    return false
+  }
+}
+
+// ---------- 成员管理（仅总管理员） ----------
+export async function createStaff(payload) {
+  return await http('/jiedan/staff', { method: 'POST', body: JSON.stringify(payload) })
+}
+
+export async function resetStaffPwd(userId, password) {
+  return await http('/jiedan/staff/reset', {
+    method: 'PUT',
+    body: JSON.stringify({ userId, password })
+  })
+}
+
+export async function setStaffStatus(userId, status) {
+  return await http('/jiedan/staff/status', {
+    method: 'PUT',
+    body: JSON.stringify({ userId, status })
+  })
+}
+
+export async function deleteStaff(userId) {
+  return await http('/jiedan/staff/' + userId, { method: 'DELETE' })
 }
 
 export const orders = reactive([])
@@ -171,17 +240,15 @@ export async function getOrderVersion(id) {
   return await http(`${BASE}/${id}/version`)
 }
 
+// 操作人由后端按登录令牌确定，请求里不再带“我是谁”
 export async function createOrder(data) {
-  const me = currentMember.value
-  const payload = { ...data, byMemberId: me.id, byUserName: me.name }
-  const vo = await http(BASE, { method: 'POST', body: JSON.stringify(payload) })
+  const vo = await http(BASE, { method: 'POST', body: JSON.stringify({ ...data }) })
   if (vo) orders.unshift(vo)
   return vo
 }
 
 export async function editOrder(data) {
-  const payload = { ...data, byMemberId: currentMember.value.id }
-  const vo = await http(BASE, { method: 'PUT', body: JSON.stringify(payload) })
+  const vo = await http(BASE, { method: 'PUT', body: JSON.stringify({ ...data }) })
   upsert(vo)
   return vo
 }
@@ -193,13 +260,10 @@ export async function removeOrder(id) {
 }
 
 export async function createBug(id, content, attachments = []) {
-  const me = currentMember.value
   const payload = {
     orderId: id,
     content,
-    attachments: attachments || [],
-    byMemberId: me.id,
-    byUserName: me.name
+    attachments: attachments || []
   }
   const vo = await http(`${BASE}/bug`, { method: 'POST', body: JSON.stringify(payload) })
   upsert(vo)
@@ -213,12 +277,9 @@ export async function deleteBug(id) {
 }
 
 export async function appendBugUpdate(id, content, attachments = []) {
-  const me = currentMember.value
   const payload = {
     content,
-    attachments: attachments || [],
-    byMemberId: me.id,
-    byUserName: me.name
+    attachments: attachments || []
   }
   const vo = await http(`${BASE}/bug/${id}/update`, { method: 'POST', body: JSON.stringify(payload) })
   upsert(vo)
@@ -226,24 +287,20 @@ export async function appendBugUpdate(id, content, attachments = []) {
 }
 
 export async function updateBugStatus(id, status) {
-  const me = currentMember.value
   const vo = await http(`${BASE}/bug/${id}/status`, {
     method: 'PUT',
-    body: JSON.stringify({ status, byMemberId: me.id, byUserName: me.name })
+    body: JSON.stringify({ status })
   })
   upsert(vo)
   return vo
 }
 
 export async function addProgress(id, content, type = 'note', attachments = []) {
-  const me = currentMember.value
   const payload = {
     orderId: id,
     content,
     type,
-    attachments: attachments || [],
-    byMemberId: me.id,
-    byUserName: me.name
+    attachments: attachments || []
   }
   const vo = await http(`${BASE}/progress`, { method: 'POST', body: JSON.stringify(payload) })
   upsert(vo)
@@ -251,10 +308,9 @@ export async function addProgress(id, content, type = 'note', attachments = []) 
 }
 
 export async function setStatus(id, status) {
-  const me = currentMember.value
   const vo = await http(`${BASE}/status`, {
     method: 'PUT',
-    body: JSON.stringify({ id, status, byMemberId: me.id, byUserName: me.name })
+    body: JSON.stringify({ id, status })
   })
   upsert(vo)
   return vo
@@ -270,20 +326,18 @@ export async function markRead(id, memberId) {
 }
 
 export async function addRevision(id) {
-  const me = currentMember.value
   const vo = await http(`${BASE}/revision`, {
     method: 'POST',
-    body: JSON.stringify({ id, byMemberId: me.id, byUserName: me.name })
+    body: JSON.stringify({ id })
   })
   upsert(vo)
   return vo
 }
 
 export async function nudge(id) {
-  const me = currentMember.value
   const vo = await http(`${BASE}/nudge`, {
     method: 'POST',
-    body: JSON.stringify({ id, byMemberId: me.id, byUserName: me.name })
+    body: JSON.stringify({ id })
   })
   upsert(vo)
   return vo
@@ -338,6 +392,14 @@ export async function resetCustomerPwd(userId, password) {
 
 export async function deleteCustomer(userId) {
   return await http('/jiedan/customer/' + userId, { method: 'DELETE' })
+}
+
+// 把客户转交给另一位管理员负责（仅总管理员）
+export async function setCustomerOwner(userId, ownerId) {
+  return await http('/jiedan/customer/owner', {
+    method: 'PUT',
+    body: JSON.stringify({ userId, ownerId })
+  })
 }
 
 export function now() {

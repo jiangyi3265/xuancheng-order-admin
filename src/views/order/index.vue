@@ -24,7 +24,7 @@
         <el-select v-model="filter.channel" placeholder="渠道" clearable style="width: 110px">
           <el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value" />
         </el-select>
-        <el-select v-model="filter.ownerId" placeholder="负责人" clearable style="width: 110px">
+        <el-select v-if="MEMBERS.length > 1" v-model="filter.ownerId" placeholder="负责人" clearable style="width: 110px">
           <el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" />
         </el-select>
         <el-select v-model="filter.status" placeholder="状态" clearable style="width: 110px">

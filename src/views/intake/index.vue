@@ -106,7 +106,6 @@ async function submit() {
       amount: form.amount || 0,
       attachments: [...form.attachments],
       channel: 'form',
-      ownerId: 2,
       status: 'pending',
       priority: 'medium',
       byUserName: form.customer.trim() || customerName.value || '客户提交'

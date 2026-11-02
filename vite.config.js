@@ -2,7 +2,8 @@ import { fileURLToPath, URL } from 'node:url'
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
-const BACKEND = 'http://localhost:8080'
+// 后端地址默认 8080；本机 8080 被占用时可用环境变量 XC_BACKEND 指向别处
+const BACKEND = process.env.XC_BACKEND || 'http://localhost:8080'
 
 export default defineConfig({
   plugins: [vue()],

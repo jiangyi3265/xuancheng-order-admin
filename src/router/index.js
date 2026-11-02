@@ -1,5 +1,6 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import Layout from '@/layout/index.vue'
+import { ensureMe, isBoss } from '@/mock/store'
 
 export const menuRoutes = [
   {
@@ -19,6 +20,12 @@ export const menuRoutes = [
     name: 'Customers',
     component: () => import('@/views/customers/index.vue'),
     meta: { title: '客户账号', icon: 'User' }
+  },
+  {
+    path: 'staff',
+    name: 'Staff',
+    component: () => import('@/views/staff/index.vue'),
+    meta: { title: '成员管理', icon: 'UserFilled', bossOnly: true }
   },
   {
     path: 'dashboard',
@@ -63,7 +70,7 @@ const router = createRouter({
   routes
 })
 
-router.beforeEach((to) => {
+router.beforeEach(async (to) => {
   if (to.path === '/login') {
     return localStorage.getItem('token') ? '/' : true
   }
@@ -77,6 +84,9 @@ router.beforeEach((to) => {
     return true
   }
   if (!localStorage.getItem('token')) return '/login'
+  // 先确认“我是谁”（总管理员 / 下属管理员），取不到就回登录页
+  if (!(await ensureMe())) return '/login'
+  if (to.meta.bossOnly && !isBoss.value) return '/workbench'
   return true
 })
 

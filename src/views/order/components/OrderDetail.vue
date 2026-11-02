@@ -163,7 +163,7 @@
               <div class="section-head">
                 <div>
                   <h3>内部记录</h3>
-                  <p>只给总裁和副总裁看，不同步给客户。</p>
+                  <p>只给后台管理员看，不同步给客户。</p>
                 </div>
                 <el-tag size="small" type="info" effect="plain">{{ recordItems.length }} 条</el-tag>
               </div>
@@ -206,7 +206,7 @@
             <div class="section-head">
               <div>
                 <h3>客户沟通</h3>
-                <p>这里发送的消息客户能看到，总裁和副总裁也能看到。</p>
+                <p>这里发送的消息客户能看到，负责人和总管理员也能看到。</p>
               </div>
               <div class="sync-meta">
                 <span class="sync-state" :class="{ reconnecting: syncState === 'reconnecting' }">

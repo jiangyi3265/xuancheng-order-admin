@@ -21,8 +21,8 @@
         </el-col>
         <el-col :span="12">
           <el-form-item label="负责人">
-            <el-select v-model="form.ownerId" style="width: 100%">
-              <el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" />
+            <el-select v-model="form.ownerId" style="width: 100%" :disabled="!isBoss">
+              <el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" :disabled="m.status !== '0'" />
             </el-select>
           </el-form-item>
         </el-col>
@@ -143,7 +143,7 @@ import { ElMessage } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
 import { CHANNEL, PRIORITY, STATUS, MEMBERS } from '@/constants/options'
-import { listCustomers, createCustomer } from '@/mock/store'
+import { listCustomers, createCustomer, currentMember, isBoss } from '@/mock/store'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -206,7 +206,7 @@ function submitQuickCreate() {
 const blank = () => ({
   title: '',
   channel: 'wechat',
-  ownerId: MEMBERS[0].id,
+  ownerId: currentMember.value.id,
   customer: '',
   customerAccount: '',
   contact: '',

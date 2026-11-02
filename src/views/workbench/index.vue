@@ -90,8 +90,8 @@ import { Paperclip, Clock, Refresh, Promotion, Bell } from '@element-plus/icons-
 import OrderDetail from '@/views/order/components/OrderDetail.vue'
 import OrderDialog from '@/views/order/components/OrderDialog.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
-import { orders, getOrder, currentMember, editOrder, removeOrder, setStatus, nudge } from '@/mock/store'
-import { statusMap, BOSS_ID } from '@/constants/options'
+import { orders, getOrder, currentMember, isBoss, editOrder, removeOrder, setStatus, nudge } from '@/mock/store'
+import { statusMap } from '@/constants/options'
 import { isMyTodo, isWaitingOther, nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
 
@@ -105,17 +105,16 @@ const waitingList = computed(() => orders.filter((o) => isWaitingOther(o, curren
 
 function reasonFor(o) {
   if (isUnread(o)) return '对方有新动态，点开查看'
-  if (currentMember.value.id === BOSS_ID) {
-    if (o.status === 'review') return '副总裁已提交，待你验收'
-    if (o.status === 'pending') return '客户需求已录入，待确认 / 派给副总裁'
-  } else {
-    if (o.status === 'doing') return '进行中，记得推进并回报进度'
+  if (isBoss.value && o.status === 'review') return '负责人已提交，待你验收'
+  if (isBoss.value && o.status === 'pending' && o.ownerId !== currentMember.value.id) {
+    return '客户需求已录入，待确认 / 派给负责人'
   }
+  if (o.status === 'doing') return '进行中，记得推进并回报进度'
   return '待处理'
 }
 function waitReasonFor(o) {
-  if (currentMember.value.id === BOSS_ID) return '副总裁进行中，等交付'
-  return '已提交，等总裁验收'
+  if (isBoss.value) return '负责人进行中，等交付'
+  return '已提交，等总管理员验收'
 }
 
 const naOf = (o) => nextAction(o, currentMember.value.id)

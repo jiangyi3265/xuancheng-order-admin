@@ -47,7 +47,7 @@
       </div>
     </div>
 
-    <div class="qc-row">
+    <div v-if="isBoss && MEMBERS.length > 1" class="qc-row">
       <span class="qc-label">派给</span>
       <el-radio-group v-model="ownerId">
         <el-radio-button v-for="m in MEMBERS" :key="m.id" :value="m.id">
@@ -58,7 +58,7 @@
 
     <template #footer>
       <div class="qc-footer">
-        <span class="qc-foot-hint">建单后自动通知 {{ ownerName }} · Ctrl+Enter 提交</span>
+        <span class="qc-foot-hint">{{ notifyHint ? notifyHint + ' · ' : '' }}Ctrl+Enter 提交</span>
         <el-button @click="open = false">取消</el-button>
         <el-button type="primary" :icon="Promotion" @click="submit">建单并派单</el-button>
       </div>
@@ -72,8 +72,8 @@ import { ElMessage } from 'element-plus'
 import { Lightning, Promotion, MagicStick } from '@element-plus/icons-vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
-import { createOrder } from '@/mock/store'
-import { CHANNEL, MEMBERS, EMP_ID, memberMap } from '@/constants/options'
+import { createOrder, currentMember, isBoss } from '@/mock/store'
+import { CHANNEL, MEMBERS, memberMap } from '@/constants/options'
 import { parseOrderHints } from '@/utils/parse'
 
 const open = ref(false)
@@ -84,10 +84,19 @@ const deadline = ref('')
 const autoHint = ref('')
 // 记住上次选择
 const channel = ref(localStorage.getItem('qc.channel') || 'wechat')
-const ownerId = ref(Number(localStorage.getItem('qc.owner')) || EMP_ID)
+// 下属管理员只能建在自己名下；总管理员记住上次派给谁（那个人已不存在则默认自己）
+const savedOwner = Number(localStorage.getItem('qc.owner'))
+const ownerId = ref(
+  isBoss.value && MEMBERS.some((m) => m.id === savedOwner) ? savedOwner : currentMember.value.id
+)
 const textRef = ref(null)
 
 const ownerName = computed(() => memberMap[ownerId.value]?.name || '')
+const notifyHint = computed(() => {
+  if (!isBoss.value) return '建单后自动通知总管理员'
+  if (ownerId.value === currentMember.value.id) return ''
+  return `建单后自动通知 ${ownerName.value}`
+})
 
 // 粘贴/输入文本时，智能识别报价与截止（仅在用户未手动填时）
 watch(text, (val) => {
@@ -139,7 +148,7 @@ function submit() {
   // 记住本次选择
   localStorage.setItem('qc.channel', channel.value)
   localStorage.setItem('qc.owner', String(ownerId.value))
-  ElMessage.success(`已建单，并通知 ${ownerName.value}`)
+  ElMessage.success(isBoss.value && ownerId.value !== currentMember.value.id ? `已建单，并通知 ${ownerName.value}` : '已建单')
   open.value = false
 }
 

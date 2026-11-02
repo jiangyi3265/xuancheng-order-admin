@@ -1,3 +1,5 @@
+import { reactive } from 'vue'
+
 // 订单状态（编程/开发类流程）
 export const STATUS = [
   { value: 'pending', label: '待确认', type: 'info', color: '#909399' },
@@ -27,13 +29,32 @@ export const PRIORITY = [
   { value: 'low', label: '低', color: '#909399' }
 ]
 
-// 团队成员（你们俩，名字随便改）
-export const MEMBERS = [
-  { id: 1, name: '尚琦凯', role: 'boss', roleLabel: '总裁', color: '#409eff' },
-  { id: 2, name: '费鹏飞', role: 'employee', roleLabel: '副总裁', color: '#67c23a' }
-]
-export const BOSS_ID = 1
-export const EMP_ID = 2
+// 后台成员（总管理员 + 下属管理员）。登录后由后端 /jiedan/staff/list 加载：
+// 总管理员拿到全部成员，下属管理员只拿到自己。
+// MEMBERS / memberMap 是响应式的，加载后用到它们的页面会自动刷新。
+const MEMBER_COLORS = ['#67c23a', '#e6a23c', '#f56c6c', '#9254de', '#13c2c2', '#fa8c16']
+export const MEMBERS = reactive([])
+export const memberMap = reactive({})
+
+export function setStaff(list) {
+  const next = (list || []).map((s) => ({
+    id: s.id,
+    name: s.nickName || s.userName,
+    userName: s.userName,
+    role: s.role,
+    roleLabel: s.roleLabel,
+    status: s.status,
+    orderCount: s.orderCount,
+    unfinishedCount: s.unfinishedCount,
+    createTime: s.createTime,
+    color: s.role === 'boss' ? '#409eff' : MEMBER_COLORS[Number(s.id) % MEMBER_COLORS.length]
+  }))
+  MEMBERS.splice(0, MEMBERS.length, ...next)
+  Object.keys(memberMap).forEach((k) => delete memberMap[k])
+  next.forEach((m) => { memberMap[m.id] = m })
+}
+
+export const isBossId = (id) => memberMap[id]?.role === 'boss'
 
 const toMap = (arr, key = 'value') =>
   Object.fromEntries(arr.map((item) => [item[key], item]))
@@ -41,4 +62,3 @@ const toMap = (arr, key = 'value') =>
 export const statusMap = toMap(STATUS)
 export const channelMap = toMap(CHANNEL)
 export const priorityMap = toMap(PRIORITY)
-export const memberMap = toMap(MEMBERS, 'id')

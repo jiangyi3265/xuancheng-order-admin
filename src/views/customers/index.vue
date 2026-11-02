@@ -11,6 +11,9 @@
     <el-table :data="list" v-loading="loading" border stripe>
       <el-table-column label="账号" prop="userName" min-width="130" />
       <el-table-column label="昵称" prop="nickName" min-width="130" />
+      <el-table-column v-if="isBoss" label="归属管理员" min-width="120">
+        <template #default="{ row }">{{ row.ownerName || '—' }}</template>
+      </el-table-column>
       <el-table-column label="名下项目" width="140" align="center">
         <template #default="{ row }">
           <span>{{ row.projectCount || 0 }} 个</span>
@@ -27,8 +30,9 @@
         </template>
       </el-table-column>
       <el-table-column label="创建时间" prop="createTime" min-width="160" />
-      <el-table-column label="操作" width="200" align="center" fixed="right">
+      <el-table-column label="操作" :width="isBoss ? 260 : 200" align="center" fixed="right">
         <template #default="{ row }">
+          <el-button v-if="isBoss" link type="primary" @click="openTransfer(row)">转交</el-button>
           <el-button link type="primary" @click="doReset(row)">重置密码</el-button>
           <el-button link type="danger" @click="doDelete(row)">删除</el-button>
         </template>
@@ -50,27 +54,58 @@
         <el-form-item label="密码" prop="password">
           <el-input v-model="createForm.password" placeholder="5-20 位" show-password />
         </el-form-item>
+        <el-form-item v-if="isBoss" label="归属管理员">
+          <el-select v-model="createForm.ownerId" style="width: 100%">
+            <el-option v-for="m in assignable" :key="m.id" :label="m.name + '（' + m.roleLabel + '）'" :value="m.id" />
+          </el-select>
+          <div class="field-hint">该客户提交的需求会自动归这位管理员负责</div>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
         <el-button type="primary" :loading="saving" @click="submitCreate">创建</el-button>
       </template>
     </el-dialog>
+
+    <!-- 转交客户（仅总管理员） -->
+    <el-dialog v-model="transferVisible" title="转交客户" width="420px">
+      <p class="transfer-tip">
+        把「{{ transferRow?.userName }}」转交给：
+      </p>
+      <el-select v-model="transferOwnerId" style="width: 100%">
+        <el-option v-for="m in assignable" :key="m.id" :label="m.name + '（' + m.roleLabel + '）'" :value="m.id" />
+      </el-select>
+      <div class="field-hint">只影响之后提交的新需求；已有项目的负责人不变，需要的话到「接单管理」里改。</div>
+      <template #footer>
+        <el-button @click="transferVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saving" @click="submitTransfer">确定转交</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import { listCustomers, createCustomer, resetCustomerPwd, deleteCustomer } from '@/mock/store'
+import { MEMBERS } from '@/constants/options'
+import {
+  listCustomers, createCustomer, resetCustomerPwd, deleteCustomer, setCustomerOwner,
+  isBoss, currentMember
+} from '@/mock/store'
 
 const list = ref([])
 const loading = ref(false)
 const saving = ref(false)
 const createVisible = ref(false)
 const formRef = ref()
-const createForm = reactive({ userName: '', nickName: '', password: '' })
+const createForm = reactive({ userName: '', nickName: '', password: '', ownerId: null })
+// 可以当客户归属管理员的人：总管理员自己 + 未停用的下属
+const assignable = computed(() => MEMBERS.filter((m) => m.status === '0'))
+
+const transferVisible = ref(false)
+const transferRow = ref(null)
+const transferOwnerId = ref(null)
 
 const rules = {
   userName: [
@@ -98,8 +133,30 @@ function openCreate() {
   createForm.userName = ''
   createForm.nickName = ''
   createForm.password = ''
+  createForm.ownerId = currentMember.value.id
   createVisible.value = true
   formRef.value?.clearValidate()
+}
+
+function openTransfer(row) {
+  transferRow.value = row
+  transferOwnerId.value = row.ownerId
+  transferVisible.value = true
+}
+
+async function submitTransfer() {
+  if (!transferOwnerId.value) return
+  saving.value = true
+  try {
+    await setCustomerOwner(transferRow.value.userId, transferOwnerId.value)
+    ElMessage.success('已转交')
+    transferVisible.value = false
+    load()
+  } catch (e) {
+    ElMessage.error(e.message || '转交失败')
+  } finally {
+    saving.value = false
+  }
 }
 
 function submitCreate() {
@@ -107,7 +164,7 @@ function submitCreate() {
     if (!ok) return
     saving.value = true
     try {
-      await createCustomer({ ...createForm })
+      await createCustomer({ ...createForm, ownerId: isBoss.value ? createForm.ownerId : undefined })
       ElMessage.success('客户账号创建成功')
       createVisible.value = false
       load()
@@ -175,5 +232,15 @@ onMounted(load)
 .title span {
   font-size: 13px;
   color: #909399;
+}
+.field-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #909399;
+}
+.transfer-tip {
+  margin: 0 0 10px;
+  color: #606266;
 }
 </style>

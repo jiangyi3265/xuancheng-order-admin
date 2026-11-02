@@ -11,11 +11,11 @@
       </el-alert>
 
       <el-form label-width="120px" class="form">
-        <el-form-item label="启用推送">
+        <el-form-item v-if="isBoss" label="启用推送">
           <el-switch v-model="enabled" />
         </el-form-item>
 
-        <el-form-item label="提前提醒天数">
+        <el-form-item v-if="isBoss" label="提前提醒天数">
           <el-input-number v-model="aheadDays" :min="0" :max="30" />
           <span class="hint">截止前几天开始提醒，每天 9:00 自动检查</span>
         </el-form-item>
@@ -29,7 +29,7 @@
 
         <el-form-item>
           <el-button type="primary" :icon="Check" @click="save" :loading="saving">保存设置</el-button>
-          <el-button :icon="AlarmClock" @click="triggerReminder">立即检查逾期并推送</el-button>
+          <el-button v-if="isBoss" :icon="AlarmClock" @click="triggerReminder">立即检查逾期并推送</el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -52,8 +52,11 @@
       <template #header>
         <span class="title"><el-icon><User /></el-icon> 成员</span>
       </template>
-      <p class="muted">
-        当前为两人协作：左上角角色切换代表当前操作人，分别是总裁和副总裁。
+      <p v-if="isBoss" class="muted">
+        每位成员用自己的账号登录。在「成员管理」里创建下属管理员：下属只能看到负责人是自己的项目，看不到你的项目；你能看到全部。
+      </p>
+      <p v-else class="muted">
+        你用自己的账号登录，只能看到负责人是你的项目；新单、验收、催办等提醒也只会推送给你自己。
       </p>
     </el-card>
   </div>
@@ -64,7 +67,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Bell, User, Promotion, Check, AlarmClock, Share, CopyDocument, Link } from '@element-plus/icons-vue'
 import { MEMBERS } from '@/constants/options'
-import { getPushConfig, savePushConfig, testPush, runDeadlineReminder } from '@/mock/store'
+import { getPushConfig, savePushConfig, testPush, runDeadlineReminder, isBoss } from '@/mock/store'
 
 const enabled = ref(true)
 const aheadDays = ref(1)
@@ -100,10 +103,10 @@ async function load() {
 async function save() {
   saving.value = true
   try {
-    const cfg = {
-      'push.enabled': String(enabled.value),
-      'push.aheadDays': String(aheadDays.value)
-    }
+    // 全局开关只有总管理员能改；下属管理员只保存自己的 SendKey（MEMBERS 里只有自己）
+    const cfg = isBoss.value
+      ? { 'push.enabled': String(enabled.value), 'push.aheadDays': String(aheadDays.value) }
+      : {}
     MEMBERS.forEach((m) => { cfg['push.sendkey.' + m.id] = keys[m.id] || '' })
     await savePushConfig(cfg)
     ElMessage.success('已保存')

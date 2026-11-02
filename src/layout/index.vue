@@ -14,7 +14,7 @@
         active-text-color="#ffffff"
         @select="mobileOpen = false"
       >
-        <el-menu-item v-for="r in menuRoutes" :key="r.path" :index="'/' + r.path">
+        <el-menu-item v-for="r in visibleRoutes" :key="r.path" :index="'/' + r.path">
           <el-icon><component :is="r.meta.icon" /></el-icon>
           <span class="menu-content">
             <span class="menu-title">{{ r.meta.title }}</span>
@@ -39,11 +39,9 @@
           <div class="title">{{ currentTitle }}</div>
         </div>
         <div class="user">
-          <span class="role-tip">当前视角</span>
-          <el-radio-group :model-value="currentRole" size="small" @change="switchRole">
-            <el-radio-button value="boss">总裁</el-radio-button>
-            <el-radio-button value="employee">副总裁</el-radio-button>
-          </el-radio-group>
+          <el-tag size="small" effect="plain" :type="isBoss ? 'primary' : 'info'">
+            {{ currentMember.roleLabel }}
+          </el-tag>
           <el-avatar :size="30" :style="{ background: currentMember.color }">
             {{ currentMember.name.slice(-1) }}
           </el-avatar>
@@ -68,12 +66,14 @@ import { SwitchButton } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { menuRoutes } from '@/router'
 import QuickCapture from '@/components/QuickCapture.vue'
-import { orders, currentRole, currentMember, switchRole, loadOrders, logout } from '@/mock/store'
+import { orders, currentMember, isBoss, loadOrders, logout } from '@/mock/store'
 import { isMyTodo } from '@/utils/workbench'
 
 const route = useRoute()
 const router = useRouter()
 const activeMenu = computed(() => route.path)
+// 「成员管理」只有总管理员看得到
+const visibleRoutes = computed(() => menuRoutes.filter((r) => !r.meta.bossOnly || isBoss.value))
 const currentTitle = computed(() => route.meta.title || '玄成接单系统')
 const mobileOpen = ref(false)
 let orderPoller = null
@@ -205,10 +205,6 @@ function badgeOf(path) {
   font-size: 14px;
   color: #606266;
 }
-.role-tip {
-  font-size: 12px;
-  color: #909399;
-}
 .logout {
   cursor: pointer;
   color: #909399;
@@ -250,7 +246,6 @@ function badgeOf(path) {
   .header .title {
     font-size: 16px;
   }
-  .role-tip,
   .header .name {
     display: none;
   }
