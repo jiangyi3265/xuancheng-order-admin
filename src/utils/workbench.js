@@ -36,7 +36,10 @@ export function nextAction(order, memberId) {
   }
   if (order.ownerId === memberId) {
     if (order.status === 'pending') return { to: 'doing', label: '开始做' }
-    if (order.status === 'doing') return { to: 'review', label: '提交验收' }
+    if (order.status === 'doing') {
+      // 总管理员自己负责的项目没有别人来验收，做完直接完成；下属负责的才走「提交验收」
+      return isBossId(memberId) ? { to: 'done', label: '完成' } : { to: 'review', label: '提交验收' }
+    }
   }
   return null
 }

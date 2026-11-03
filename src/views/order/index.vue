@@ -16,10 +16,10 @@
       <div class="right">
         <el-input
           v-model="filter.keyword"
-          placeholder="搜索项目名 / 客户"
+          placeholder="搜项目名 / 客户 / 联系方式 / 需求"
           :prefix-icon="Search"
           clearable
-          style="width: 200px"
+          style="width: 250px"
         />
         <el-select v-model="filter.channel" placeholder="渠道" clearable style="width: 110px">
           <el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value" />
@@ -30,9 +30,10 @@
         <el-select v-model="filter.status" placeholder="状态" clearable style="width: 110px">
           <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
-        <el-select v-model="filter.paid" placeholder="收款" clearable style="width: 100px">
-          <el-option label="已收款" value="1" />
-          <el-option label="未收款" value="0" />
+        <el-select v-model="filter.paid" placeholder="收款" clearable style="width: 110px">
+          <el-option label="还欠款" value="0" />
+          <el-option label="部分已收" value="part" />
+          <el-option label="已收清" value="1" />
         </el-select>
         <el-date-picker
           v-model="createRange"
@@ -98,7 +99,10 @@
                 <span class="deadline" :class="{ red: isOverdue(element) }">
                   <el-icon><Clock /></el-icon> {{ element.deadline || '无' }}
                 </span>
-                <span class="amount">¥{{ element.amount || 0 }}</span>
+                <span class="amount" title="点击记收款" @click.stop="openPay(element)">
+                  ¥{{ element.amount || 0 }}
+                  <i v-if="payText(element)" class="pay-flag" :class="payState(element)">{{ payText(element) }}</i>
+                </span>
               </div>
             </div>
           </template>
@@ -135,20 +139,52 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="金额" width="100">
+        <el-table-column label="报价" width="90">
           <template #default="{ row }">¥{{ row.amount || 0 }}</template>
+        </el-table-column>
+        <el-table-column label="收款" width="120">
+          <template #default="{ row }">
+            <el-tag
+              size="small"
+              :type="PAY_STATE[payState(row)].type"
+              effect="light"
+              class="pay-tag"
+              title="点击记收款"
+              @click.stop="openPay(row)"
+            >{{ payText(row) || PAY_STATE[payState(row)].label }}</el-tag>
+          </template>
         </el-table-column>
         <el-table-column label="截止" width="120">
           <template #default="{ row }">
             <span :class="{ 'red-text': isOverdue(row) }">{{ row.deadline || '-' }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="210" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
-            <el-button link type="warning" @click.stop="openNotebook(row)">记事本</el-button>
-            <el-button link type="primary" @click.stop="openDialog(row)">编辑</el-button>
-            <el-button link type="danger" @click.stop="handleDelete(row)">删除</el-button>
+            <el-button link type="success" @click.stop="openPay(row)">收款</el-button>
+            <el-button
+              v-if="!['done', 'cancelled'].includes(row.status)"
+              link
+              type="primary"
+              @click.stop="changeStatus(row, 'done')"
+            >完成</el-button>
+            <el-dropdown trigger="click" @command="(c) => onMore(c, row)">
+              <el-button link type="primary" @click.stop>更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="notebook">记事本</el-dropdown-item>
+                  <el-dropdown-item command="edit">编辑</el-dropdown-item>
+                  <el-dropdown-item
+                    v-for="s in STATUS.filter((x) => x.value !== row.status)"
+                    :key="s.value"
+                    :command="'status:' + s.value"
+                    :divided="s.value === STATUS.filter((x) => x.value !== row.status)[0].value"
+                  >设为「{{ s.label }}」</el-dropdown-item>
+                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
         <template #empty>
@@ -175,6 +211,9 @@
 
     <!-- 项目记事本 -->
     <NotebookDialog v-model:visible="notebookVisible" :order="notebookOrder" />
+
+    <!-- 记收款 -->
+    <PaymentDialog v-model:visible="payVisible" :order="payOrder" />
   </div>
 </template>
 
@@ -182,14 +221,16 @@
 import { ref, reactive, computed, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Grid, List, Download } from '@element-plus/icons-vue'
+import { Plus, Search, Grid, List, Download, ArrowDown } from '@element-plus/icons-vue'
 import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
+import PaymentDialog from '@/components/PaymentDialog.vue'
 import {
   orders, getOrder, createOrder, editOrder, removeOrder, setStatus, currentMember, exportOrders
 } from '@/mock/store'
 import { todayStr as todayLocal } from '@/utils/date'
+import { PAY_STATE, payState, payFilterOk, owed, money } from '@/utils/payment'
 import {
   STATUS, CHANNEL, MEMBERS, KANBAN_STATUS,
   statusMap, channelMap, priorityMap, memberMap
@@ -217,8 +258,7 @@ const filteredOrders = computed(() =>
     if (filter.channel && o.channel !== filter.channel) return false
     if (filter.ownerId && o.ownerId !== filter.ownerId) return false
     if (filter.status && o.status !== filter.status) return false
-    if (filter.paid === '1' && !o.paid) return false
-    if (filter.paid === '0' && o.paid) return false
+    if (!payFilterOk(o, filter.paid)) return false
     if (filter.overdueOnly && !isOverdue(o)) return false
     if (createRange.value) {
       const day = String(o.createTime || '').slice(0, 10)
@@ -226,7 +266,8 @@ const filteredOrders = computed(() =>
     }
     if (filter.keyword) {
       const kw = filter.keyword.trim().toLowerCase()
-      if (!`${o.title} ${o.customer || ''} ${o.orderNo || ''}`.toLowerCase().includes(kw)) return false
+      const hay = `${o.title} ${o.customer || ''} ${o.orderNo || ''} ${o.contact || ''} ${o.requirement || ''}`
+      if (!hay.toLowerCase().includes(kw)) return false
     }
     return true
   })
@@ -298,14 +339,51 @@ async function doExport() {
   }
 }
 
-function onDragChange(evt, targetStatus) {
-  if (evt.added) {
-    const moved = evt.added.element
-    if (moved && moved.status !== targetStatus) {
-      setStatus(moved.id, targetStatus)
-      ElMessage.success(`「${moved.title}」已移到 ${statusMap[targetStatus].label}`)
-    }
+async function onDragChange(evt, targetStatus) {
+  if (!evt.added) return
+  const moved = evt.added.element
+  if (!moved || moved.status === targetStatus) return
+  try {
+    await setStatus(moved.id, targetStatus)
+    ElMessage.success(`「${moved.title}」已移到 ${statusMap[targetStatus].label}`)
+  } catch (e) {
+    // 服务器没改成功：把卡片放回原来的列，并说清楚
+    ElMessage.error((e.message || '修改状态失败') + '，已放回原位')
+    rebuild()
   }
+}
+
+// 列表里一键改状态（完成 / 更多里的设为…）
+async function changeStatus(row, status) {
+  try {
+    await setStatus(row.id, status)
+    ElMessage.success(`「${row.title}」→ ${statusMap[status].label}`)
+  } catch (e) {
+    ElMessage.error(e.message || '修改状态失败')
+  }
+}
+
+function onMore(command, row) {
+  if (command === 'notebook') openNotebook(row)
+  else if (command === 'edit') openDialog(row)
+  else if (command === 'delete') handleDelete(row)
+  else if (command.startsWith('status:')) changeStatus(row, command.slice(7))
+}
+
+// 收款
+const payVisible = ref(false)
+const payOrder = ref(null)
+function openPay(row) {
+  payOrder.value = row
+  payVisible.value = true
+}
+// 看板/列表上的收款小标签：没收 → 未收；收了一部分 → 欠多少；收清 → 已收清；没报价 → 不显示
+function payText(o) {
+  const st = payState(o)
+  if (st === 'none') return '未收'
+  if (st === 'part') return '欠' + money(owed(o))
+  if (st === 'full') return '已收清'
+  return ''
 }
 
 // 弹窗 / 抽屉状态
@@ -561,6 +639,10 @@ function handleDelete(row) {
   display: flex;
   align-items: center;
   gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .card-foot .deadline.red {
   color: #f56c6c;
@@ -570,6 +652,32 @@ function handleDelete(row) {
   margin-left: auto;
   color: #e6a23c;
   font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pay-flag {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  padding: 0 5px;
+  margin-left: 4px;
+}
+.pay-flag.none {
+  color: #f56c6c;
+  background: #fef0f0;
+}
+.pay-flag.part {
+  color: #e6a23c;
+  background: #fdf6ec;
+}
+.pay-flag.full {
+  color: #67c23a;
+  background: #f0f9eb;
+}
+.pay-tag {
+  cursor: pointer;
 }
 .ghost {
   opacity: 0.4;

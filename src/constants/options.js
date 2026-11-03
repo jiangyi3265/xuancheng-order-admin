@@ -38,6 +38,8 @@ export const AUDIT_ACTIONS = [
   { value: 'order.restore', label: '恢复项目', type: 'success' },
   { value: 'order.purge', label: '彻底删除', type: 'danger' },
   { value: 'order.export', label: '导出 Excel', type: 'warning' },
+  { value: 'payment.add', label: '记收款', type: 'success' },
+  { value: 'payment.delete', label: '删除收款', type: 'danger' },
   { value: 'bug.delete', label: '删除 Bug', type: 'danger' },
   { value: 'staff.create', label: '新建成员', type: 'success' },
   { value: 'staff.reset', label: '重置成员密码', type: 'warning' },

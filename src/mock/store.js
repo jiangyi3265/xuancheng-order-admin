@@ -332,6 +332,22 @@ export async function editOrder(data) {
   return vo
 }
 
+// ---------- 收款流水：每收一笔记一条，已收金额由服务端按流水合计 ----------
+export async function addPayment(orderId, payload) {
+  const vo = await http(`${BASE}/${orderId}/payment`, { method: 'POST', body: JSON.stringify(payload) })
+  return upsert(vo)
+}
+
+export async function removePayment(paymentId) {
+  const vo = await http(`${BASE}/payment/${paymentId}`, { method: 'DELETE' })
+  return upsert(vo)
+}
+
+// 实收统计：{ thisMonth, total, months: [{ month: '2026-11', amount }] }
+export async function getIncome() {
+  return await http(`${BASE}/income`)
+}
+
 export async function removeOrder(id) {
   await http(`${BASE}/${id}`, { method: 'DELETE' })
   const i = orders.findIndex((o) => o.id === id)

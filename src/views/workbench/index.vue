@@ -118,15 +118,23 @@ function waitReasonFor(o) {
 }
 
 const naOf = (o) => nextAction(o, currentMember.value.id)
-function quickNext(o) {
+async function quickNext(o) {
   const na = naOf(o)
   if (!na) return
-  setStatus(o.id, na.to)
-  ElMessage.success(`「${o.title}」→ ${statusMap[na.to]?.label}`)
+  try {
+    await setStatus(o.id, na.to)
+    ElMessage.success(`「${o.title}」→ ${statusMap[na.to]?.label}`)
+  } catch (e) {
+    ElMessage.error(e.message || '修改状态失败')
+  }
 }
-function quickNudge(o) {
-  nudge(o.id)
-  ElMessage.success(`已催办「${o.title}」，对方会收到提醒`)
+async function quickNudge(o) {
+  try {
+    await nudge(o.id)
+    ElMessage.success(`已催办「${o.title}」，对方会收到提醒`)
+  } catch (e) {
+    ElMessage.error(e.message || '催办失败')
+  }
 }
 
 // 到期/逾期标签

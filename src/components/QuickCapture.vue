@@ -23,6 +23,19 @@
     </div>
 
     <div class="qc-row">
+      <span class="qc-label">客户</span>
+      <el-autocomplete
+        v-model="customer"
+        :fetch-suggestions="suggestCustomers"
+        :debounce="100"
+        clearable
+        placeholder="选填：客户名 / 旺旺号，可选以前的客户"
+        style="flex: 1"
+        @select="onPickCustomer"
+      />
+    </div>
+
+    <div class="qc-row">
       <span class="qc-label">报价</span>
       <el-input-number v-model="amount" :min="0" :step="100" controls-position="right" style="width: 150px" />
       <span v-if="autoHint" class="qc-auto"><el-icon><MagicStick /></el-icon> {{ autoHint }}</span>
@@ -60,7 +73,7 @@
       <div class="qc-footer">
         <span class="qc-foot-hint">{{ notifyHint ? notifyHint + ' · ' : '' }}Ctrl+Enter 提交</span>
         <el-button @click="open = false">取消</el-button>
-        <el-button type="primary" :icon="Promotion" @click="submit">建单并派单</el-button>
+        <el-button type="primary" :icon="Promotion" :loading="submitting" @click="submit">建单并派单</el-button>
       </div>
     </template>
   </el-dialog>
@@ -72,7 +85,7 @@ import { ElMessage } from 'element-plus'
 import { Lightning, Promotion, MagicStick } from '@element-plus/icons-vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
-import { createOrder, currentMember, isBoss } from '@/mock/store'
+import { createOrder, currentMember, isBoss, orders } from '@/mock/store'
 import { CHANNEL, MEMBERS, memberMap } from '@/constants/options'
 import { parseOrderHints } from '@/utils/parse'
 
@@ -80,6 +93,9 @@ const open = ref(false)
 const text = ref('')
 const media = ref([])
 const amount = ref(0)
+const customer = ref('')
+const contact = ref('')
+const submitting = ref(false)
 const deadline = ref('')
 const autoHint = ref('')
 // 记住上次选择
@@ -110,8 +126,29 @@ watch(text, (val) => {
 function onOpen() {
   nextTick(() => textRef.value?.focus())
 }
+// 以前填过的客户：按最近用到的排前面，选中后把联系方式也带上
+const knownCustomers = computed(() => {
+  const seen = new Map()
+  for (const o of orders) {
+    const name = (o.customer || '').trim()
+    if (name && !seen.has(name)) seen.set(name, { value: name, contact: (o.contact || '').trim() })
+    else if (name && !seen.get(name).contact && o.contact) seen.get(name).contact = o.contact.trim()
+  }
+  return [...seen.values()]
+})
+function suggestCustomers(q, cb) {
+  const kw = (q || '').trim().toLowerCase()
+  const list = knownCustomers.value.filter((c) => !kw || c.value.toLowerCase().includes(kw))
+  cb(list.slice(0, 8))
+}
+function onPickCustomer(item) {
+  if (item.contact && !contact.value) contact.value = item.contact
+}
+
 function reset() {
   text.value = ''
+  customer.value = ''
+  contact.value = ''
   media.value = []
   amount.value = 0
   deadline.value = ''
@@ -126,25 +163,35 @@ function deriveTitle() {
   return ''
 }
 
-function submit() {
+async function submit() {
+  if (submitting.value) return
   const title = deriveTitle()
   if (!title) {
     ElMessage.warning('粘贴点内容或加张图再建单吧')
     return
   }
-  createOrder({
-    title,
-    requirement: text.value.trim(),
-    attachments: [...media.value],
-    channel: channel.value,
-    ownerId: ownerId.value,
-    status: 'pending',
-    priority: 'medium',
-    amount: amount.value || 0,
-    deadline: deadline.value || '',
-    customer: '',
-    contact: ''
-  })
+  submitting.value = true
+  try {
+    await createOrder({
+      title,
+      requirement: text.value.trim(),
+      attachments: [...media.value],
+      channel: channel.value,
+      ownerId: ownerId.value,
+      status: 'pending',
+      priority: 'medium',
+      amount: amount.value || 0,
+      deadline: deadline.value || '',
+      customer: customer.value.trim(),
+      contact: contact.value.trim()
+    })
+  } catch (e) {
+    // 没建成功：窗口和已粘贴的内容都留着，不会白贴一遍
+    ElMessage.error(e.message || '建单失败，请重试')
+    return
+  } finally {
+    submitting.value = false
+  }
   // 记住本次选择
   localStorage.setItem('qc.channel', channel.value)
   localStorage.setItem('qc.owner', String(ownerId.value))

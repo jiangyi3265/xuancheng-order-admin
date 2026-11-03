@@ -32,6 +32,7 @@
           <el-select v-model="statusModel" size="small" class="status-select" @change="onStatus">
             <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
           </el-select>
+          <el-button size="small" type="success" plain :icon="Coin" @click="payVisible = true">记收款</el-button>
           <el-button size="small" type="warning" plain :icon="Notebook" @click="emit('notebook', order)">项目记事本</el-button>
           <el-button size="small" plain :icon="EditPen" @click="doRevision">改稿 +1</el-button>
           <el-button size="small" plain :icon="Bell" @click="doNudge">催一下</el-button>
@@ -58,6 +59,14 @@
                 {{ memberMap[order.ownerId]?.name }}（{{ memberMap[order.ownerId]?.roleLabel }}）
               </el-descriptions-item>
               <el-descriptions-item label="报价">¥{{ order.amount || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="收款" :span="2">
+                <el-tag size="small" :type="PAY_STATE[payState(order)].type" effect="light">{{ PAY_STATE[payState(order)].label }}</el-tag>
+                <span class="pay-text">
+                  已收 {{ money(order.receivedAmount) }}
+                  <template v-if="owed(order) > 0"> · 还欠 <b class="red">{{ money(owed(order)) }}</b></template>
+                </span>
+                <el-button link type="primary" size="small" @click="payVisible = true">记收款</el-button>
+              </el-descriptions-item>
               <el-descriptions-item label="优先级">{{ priorityMap[order.priority]?.label || '-' }}</el-descriptions-item>
               <el-descriptions-item label="改稿次数">
                 {{ order.revisions || 0 }} 次
@@ -66,7 +75,7 @@
               <el-descriptions-item label="截止日期">
                 <span :class="{ red: isOverdue }">{{ order.deadline || '-' }}</span>
               </el-descriptions-item>
-              <el-descriptions-item label="需求" :span="2">
+              <el-descriptions-item label="需求" :span="3">
                 <span class="requirement">{{ order.requirement || '-' }}</span>
               </el-descriptions-item>
             </el-descriptions>
@@ -248,19 +257,22 @@
         </aside>
       </div>
     </div>
+    <PaymentDialog v-model:visible="payVisible" :order="order" />
   </el-drawer>
 </template>
 
 <script setup>
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close } from '@element-plus/icons-vue'
+import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close, Coin } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
+import PaymentDialog from '@/components/PaymentDialog.vue'
 import { getOrder, getOrderVersion, setStatus, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate, updateBugStatus, currentMember } from '@/mock/store'
 import { STATUS, statusMap, channelMap, priorityMap, memberMap } from '@/constants/options'
 import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
+import { PAY_STATE, payState, owed, money } from '@/utils/payment'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -285,6 +297,7 @@ const updateText = ref('')
 const updateFiles = ref([])
 const updateSubmittingId = ref(null)
 const statusModel = ref('')
+const payVisible = ref(false)
 const chatList = ref(null)
 const syncState = ref('online')
 const syncing = ref(false)
@@ -665,6 +678,9 @@ function dotColor(type) {
 }
 .inline-tag {
   margin-left: 6px;
+}
+.pay-text {
+  margin: 0 8px;
 }
 .red {
   color: #f56c6c;
