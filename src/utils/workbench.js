@@ -31,6 +31,8 @@ export function isWaitingOther(order, memberId) {
 // 当前角色对这个单的“下一步一键动作”，没有则返回 null
 export function nextAction(order, memberId) {
   if (!order || ['done', 'cancelled'].includes(order.status)) return null
+  // 老板刚派过来、还没接收的项目：先接收（或拒绝），不能直接开工
+  if (order.assignState === 'pending') return null
   if (isBossId(memberId) && order.status === 'review') {
     return { to: 'done', label: '验收通过' }
   }

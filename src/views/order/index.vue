@@ -107,6 +107,10 @@
                 </span>
               </div>
               <div class="card-title">{{ element.title }}</div>
+              <div v-if="element.assignState === 'pending' || Number(element.pendingApprovals) > 0" class="card-flags">
+                <span v-if="element.assignState === 'pending'" class="flag amber">{{ isBoss ? '等 ' + (memberMap[element.ownerId]?.name || '负责人') + ' 接收' : '待接收' }}</span>
+                <span v-if="Number(element.pendingApprovals) > 0" class="flag red">{{ element.pendingApprovals }} 条申请待批</span>
+              </div>
               <div class="card-customer">
                 <el-icon><User /></el-icon> {{ element.customer || '未填客户' }}
                 <span v-if="element.attachmentCount || (element.attachments && element.attachments.length)" class="img-flag">
@@ -195,11 +199,17 @@
             <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
             <el-button link type="success" @click.stop="openPay(row)">收款</el-button>
             <el-button
-              v-if="!['done', 'cancelled'].includes(row.status)"
+              v-if="canFinish(row)"
               link
               type="primary"
-              @click.stop="changeStatus(row, 'done')"
-            >完成</el-button>
+              @click.stop="changeStatus(row, isBoss ? 'done' : 'review')"
+            >{{ isBoss ? '完成' : '提交验收' }}</el-button>
+            <el-button
+              v-if="!isBoss && row.assignState === 'pending'"
+              link
+              type="warning"
+              @click.stop="openDetail(row)"
+            >去接收</el-button>
             <el-dropdown trigger="click" @command="(c) => onMore(c, row)">
               <el-button link type="primary" @click.stop>更多<el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
               <template #dropdown>
@@ -207,12 +217,19 @@
                   <el-dropdown-item command="notebook">记事本</el-dropdown-item>
                   <el-dropdown-item command="edit">编辑</el-dropdown-item>
                   <el-dropdown-item
-                    v-for="s in STATUS.filter((x) => x.value !== row.status)"
+                    v-for="(s, i) in moreStatuses(row)"
                     :key="s.value"
                     :command="'status:' + s.value"
-                    :divided="s.value === STATUS.filter((x) => x.value !== row.status)[0].value"
+                    :divided="i === 0"
                   >设为「{{ s.label }}」</el-dropdown-item>
-                  <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                  <template v-if="isBoss">
+                    <el-dropdown-item command="delete" divided>删除</el-dropdown-item>
+                  </template>
+                  <template v-else>
+                    <el-dropdown-item command="request:amount" divided>申请改报价</el-dropdown-item>
+                    <el-dropdown-item v-if="!['done', 'cancelled'].includes(row.status)" command="request:cancel">申请取消</el-dropdown-item>
+                    <el-dropdown-item command="request:delete">申请删除</el-dropdown-item>
+                  </template>
                 </el-dropdown-menu>
               </template>
             </el-dropdown>
@@ -245,6 +262,9 @@
 
     <!-- 记收款 -->
     <PaymentDialog v-model:visible="payVisible" :order="payOrder" />
+
+    <!-- 员工申请改报价 / 取消 / 删除 -->
+    <ApprovalRequestDialog v-model:visible="reqVisible" :order="reqOrder" :type="reqType" />
   </div>
 </template>
 
@@ -258,6 +278,7 @@ import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
+import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
 import AssignMenu from '@/components/AssignMenu.vue'
 import { changeOrderStatus } from '@/utils/settle'
 import {
@@ -484,7 +505,25 @@ function onMore(command, row) {
   else if (command === 'edit') openDialog(row)
   else if (command === 'delete') handleDelete(row)
   else if (command.startsWith('status:')) changeStatus(row, command.slice(7))
+  else if (command.startsWith('request:')) {
+    reqOrder.value = row
+    reqType.value = command.slice(8)
+    reqVisible.value = true
+  }
 }
+
+// 员工不能自己把项目标成“已完成 / 已取消”（走提交验收 / 申请），所以“设为…”里不给这两项
+const moreStatuses = (row) =>
+  STATUS.filter((x) => x.value !== row.status && (isBoss.value || ['pending', 'doing', 'review'].includes(x.value)))
+// 老板：没完成的都能一键完成；员工：进行中的能一键提交验收（刚派来还没接收的先去接收）
+const canFinish = (row) => {
+  if (['done', 'cancelled'].includes(row.status)) return false
+  if (isBoss.value) return true
+  return row.status === 'doing' && row.assignState !== 'pending'
+}
+const reqVisible = ref(false)
+const reqOrder = ref(null)
+const reqType = ref('amount')
 
 // 收款
 const payVisible = ref(false)
@@ -844,6 +883,26 @@ function handleDelete(row) {
 }
 .qchip.warn b {
   color: #f56c6c;
+}
+.card-flags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: -2px 0 8px;
+}
+.flag {
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 0 6px;
+  line-height: 18px;
+}
+.flag.amber {
+  color: #e6a23c;
+  background: #fdf6ec;
+}
+.flag.red {
+  color: #f56c6c;
+  background: #fef0f0;
 }
 .who {
   display: inline-flex;

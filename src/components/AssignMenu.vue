@@ -47,7 +47,7 @@ async function assign(id) {
   try {
     await editOrder({ id: props.order.id, ownerId: id })
     const name = memberMap[id]?.name || ''
-    ElMessage.success(id === me.value.id ? '已转到你自己名下' : `已派给 ${name}，TA 会收到通知`)
+    ElMessage.success(id === me.value.id ? '已转到你自己名下' : `已派给 ${name}，TA 接收后开工`)
   } catch (e) {
     ElMessage.error(e.message || '派单失败')
   }

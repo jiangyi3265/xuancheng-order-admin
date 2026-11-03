@@ -195,7 +195,7 @@ async function submit() {
   // 记住本次选择
   localStorage.setItem('qc.channel', channel.value)
   localStorage.setItem('qc.owner', String(ownerId.value))
-  ElMessage.success(isBoss.value && ownerId.value !== currentMember.value.id ? `已建单，并通知 ${ownerName.value}` : '已建单')
+  ElMessage.success(isBoss.value && ownerId.value !== currentMember.value.id ? `已建单，已派给 ${ownerName.value}，等 TA 接收` : '已建单')
   open.value = false
 }
 

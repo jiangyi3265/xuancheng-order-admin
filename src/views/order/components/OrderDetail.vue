@@ -27,17 +27,50 @@
         </div>
 
         <div class="head-actions">
+          <!-- 员工：老板刚派来的项目，先接收或拒绝 -->
+          <template v-if="pendingAccept">
+            <el-button type="primary" :loading="accepting" @click="doAccept">接收这个项目</el-button>
+            <el-button @click="rejectVisible = true">拒绝…</el-button>
+          </template>
           <el-button v-if="na" type="primary" :icon="Promotion" @click="doNext">{{ na.label }}</el-button>
-          <span class="inline-label">手动设为</span>
-          <el-select v-model="statusModel" size="small" class="status-select" @change="onStatus">
-            <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
-          </el-select>
-          <el-button size="small" type="success" plain :icon="Coin" @click="payVisible = true">记收款</el-button>
-          <el-button size="small" type="warning" plain :icon="Notebook" @click="emit('notebook', order)">项目记事本</el-button>
-          <el-button size="small" plain :icon="EditPen" @click="doRevision">改稿 +1</el-button>
-          <el-button size="small" plain :icon="Bell" @click="doNudge">催一下</el-button>
-          <el-button size="small" plain :icon="Edit" @click="emit('edit', order)">编辑</el-button>
-          <el-button size="small" type="danger" plain :icon="Delete" @click="emit('delete', order)">删除</el-button>
+          <el-button
+            v-if="isBoss && ['review', 'done'].includes(order.status)"
+            type="warning"
+            plain
+            :icon="RefreshLeft"
+            @click="returnVisible = true"
+          >退回返工…</el-button>
+          <template v-if="!pendingAccept">
+            <span class="inline-label">手动设为</span>
+            <el-select v-model="statusModel" size="small" class="status-select" @change="onStatus">
+              <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
+            </el-select>
+            <el-button size="small" type="success" plain :icon="Coin" @click="payVisible = true">{{ isBoss ? '记收款' : '申请收款' }}</el-button>
+            <el-button size="small" type="warning" plain :icon="Notebook" @click="emit('notebook', order)">项目记事本</el-button>
+            <el-button size="small" plain :icon="EditPen" @click="doRevision">改稿 +1</el-button>
+            <el-button size="small" plain :icon="Bell" @click="doNudge">催一下</el-button>
+            <el-button size="small" plain :icon="Edit" @click="emit('edit', order)">编辑</el-button>
+            <el-button v-if="isBoss" size="small" type="danger" plain :icon="Delete" @click="emit('delete', order)">删除</el-button>
+            <template v-else>
+              <el-button
+                v-if="!['done', 'cancelled'].includes(order.status)"
+                size="small"
+                plain
+                :icon="Back"
+                @click="handbackVisible = true"
+              >交回老板…</el-button>
+              <el-dropdown trigger="click" @command="openRequest">
+                <el-button size="small" plain>申请… <el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+                <template #dropdown>
+                  <el-dropdown-menu>
+                    <el-dropdown-item command="amount">改报价</el-dropdown-item>
+                    <el-dropdown-item v-if="!['done', 'cancelled'].includes(order.status)" command="cancel">取消项目</el-dropdown-item>
+                    <el-dropdown-item command="delete">删除项目</el-dropdown-item>
+                  </el-dropdown-menu>
+                </template>
+              </el-dropdown>
+            </template>
+          </template>
           <el-button circle class="close-btn" :icon="Close" @click="emit('update:visible', false)" />
         </div>
       </header>
@@ -52,20 +85,28 @@
               </div>
             </div>
 
+            <div v-if="pendingHere.length" class="approval-banner">
+              <div class="ab-title">{{ isBoss ? '这个项目有待你批准的申请' : '这个项目有等老板批准的申请' }}（{{ pendingHere.length }}）</div>
+              <ApprovalItem v-for="a in pendingHere" :key="a.id" :a="a" :show-order="false" />
+            </div>
+
             <el-descriptions :column="3" border size="small" class="desc">
               <el-descriptions-item label="客户">{{ order.customer || '-' }}</el-descriptions-item>
               <el-descriptions-item label="联系方式">{{ order.contact || '-' }}</el-descriptions-item>
               <el-descriptions-item label="负责人">
                 {{ memberMap[order.ownerId]?.name }}（{{ roleName(memberMap[order.ownerId]?.role) }}）
               </el-descriptions-item>
-              <el-descriptions-item label="报价">¥{{ order.amount || 0 }}</el-descriptions-item>
+              <el-descriptions-item label="报价">
+                ¥{{ order.amount || 0 }}
+                <el-button v-if="!isBoss && !pendingAccept" link type="primary" size="small" @click="openRequest('amount')">申请改价</el-button>
+              </el-descriptions-item>
               <el-descriptions-item label="收款" :span="2">
                 <el-tag size="small" :type="PAY_STATE[payState(order)].type" effect="light">{{ PAY_STATE[payState(order)].label }}</el-tag>
                 <span class="pay-text">
                   已收 {{ money(order.receivedAmount) }}
                   <template v-if="owed(order) > 0"> · 还欠 <b class="red">{{ money(owed(order)) }}</b></template>
                 </span>
-                <el-button link type="primary" size="small" @click="payVisible = true">记收款</el-button>
+                <el-button link type="primary" size="small" @click="payVisible = true">{{ isBoss ? '记收款' : '申请收款' }}</el-button>
               </el-descriptions-item>
               <el-descriptions-item label="优先级">{{ priorityMap[order.priority]?.label || '-' }}</el-descriptions-item>
               <el-descriptions-item label="改稿次数">
@@ -258,17 +299,50 @@
       </div>
     </div>
     <PaymentDialog v-model:visible="payVisible" :order="order" />
+    <ReasonDialog
+      v-model:visible="returnVisible"
+      title="退回返工"
+      tip="项目会回到“进行中”，改稿次数 +1，负责人会看到你写的原因。"
+      placeholder="写一下哪里要改，比如：首页配色不对"
+      confirm-text="退回返工"
+      :submit="doReturn"
+    />
+    <ReasonDialog
+      v-model:visible="handbackVisible"
+      title="交回给老板"
+      tip="项目会回到老板名下，变成“待确认”，你就看不到它了。老板会看到你写的原因。"
+      placeholder="写一下为什么要交回，比如：这个我不会做"
+      confirm-text="交回"
+      danger
+      :submit="doHandback"
+    />
+    <ReasonDialog
+      v-model:visible="rejectVisible"
+      title="拒绝这个项目"
+      tip="项目会回到老板名下，老板会看到你写的原因。"
+      placeholder="写一下为什么不接，比如：这周排满了"
+      confirm-text="拒绝"
+      danger
+      :submit="doReject"
+    />
+    <ApprovalRequestDialog v-model:visible="requestVisible" :order="order" :type="requestType" />
   </el-drawer>
 </template>
 
 <script setup>
 import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue'
-import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close, Coin } from '@element-plus/icons-vue'
+import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close, Coin, RefreshLeft, Back, ArrowDown } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
-import { getOrder, getOrderVersion, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate, updateBugStatus, currentMember } from '@/mock/store'
+import ReasonDialog from '@/components/ReasonDialog.vue'
+import ApprovalItem from '@/components/ApprovalItem.vue'
+import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
+import {
+  getOrder, getOrderVersion, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate,
+  updateBugStatus, currentMember, isBoss, approvals, acceptOrder, rejectOrder, handbackOrder, returnOrder
+} from '@/mock/store'
 import { STATUS, statusMap, channelMap, priorityMap, memberMap, roleName } from '@/constants/options'
 import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
@@ -299,6 +373,50 @@ const updateFiles = ref([])
 const updateSubmittingId = ref(null)
 const statusModel = ref('')
 const payVisible = ref(false)
+
+// ---- 流转：接收 / 拒绝 / 交回 / 退回返工 / 申请 ----
+const accepting = ref(false)
+const rejectVisible = ref(false)
+const handbackVisible = ref(false)
+const returnVisible = ref(false)
+const requestVisible = ref(false)
+const requestType = ref('amount')
+const pendingAccept = computed(() => !isBoss.value && props.order?.assignState === 'pending')
+const pendingHere = computed(() => approvals.filter((a) => a.orderId === props.order?.id && a.status === 'pending'))
+// 员工不能自己把项目标成“已完成 / 已取消”（要走提交验收 / 申请），所以下拉里不给这两项
+const statusOptions = computed(() =>
+  STATUS.filter((s) => isBoss.value || ['pending', 'doing', 'review'].includes(s.value) || s.value === props.order?.status)
+)
+
+async function doAccept() {
+  accepting.value = true
+  try {
+    await acceptOrder(props.order.id)
+    ElMessage.success('已接收，可以开工了')
+  } catch (e) {
+    ElMessage.error(e.message || '接收失败')
+  } finally {
+    accepting.value = false
+  }
+}
+async function doReject(reason) {
+  await rejectOrder(props.order.id, reason)
+  ElMessage.success('已拒绝，项目回到老板名下')
+  emit('update:visible', false)
+}
+async function doHandback(reason) {
+  await handbackOrder(props.order.id, reason)
+  ElMessage.success('已交回给老板')
+  emit('update:visible', false)
+}
+async function doReturn(reason) {
+  await returnOrder(props.order.id, reason)
+  ElMessage.success('已退回返工，负责人会收到通知')
+}
+function openRequest(type) {
+  requestType.value = type
+  requestVisible.value = true
+}
 const chatList = ref(null)
 const syncState = ref('online')
 const syncing = ref(false)
@@ -692,6 +810,17 @@ function dotColor(type) {
 }
 .pay-text {
   margin: 0 8px;
+}
+.approval-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ab-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #e6a23c;
 }
 .red {
   color: #f56c6c;

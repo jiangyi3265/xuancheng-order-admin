@@ -64,7 +64,15 @@
       <el-row :gutter="12">
         <el-col :span="8">
           <el-form-item label="报价(元)">
-            <el-input-number v-model="form.amount" :min="0" :step="100" controls-position="right" style="width: 100%" />
+            <el-input-number
+              v-model="form.amount"
+              :min="0"
+              :step="100"
+              controls-position="right"
+              style="width: 100%"
+              :disabled="!!form.id && !isBoss"
+            />
+            <div v-if="!!form.id && !isBoss" class="amount-hint">改报价要申请：在项目详情里点“申请改价”</div>
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -77,7 +85,7 @@
         <el-col :span="8">
           <el-form-item label="状态">
             <el-select v-model="form.status" style="width: 100%">
-              <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
+              <el-option v-for="s in statusOpts" :key="s.value" :label="s.label" :value="s.value" />
             </el-select>
           </el-form-item>
         </el-col>
@@ -137,7 +145,7 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, computed } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
@@ -152,6 +160,10 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'save'])
 
 const formRef = ref()
+// 员工不能自己把项目标成“已完成 / 已取消”（走提交验收 / 申请）
+const statusOpts = computed(() =>
+  STATUS.filter((s) => isBoss.value || ['pending', 'doing', 'review'].includes(s.value) || s.value === form.status)
+)
 const customers = ref([])
 
 // ---- 快捷新建客户账号 ----
@@ -238,6 +250,12 @@ function submit() {
 </script>
 
 <style scoped>
+.amount-hint {
+  font-size: 12px;
+  color: #909399;
+  line-height: 1.4;
+  margin-top: 4px;
+}
 .cust-account {
   display: flex;
   gap: 8px;

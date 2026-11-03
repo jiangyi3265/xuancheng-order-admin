@@ -72,7 +72,7 @@ import { roleName } from '@/constants/options'
 import QuickCapture from '@/components/QuickCapture.vue'
 import SettleDialog from '@/components/SettleDialog.vue'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
-import { orders, currentMember, isBoss, syncOrders, logout } from '@/mock/store'
+import { orders, pendingApprovals, currentMember, isBoss, syncOrders, logout } from '@/mock/store'
 import { isMyTodo } from '@/utils/workbench'
 
 const route = useRoute()
@@ -115,7 +115,9 @@ function doLogout() {
 }
 
 const todoCount = computed(
-  () => orders.filter((o) => isMyTodo(o, currentMember.value.id)).length
+  () =>
+    orders.filter((o) => isMyTodo(o, currentMember.value.id)).length +
+    (isBoss.value ? pendingApprovals.value.length : 0)
 )
 const unreadCount = computed(
   () => orders.filter((o) => o.unread?.includes(currentMember.value.id)).length

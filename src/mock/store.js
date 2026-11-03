@@ -58,6 +58,7 @@ export function logout() {
   // 清掉内存里的身份和项目，避免同一浏览器换账号登录后看到上一个人的数据
   me.value = null
   orders.splice(0, orders.length)
+  approvals.splice(0, approvals.length)
   lastStamp = null
   setStaff([])
 }
@@ -204,6 +205,10 @@ export async function deleteStaff(userId) {
 
 export const orders = reactive([])
 
+// 申请（员工的改报价/取消/删除/收款）：老板看到全部，员工只看到自己的
+export const approvals = reactive([])
+export const pendingApprovals = computed(() => approvals.filter((a) => a.status === 'pending'))
+
 function upsert(vo) {
   if (!vo) return null
   const i = orders.findIndex((o) => o.id === vo.id)
@@ -240,6 +245,7 @@ export async function syncOrders(force = false) {
   const { stamp } = await http(`${BASE}/stamp`)
   if (!force && stamp === lastStamp) return false
   await loadOrders()
+  await loadApprovals().catch(() => {})
   lastStamp = stamp
   return true
 }
@@ -330,6 +336,70 @@ export async function editOrder(data) {
   const vo = await http(BASE, { method: 'PUT', body: JSON.stringify({ ...data }) })
   upsert(vo)
   return vo
+}
+
+// ---------- 流转：接收 / 拒绝 / 交回 / 退回返工 ----------
+function dropLocal(id) {
+  const i = orders.findIndex((o) => o.id === id)
+  if (i > -1) orders.splice(i, 1)
+}
+
+export async function acceptOrder(id) {
+  const vo = await http(`${BASE}/${id}/accept`, { method: 'POST', body: '{}' })
+  return upsert(vo)
+}
+
+// 拒绝 / 交回之后项目回到老板名下，员工就看不到了，本地也一并去掉
+export async function rejectOrder(id, reason) {
+  await http(`${BASE}/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) })
+  dropLocal(id)
+}
+
+export async function handbackOrder(id, reason) {
+  await http(`${BASE}/${id}/handback`, { method: 'POST', body: JSON.stringify({ reason }) })
+  dropLocal(id)
+}
+
+export async function returnOrder(id, reason) {
+  const vo = await http(`${BASE}/${id}/return`, { method: 'POST', body: JSON.stringify({ reason }) })
+  return upsert(vo)
+}
+
+// ---------- 申请 ----------
+export async function loadApprovals() {
+  const list = await http('/jiedan/approval/list')
+  approvals.splice(0, approvals.length, ...(list || []))
+  return approvals
+}
+
+// 申请之后项目的“待批数量”变了，顺手刷新一下
+async function afterApproval(orderId) {
+  await loadApprovals().catch(() => {})
+  if (orderId) await getOrder(orderId).catch(() => {})
+}
+
+export async function requestApproval({ orderId, type, reason, payload }) {
+  const r = await http('/jiedan/approval', {
+    method: 'POST',
+    body: JSON.stringify({ orderId, type, reason, payload: payload || {} })
+  })
+  await afterApproval(orderId)
+  return r
+}
+
+export async function approveApproval(id, note = '') {
+  await http(`/jiedan/approval/${id}/approve`, { method: 'POST', body: JSON.stringify({ note }) })
+  await syncOrders(true)
+}
+
+export async function rejectApproval(id, note) {
+  await http(`/jiedan/approval/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) })
+  await syncOrders(true)
+}
+
+export async function withdrawApproval(id) {
+  await http(`/jiedan/approval/${id}/withdraw`, { method: 'POST', body: '{}' })
+  await syncOrders(true)
 }
 
 // ---------- 收款流水：每收一笔记一条，已收金额由服务端按流水合计 ----------

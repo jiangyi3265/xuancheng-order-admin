@@ -14,6 +14,28 @@
       <el-button :icon="Refresh" text @click="$forceUpdate()" style="margin-left: auto" />
     </div>
 
+    <!-- 老板：员工提交的申请，批了才生效 -->
+    <template v-if="isBoss && pendingApprovals.length">
+      <div class="section-title amber-bar">
+        <span><span class="ico">📝</span> 待我批准</span>
+        <el-tag type="warning" effect="dark" round size="small">{{ pendingApprovals.length }}</el-tag>
+      </div>
+      <div class="approval-list">
+        <ApprovalItem v-for="a in pendingApprovals" :key="a.id" :a="a" />
+      </div>
+    </template>
+
+    <!-- 员工：自己提交过的申请，老板批了才生效 -->
+    <template v-if="!isBoss && myRequests.length">
+      <div class="section-title gray-bar">
+        <span><span class="ico">📝</span> 我的申请</span>
+        <span class="team-tip">老板批准了才生效</span>
+      </div>
+      <div class="approval-list">
+        <ApprovalItem v-for="a in myRequests" :key="a.id" :a="a" />
+      </div>
+    </template>
+
     <!-- 老板：每个人手上有多少单，点进去只看这个人的 -->
     <template v-if="isBoss && team.length > 1">
       <div class="section-title blue-bar">
@@ -56,6 +78,10 @@
           <div class="rc-reason">{{ reasonFor(o) }}</div>
         </div>
         <div class="rc-meta">
+          <template v-if="!isBoss && o.assignState === 'pending'">
+            <el-button size="small" type="primary" :loading="accepting === o.id" @click.stop="doAccept(o)">接收</el-button>
+            <el-button size="small" @click.stop="openReject(o)">拒绝…</el-button>
+          </template>
           <el-button
             v-if="naOf(o)"
             size="small"
@@ -107,6 +133,15 @@
     />
     <NotebookDialog v-model:visible="notebookVisible" :order="notebookOrder" />
     <OrderDialog v-model:visible="dialogVisible" :data="editing" @save="handleSave" />
+    <ReasonDialog
+      v-model:visible="rejectVisible"
+      title="拒绝这个项目"
+      :tip="rejecting ? `「${rejecting.title}」会回到老板名下，老板会看到你写的原因。` : ''"
+      placeholder="写一下为什么不接，比如：这周排满了"
+      confirm-text="拒绝"
+      danger
+      :submit="doReject"
+    />
   </div>
 </template>
 
@@ -118,9 +153,14 @@ import OrderDetail from '@/views/order/components/OrderDetail.vue'
 import OrderDialog from '@/views/order/components/OrderDialog.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
 import AssignMenu from '@/components/AssignMenu.vue'
+import ApprovalItem from '@/components/ApprovalItem.vue'
+import ReasonDialog from '@/components/ReasonDialog.vue'
 import { changeOrderStatus } from '@/utils/settle'
 import { useRouter } from 'vue-router'
-import { orders, getOrder, currentMember, isBoss, editOrder, removeOrder, nudge } from '@/mock/store'
+import {
+  orders, approvals, pendingApprovals, getOrder, currentMember, isBoss, editOrder, removeOrder, nudge,
+  acceptOrder, rejectOrder
+} from '@/mock/store'
 import { statusMap, MEMBERS, memberMap } from '@/constants/options'
 import { isMyTodo, isWaitingOther, nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
@@ -136,6 +176,7 @@ const waitingList = computed(() => orders.filter((o) => isWaitingOther(o, curren
 
 const ownerName = (o) => memberMap[o.ownerId]?.name || '负责人'
 function reasonFor(o) {
+  if (!isBoss.value && o.assignState === 'pending') return '老板派给你的新项目：先接收，再开工'
   if (isUnread(o)) return '对方有新动态，点开查看'
   if (isBoss.value && o.status === 'review') return `${ownerName(o)} 做完提交了，等你验收`
   if (isBoss.value && o.status === 'pending' && o.ownerId !== currentMember.value.id) {
@@ -145,9 +186,37 @@ function reasonFor(o) {
   return '待处理'
 }
 function waitReasonFor(o) {
+  if (isBoss.value && o.assignState === 'pending') return `${ownerName(o)} 还没接收，等 TA 回复`
   if (isBoss.value) return `${ownerName(o)} 正在做，等 TA 交付`
   return '已提交，等老板验收'
 }
+
+// ---- 员工：接收 / 拒绝老板刚派来的项目 ----
+const accepting = ref(null)
+const rejectVisible = ref(false)
+const rejecting = ref(null)
+async function doAccept(o) {
+  accepting.value = o.id
+  try {
+    await acceptOrder(o.id)
+    ElMessage.success(`已接收「${o.title}」，可以开工了`)
+  } catch (e) {
+    ElMessage.error(e.message || '接收失败')
+  } finally {
+    accepting.value = null
+  }
+}
+function openReject(o) {
+  rejecting.value = o
+  rejectVisible.value = true
+}
+async function doReject(reason) {
+  await rejectOrder(rejecting.value.id, reason)
+  ElMessage.success('已拒绝，项目回到老板名下')
+}
+
+// 员工自己提交过的申请（待批的排在前面），最多显示 6 条
+const myRequests = computed(() => approvals.slice(0, 6))
 
 // ---- 团队一览（老板）----
 const liveOrders = computed(() => orders.filter((o) => !['done', 'cancelled'].includes(o.status)))
@@ -302,6 +371,14 @@ function handleDelete(row) {
 }
 .blue-bar {
   border-left-color: #409eff;
+}
+.amber-bar {
+  border-left-color: #e6a23c;
+}
+.approval-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 12px;
 }
 .team-tip {
   font-size: 12px;
