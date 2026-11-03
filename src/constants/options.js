@@ -87,6 +87,9 @@ export function setStaff(list) {
 
 export const isBossId = (id) => memberMap[id]?.role === 'boss'
 
+// 日常页面里的称呼（比“总管理员 / 下属管理员”口语；成员管理、日志这类正式页面仍用正式叫法）
+export const roleName = (role) => (role === 'boss' ? '老板' : '员工')
+
 const toMap = (arr, key = 'value') =>
   Object.fromEntries(arr.map((item) => [item[key], item]))
 

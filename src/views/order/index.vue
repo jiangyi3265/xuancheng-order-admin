@@ -50,6 +50,13 @@
       </div>
     </div>
 
+    <!-- 谁能看到什么，直接说人话 -->
+    <div v-if="scopeHint" class="scope-hint">
+      <el-icon><View /></el-icon>
+      <span>{{ scopeHint }}</span>
+      <el-button v-if="isBoss && filter.ownerId" link type="primary" @click="filter.ownerId = ''">看全部人的</el-button>
+    </div>
+
     <!-- 看板视图 -->
     <div v-show="viewMode === 'kanban'" class="kanban thin-scroll">
       <div class="kanban-col" v-for="st in KANBAN_STATUS" :key="st">
@@ -96,8 +103,9 @@
                 <el-avatar :size="22" :style="{ background: memberMap[element.ownerId]?.color, fontSize: '12px' }">
                   {{ memberMap[element.ownerId]?.name?.slice(-1) }}
                 </el-avatar>
+                <span v-if="MEMBERS.length > 1" class="owner-name">{{ memberMap[element.ownerId]?.name }}</span>
                 <span class="deadline" :class="{ red: isOverdue(element) }">
-                  <el-icon><Clock /></el-icon> {{ element.deadline || '无' }}
+                  <el-icon><Clock /></el-icon> <span :title="element.deadline || ''">{{ shortDate(element.deadline) }}</span>
                 </span>
                 <span class="amount" title="点击记收款" @click.stop="openPay(element)">
                   ¥{{ element.amount || 0 }}
@@ -221,13 +229,14 @@
 import { ref, reactive, computed, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Grid, List, Download, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, Search, Grid, List, Download, ArrowDown, View } from '@element-plus/icons-vue'
+import { useRoute } from 'vue-router'
 import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import {
-  orders, getOrder, createOrder, editOrder, removeOrder, setStatus, currentMember, exportOrders
+  orders, getOrder, createOrder, editOrder, removeOrder, setStatus, currentMember, isBoss, exportOrders
 } from '@/mock/store'
 import { todayStr as todayLocal } from '@/utils/date'
 import { PAY_STATE, payState, payFilterOk, owed, money } from '@/utils/payment'
@@ -240,9 +249,31 @@ const viewMode = ref('kanban')
 const filter = reactive({ keyword: '', channel: '', ownerId: '', status: '', paid: '', overdueOnly: false })
 const createRange = ref(null)
 
+// 从工作台「我的团队」点进来：地址里带着 ?owner=某个人，直接只看这个人的单子
+const route = useRoute()
+watch(
+  () => route.query.owner,
+  (v) => {
+    filter.ownerId = v ? Number(v) : ''
+  },
+  { immediate: true }
+)
+const scopeHint = computed(() => {
+  if (!isBoss.value) return '这里只有你自己的单子：老板能看到你的进度，别人的单子你看不到。'
+  if (MEMBERS.length <= 1) return ''
+  const who = filter.ownerId ? memberMap[filter.ownerId]?.name : ''
+  if (who) {
+    return filter.ownerId === currentMember.value.id ? '现在只看你自己的单子。' : `现在只看 ${who} 手上的单子。`
+  }
+  return '你能看到全公司所有人的单子，每个人只能看到自己的。'
+})
+
 const todayStr = todayLocal()
 const isOverdue = (o) =>
   ['pending', 'doing', 'review'].includes(o.status) && o.deadline && o.deadline < todayStr
+
+// 卡片上日期只留 月-日（今年的），省地方；鼠标放上去能看完整日期
+const shortDate = (d) => (!d ? '无' : d.startsWith(String(new Date().getFullYear())) ? d.slice(5) : d)
 
 const channelStyle = (val) => {
   const c = channelMap[val]
@@ -678,6 +709,22 @@ function handleDelete(row) {
 }
 .pay-tag {
   cursor: pointer;
+}
+.scope-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: #909399;
+}
+.owner-name {
+  color: #606266;
+  max-width: 64px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 .ghost {
   opacity: 0.4;

@@ -6,14 +6,42 @@
         {{ currentMember.name.slice(-1) }}
       </el-avatar>
       <div class="hello-text">
-        <div class="hi">{{ currentMember.roleLabel }}视角 · {{ currentMember.name }}</div>
+        <div class="hi">{{ greeting }}，{{ currentMember.name }}</div>
+        <div v-if="scopeLine" class="sub">{{ scopeLine }}</div>
         <div class="sub">
-          你有 <b class="red">{{ todoList.length }}</b> 个待处理，
-          <b>{{ waitingList.length }}</b> 个在等对方
+          你有 <b class="red">{{ todoList.length }}</b> 件事等你处理，
+          <b>{{ waitingList.length }}</b> 件在等{{ isBoss ? '员工' : '老板' }}
         </div>
       </div>
       <el-button :icon="Refresh" text @click="$forceUpdate()" style="margin-left: auto" />
     </div>
+
+    <!-- 老板：每个人手上有多少单，点进去只看这个人的 -->
+    <template v-if="isBoss && team.length > 1">
+      <div class="section-title blue-bar">
+        <span><span class="ico">👥</span> 我的团队</span>
+        <span class="team-tip">点一个人，只看 TA 手上的单子</span>
+      </div>
+      <div class="team">
+        <div
+          v-for="t in team"
+          :key="t.m.id"
+          class="member-card"
+          :class="{ off: t.m.status !== '0' }"
+          @click="goMember(t.m)"
+        >
+          <el-avatar :size="40" :style="{ background: t.m.color }">{{ t.m.name.slice(-1) }}</el-avatar>
+          <div class="mc-body">
+            <div class="mc-name">
+              {{ t.m.id === currentMember.id ? '我自己' : t.m.name }}
+              <span class="mc-role">{{ roleName(t.m.role) }}</span>
+              <span v-if="t.m.status !== '0'" class="mc-role off-tag">已停用</span>
+            </div>
+            <div class="mc-line">{{ memberLine(t) }}</div>
+          </div>
+        </div>
+      </div>
+    </template>
 
     <!-- 需要我处理 -->
     <div class="section-title red-bar">
@@ -90,11 +118,13 @@ import { Paperclip, Clock, Refresh, Promotion, Bell } from '@element-plus/icons-
 import OrderDetail from '@/views/order/components/OrderDetail.vue'
 import OrderDialog from '@/views/order/components/OrderDialog.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
+import { useRouter } from 'vue-router'
 import { orders, getOrder, currentMember, isBoss, editOrder, removeOrder, setStatus, nudge } from '@/mock/store'
-import { statusMap } from '@/constants/options'
+import { statusMap, MEMBERS, memberMap, roleName } from '@/constants/options'
 import { isMyTodo, isWaitingOther, nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
 
+const router = useRouter()
 const todayStr = todayLocal()
 const isOverdue = (o) =>
   ['pending', 'doing', 'review'].includes(o.status) && o.deadline && o.deadline < todayStr
@@ -103,18 +133,60 @@ const isUnread = (o) => o.unread?.includes(currentMember.value.id)
 const todoList = computed(() => orders.filter((o) => isMyTodo(o, currentMember.value.id)))
 const waitingList = computed(() => orders.filter((o) => isWaitingOther(o, currentMember.value.id)))
 
+const ownerName = (o) => memberMap[o.ownerId]?.name || '负责人'
 function reasonFor(o) {
   if (isUnread(o)) return '对方有新动态，点开查看'
-  if (isBoss.value && o.status === 'review') return '负责人已提交，待你验收'
+  if (isBoss.value && o.status === 'review') return `${ownerName(o)} 做完提交了，等你验收`
   if (isBoss.value && o.status === 'pending' && o.ownerId !== currentMember.value.id) {
-    return '客户需求已录入，待确认 / 派给负责人'
+    return `客户需求已录入，确认后让 ${ownerName(o)} 开工`
   }
   if (o.status === 'doing') return '进行中，记得推进并回报进度'
   return '待处理'
 }
 function waitReasonFor(o) {
-  if (isBoss.value) return '负责人进行中，等交付'
-  return '已提交，等总管理员验收'
+  if (isBoss.value) return `${ownerName(o)} 正在做，等 TA 交付`
+  return '已提交，等老板验收'
+}
+
+// ---- 拟人化的问候和团队一览 ----
+const greeting = computed(() => {
+  const h = new Date().getHours()
+  if (h < 6) return '夜深了'
+  if (h < 11) return '早上好'
+  if (h < 14) return '中午好'
+  if (h < 18) return '下午好'
+  return '晚上好'
+})
+const liveOrders = computed(() => orders.filter((o) => !['done', 'cancelled'].includes(o.status)))
+const scopeLine = computed(() => {
+  if (isBoss.value) {
+    if (MEMBERS.length <= 1) return ''
+    return `你能看到全公司所有人的单子，眼下一共 ${liveOrders.value.length} 单在跑。`
+  }
+  return '这里只放你自己的单子：老板看得到你的进度，别人的单子你看不到。'
+})
+
+// 每个人手上的活（老板能看到全部，所以直接从订单里数）
+const team = computed(() =>
+  MEMBERS.map((m) => {
+    const mine = liveOrders.value.filter((o) => o.ownerId === m.id)
+    return {
+      m,
+      active: mine.length,
+      review: mine.filter((o) => o.status === 'review').length,
+      overdue: mine.filter((o) => o.deadline && o.deadline < todayStr).length
+    }
+  })
+)
+function memberLine(t) {
+  if (!t.active) return '手上没有单子'
+  const parts = [`手上 ${t.active} 单`]
+  if (t.review) parts.push(`${t.review} 单等你验收`)
+  if (t.overdue) parts.push(`${t.overdue} 单已逾期`)
+  return parts.join('，')
+}
+function goMember(m) {
+  router.push({ path: '/order', query: { owner: String(m.id) } })
 }
 
 const naOf = (o) => nextAction(o, currentMember.value.id)
@@ -241,6 +313,63 @@ function handleDelete(row) {
 }
 .gray-bar {
   border-left-color: #c0c4cc;
+}
+.blue-bar {
+  border-left-color: #409eff;
+}
+.team-tip {
+  font-size: 12px;
+  font-weight: 400;
+  color: #909399;
+}
+.team {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+.member-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border-radius: 8px;
+  padding: 12px 14px;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.member-card:hover {
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.14);
+  transform: translateY(-1px);
+}
+.member-card.off {
+  opacity: 0.6;
+}
+.mc-body {
+  min-width: 0;
+}
+.mc-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+.mc-role {
+  margin-left: 6px;
+  font-size: 11px;
+  font-weight: 400;
+  color: #909399;
+  background: #f4f4f5;
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.mc-role.off-tag {
+  color: #f56c6c;
+  background: #fef0f0;
+}
+.mc-line {
+  margin-top: 3px;
+  font-size: 12px;
+  color: #909399;
 }
 .cards {
   display: grid;

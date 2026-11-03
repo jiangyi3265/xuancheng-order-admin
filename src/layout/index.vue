@@ -40,7 +40,7 @@
         </div>
         <div class="user">
           <el-tag size="small" effect="plain" :type="isBoss ? 'primary' : 'info'">
-            {{ currentMember.roleLabel }}
+            {{ roleName(currentMember.role) }}
           </el-tag>
           <el-avatar :size="30" :style="{ background: currentMember.color }">
             {{ currentMember.name.slice(-1) }}
@@ -67,6 +67,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { SwitchButton, Key } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { menuRoutes } from '@/router'
+import { roleName } from '@/constants/options'
 import QuickCapture from '@/components/QuickCapture.vue'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import { orders, currentMember, isBoss, syncOrders, logout } from '@/mock/store'

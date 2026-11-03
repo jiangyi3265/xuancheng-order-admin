@@ -64,7 +64,7 @@
       <span class="qc-label">派给</span>
       <el-radio-group v-model="ownerId">
         <el-radio-button v-for="m in MEMBERS" :key="m.id" :value="m.id">
-          {{ m.name }}（{{ m.roleLabel }}）
+          {{ m.name }}（{{ roleName(m.role) }}）
         </el-radio-button>
       </el-radio-group>
     </div>
@@ -86,7 +86,7 @@ import { Lightning, Promotion, MagicStick } from '@element-plus/icons-vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
 import { createOrder, currentMember, isBoss, orders } from '@/mock/store'
-import { CHANNEL, MEMBERS, memberMap } from '@/constants/options'
+import { CHANNEL, MEMBERS, memberMap, roleName } from '@/constants/options'
 import { parseOrderHints } from '@/utils/parse'
 
 const open = ref(false)

@@ -56,7 +56,7 @@
               <el-descriptions-item label="客户">{{ order.customer || '-' }}</el-descriptions-item>
               <el-descriptions-item label="联系方式">{{ order.contact || '-' }}</el-descriptions-item>
               <el-descriptions-item label="负责人">
-                {{ memberMap[order.ownerId]?.name }}（{{ memberMap[order.ownerId]?.roleLabel }}）
+                {{ memberMap[order.ownerId]?.name }}（{{ roleName(memberMap[order.ownerId]?.role) }}）
               </el-descriptions-item>
               <el-descriptions-item label="报价">¥{{ order.amount || 0 }}</el-descriptions-item>
               <el-descriptions-item label="收款" :span="2">
@@ -269,7 +269,7 @@ import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import { getOrder, getOrderVersion, setStatus, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate, updateBugStatus, currentMember } from '@/mock/store'
-import { STATUS, statusMap, channelMap, priorityMap, memberMap } from '@/constants/options'
+import { STATUS, statusMap, channelMap, priorityMap, memberMap, roleName } from '@/constants/options'
 import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
 import { PAY_STATE, payState, owed, money } from '@/utils/payment'
