@@ -46,6 +46,7 @@
             {{ currentMember.name.slice(-1) }}
           </el-avatar>
           <span class="name">{{ currentMember.name }}</span>
+          <el-icon class="logout" :size="18" title="修改密码" @click="pwdVisible = true"><Key /></el-icon>
           <el-icon class="logout" :size="18" title="退出登录" @click="doLogout"><SwitchButton /></el-icon>
         </div>
       </el-header>
@@ -56,17 +57,19 @@
     </el-container>
 
     <QuickCapture />
+    <ChangePasswordDialog v-model:visible="pwdVisible" />
   </el-container>
 </template>
 
 <script setup>
 import { computed, ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { SwitchButton } from '@element-plus/icons-vue'
+import { SwitchButton, Key } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { menuRoutes } from '@/router'
 import QuickCapture from '@/components/QuickCapture.vue'
-import { orders, currentMember, isBoss, loadOrders, logout } from '@/mock/store'
+import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
+import { orders, currentMember, isBoss, syncOrders, logout } from '@/mock/store'
 import { isMyTodo } from '@/utils/workbench'
 
 const route = useRoute()
@@ -76,12 +79,15 @@ const activeMenu = computed(() => route.path)
 const visibleRoutes = computed(() => menuRoutes.filter((r) => !r.meta.bossOnly || isBoss.value))
 const currentTitle = computed(() => route.meta.title || '玄成接单系统')
 const mobileOpen = ref(false)
+const pwdVisible = ref(false)
 let orderPoller = null
 
-function refreshOrders(showError = false) {
+// 每次只问服务端一个很轻的“变更戳”，项目有变化才重新拉列表；
+// 第一次进入（force）一定拉一遍。
+function refreshOrders(force = false) {
   if (document.visibilityState !== 'visible') return
-  loadOrders().catch((e) => {
-    if (showError === true) ElMessage.error('加载订单失败：' + e.message)
+  syncOrders(force === true).catch((e) => {
+    if (force === true) ElMessage.error('加载订单失败：' + e.message)
   })
 }
 

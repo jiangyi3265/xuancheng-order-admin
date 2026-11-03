@@ -29,6 +29,35 @@ export const PRIORITY = [
   { value: 'low', label: '低', color: '#909399' }
 ]
 
+// 操作日志的操作类型（与后端 JiedanAuditService 记录的 action 一一对应）
+export const AUDIT_ACTIONS = [
+  { value: 'order.create', label: '新建项目', type: 'success' },
+  { value: 'order.update', label: '修改项目', type: 'primary' },
+  { value: 'order.status', label: '改状态', type: 'primary' },
+  { value: 'order.delete', label: '删除项目', type: 'danger' },
+  { value: 'order.restore', label: '恢复项目', type: 'success' },
+  { value: 'order.purge', label: '彻底删除', type: 'danger' },
+  { value: 'order.export', label: '导出 Excel', type: 'warning' },
+  { value: 'bug.delete', label: '删除 Bug', type: 'danger' },
+  { value: 'staff.create', label: '新建成员', type: 'success' },
+  { value: 'staff.reset', label: '重置成员密码', type: 'warning' },
+  { value: 'staff.status', label: '停用/启用成员', type: 'warning' },
+  { value: 'staff.delete', label: '删除成员', type: 'danger' },
+  { value: 'customer.create', label: '新建客户账号', type: 'success' },
+  { value: 'customer.reset', label: '重置客户密码', type: 'warning' },
+  { value: 'customer.owner', label: '转交客户', type: 'primary' },
+  { value: 'customer.delete', label: '删除客户账号', type: 'danger' },
+  { value: 'account.password', label: '修改密码', type: 'info' }
+]
+
+export const AUDIT_ROLE_LABEL = {
+  boss: '总管理员',
+  employee: '下属管理员',
+  customer: '客户',
+  system: '系统',
+  other: '其他'
+}
+
 // 后台成员（总管理员 + 下属管理员）。登录后由后端 /jiedan/staff/list 加载：
 // 总管理员拿到全部成员，下属管理员只拿到自己。
 // MEMBERS / memberMap 是响应式的，加载后用到它们的页面会自动刷新。
@@ -62,3 +91,4 @@ const toMap = (arr, key = 'value') =>
 export const statusMap = toMap(STATUS)
 export const channelMap = toMap(CHANNEL)
 export const priorityMap = toMap(PRIORITY)
+export const auditActionMap = toMap(AUDIT_ACTIONS)

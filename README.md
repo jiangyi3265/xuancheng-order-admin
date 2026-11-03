@@ -1,46 +1,49 @@
 # 玄成科技接单系统管理后台
 
-玄成科技接单系统管理后台面向老板和员工使用，覆盖快速建单、订单看板、状态流转、附件预览、工作台待办、数据驾驶舱、客户账号管理和系统设置等场景，连接后端服务完成接单协同管理。
+面向总管理员和下属管理员的接单管理后台：工作台待办、接单看板 / 列表（筛选、分页、导出 Excel）、项目详情与沟通、Bug 跟进、项目记事本、回收站、客户账号、成员管理、操作日志、数据站和设置。
 
-老板和员工可在「客户账号」页为客户创建登录账号、重置密码、删除账号（删除时自动解绑其名下项目）；建单/编辑时可在「客户账号」下拉选择或快捷新建并绑定，绑定后客户即可在客户端登录查看该项目并双向沟通。
+## 谁能看到什么
+
+| 角色 | 项目范围 | 菜单 |
+| --- | --- | --- |
+| 总管理员 | 全部项目 | 全部菜单，含「成员管理」「操作日志」，可在「回收站」彻底删除 |
+| 下属管理员 | 只有负责人是自己的项目 | 没有「成员管理」「操作日志」；「回收站」只显示自己名下的 |
+
+身份来自登录令牌（后端 `/jiedan/staff/me`），页面上不能手动切换角色。数据范围由后端强制，前端隐藏菜单只是体验层面的。
+右上角的钥匙图标可以修改自己的登录密码，修改后其他设备会被自动退出。
+
+## 几个值得知道的行为
+
+- **删除项目 = 放进回收站**，聊天记录、Bug、记事本都还在，可恢复；只有总管理员能“彻底删除”。
+- **列表刷新**：每 10 秒只问后端一个很轻的“变更戳”，有变化才重新拉列表。
+- **导出 Excel**：按当前筛选条件导出，后端只会导出当前账号有权看到的项目，并记入操作日志。
+- 看板的「已完成」列只显示最近 30 个，更早的在「列表」里分页查看。
 
 ## 技术栈
 
-- Vue 3
-- Vite 5
-- Element Plus
-- Vue Router
-- ECharts
-- vuedraggable
-- Sass
+Vue 3 · Vite 5 · Element Plus · Vue Router · ECharts · vuedraggable · Sass
 
 ## 关联仓库
 
 | 子项目 | GitHub 仓库 | 说明 |
 | --- | --- | --- |
-| 后端服务 | [xuancheng-order-backend](https://github.com/jiangyi3265/xuancheng-order-backend) | 提供订单、提醒、时间线、系统配置等业务 API |
-| 管理后台 | [xuancheng-order-admin](https://github.com/jiangyi3265/xuancheng-order-admin) | 面向老板和员工的接单管理后台 |
-| 用户端 | [xuancheng-order-app](https://github.com/jiangyi3265/xuancheng-order-app) | 面向客户的公开需求提交入口 |
+| 后端服务 | [xuancheng-order-backend](https://github.com/jiangyi3265/xuancheng-order-backend) | 订单、权限、日志、备份脚本等业务 API 与部署文档 |
+| 管理后台 | [xuancheng-order-admin](https://github.com/jiangyi3265/xuancheng-order-admin) | 本仓库 |
+| 用户端 | [xuancheng-order-app](https://github.com/jiangyi3265/xuancheng-order-app) | 面向客户的项目查看、沟通与需求提交 |
 
-## 快速启动
+## 本机开发
 
 ```bash
-# 后端默认运行在 http://localhost:8080
 npm install
 npm run dev
 ```
 
-默认访问地址为 `http://localhost:5173`。开发环境通过 `vite.config.js` 将 `/jiedan` 和 `/login` 代理到后端服务。
+访问 `http://localhost:5173`。开发服务器把 `/jiedan`、`/login`、`/captchaImage` 代理到后端，后端默认 `http://localhost:8080`；本机 8080 被占用时用环境变量 `XC_BACKEND` 指向别处，例如 `XC_BACKEND=http://localhost:18091 npm run dev`。
 
-## 简历描述示例
-
-使用 Vue3 + Element Plus 构建接单协同管理后台，实现订单看板、快捷建单、附件处理、数据图表和角色视角切换，提升小团队订单交付跟踪效率。
-
-## 当前部署（2026-10-29）
+## 当前部署
 
 - 管理后台：https://jiedanxt.oksja.cn/
 - 客户端：https://jiedanxt.oksja.cn/client/
-- 后端由同域名 `/jiedan/**`、`/login`、`/captchaImage` 代理，服务监听 `127.0.0.1:18091`。
-- AI 改码流水线已移除；订单、客户账号、双向沟通、Bug 跟进和附件功能保留。
-- GitHub Actions 负责构建并保存产物，已移除指向旧域名的自动部署。发布操作见后端 `deploy/production.md`。
-- 正式管理员密码单独交付；客户账号由管理员在「客户账号」中创建。线上没有预置演示客户和演示订单。
+- 后端由同域名 `/jiedan/**`、`/login`、`/captchaImage` 代理。
+- GitHub Actions 只构建并保存产物，不自动部署。发布操作见后端仓库 `deploy/production.md`。
+- 正式管理员密码单独交付；客户账号由管理员在「客户账号」中创建。线上没有预置演示数据。

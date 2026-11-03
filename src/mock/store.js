@@ -58,6 +58,7 @@ export function logout() {
   // 清掉内存里的身份和项目，避免同一浏览器换账号登录后看到上一个人的数据
   me.value = null
   orders.splice(0, orders.length)
+  lastStamp = null
   setStaff([])
 }
 
@@ -230,6 +231,84 @@ export async function loadOrders() {
   })
   orders.splice(0, orders.length, ...next)
   return orders
+}
+
+// 变更戳：服务端用一个很轻的接口告诉我们“项目有没有变化”，没变化就不用重新拉整个列表。
+// 每个人每 10 秒一次的整表请求，就变成了一个几十字节的小请求。
+let lastStamp = null
+export async function syncOrders(force = false) {
+  const { stamp } = await http(`${BASE}/stamp`)
+  if (!force && stamp === lastStamp) return false
+  await loadOrders()
+  lastStamp = stamp
+  return true
+}
+
+// 下载 Excel：带登录令牌请求，再把返回内容保存成文件
+export async function exportOrders(filters = {}) {
+  const params = new URLSearchParams()
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== '' && v !== null && v !== undefined) params.set(k, String(v))
+  })
+  const res = await fetch(`${BASE}/export?${params.toString()}`, {
+    headers: token.value ? { Authorization: 'Bearer ' + token.value } : {}
+  })
+  const type = res.headers.get('content-type') || ''
+  if (type.includes('json')) {
+    const j = await res.json().catch(() => null)
+    if (j?.code === 401) {
+      logout()
+      if (location.hash !== '#/login') location.hash = '#/login'
+      throw new Error('登录已过期，请重新登录')
+    }
+    throw new Error(j?.msg || '导出失败')
+  }
+  if (!res.ok) throw new Error(`导出失败（${res.status}）`)
+  const blob = await res.blob()
+  const disposition = res.headers.get('content-disposition') || ''
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition)
+  const filename = star ? decodeURIComponent(star[1]) : '接单列表.xlsx'
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 2000)
+  return filename
+}
+
+// ---------- 回收站 ----------
+export async function listTrash() {
+  return await http(`${BASE}/trash`)
+}
+
+export async function restoreOrder(id) {
+  await http(`${BASE}/${id}/restore`, { method: 'PUT' })
+  await syncOrders(true)
+}
+
+// 彻底删除（仅总管理员），不可恢复
+export async function purgeOrder(id) {
+  await http(`${BASE}/${id}/purge`, { method: 'DELETE' })
+}
+
+// ---------- 操作日志（仅总管理员） ----------
+export async function listAudit(params = {}) {
+  const q = new URLSearchParams()
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== '' && v !== null && v !== undefined) q.set(k, String(v))
+  })
+  return await http(`/jiedan/audit/list?${q.toString()}`)
+}
+
+// ---------- 修改自己的密码 ----------
+export async function changeMyPassword(oldPassword, newPassword) {
+  return await http('/jiedan/account/password', {
+    method: 'PUT',
+    body: JSON.stringify({ oldPassword, newPassword })
+  })
 }
 
 export async function getOrder(id) {

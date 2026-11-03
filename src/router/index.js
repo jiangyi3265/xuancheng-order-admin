@@ -16,6 +16,12 @@ export const menuRoutes = [
     meta: { title: '接单管理', icon: 'Tickets' }
   },
   {
+    path: 'trash',
+    name: 'Trash',
+    component: () => import('@/views/trash/index.vue'),
+    meta: { title: '回收站', icon: 'Delete' }
+  },
+  {
     path: 'customers',
     name: 'Customers',
     component: () => import('@/views/customers/index.vue'),
@@ -26,6 +32,12 @@ export const menuRoutes = [
     name: 'Staff',
     component: () => import('@/views/staff/index.vue'),
     meta: { title: '成员管理', icon: 'UserFilled', bossOnly: true }
+  },
+  {
+    path: 'audit',
+    name: 'Audit',
+    component: () => import('@/views/audit/index.vue'),
+    meta: { title: '操作日志', icon: 'Document', bossOnly: true }
   },
   {
     path: 'dashboard',

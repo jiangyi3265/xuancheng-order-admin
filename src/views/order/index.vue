@@ -30,6 +30,22 @@
         <el-select v-model="filter.status" placeholder="状态" clearable style="width: 110px">
           <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
         </el-select>
+        <el-select v-model="filter.paid" placeholder="收款" clearable style="width: 100px">
+          <el-option label="已收款" value="1" />
+          <el-option label="未收款" value="0" />
+        </el-select>
+        <el-date-picker
+          v-model="createRange"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          range-separator="至"
+          start-placeholder="创建开始"
+          end-placeholder="创建结束"
+          style="width: 230px"
+        />
+        <el-checkbox v-model="filter.overdueOnly" border>仅看逾期</el-checkbox>
+        <el-button v-if="hasFilter" link type="primary" @click="resetFilter">清空筛选</el-button>
+        <el-button :icon="Download" :loading="exporting" @click="doExport">导出 Excel</el-button>
       </div>
     </div>
 
@@ -41,7 +57,10 @@
             <span class="dot" :style="{ background: statusMap[st].color }"></span>
             {{ statusMap[st].label }}
           </span>
-          <span class="col-count">{{ columns[st].length }}</span>
+          <span class="col-count">{{ columnTotals[st] }}</span>
+        </div>
+        <div v-if="columnTotals[st] > columns[st].length" class="col-more">
+          只显示最近 {{ columns[st].length }} 个，更早的请切到「列表」查看
         </div>
         <draggable
           v-model="columns[st]"
@@ -89,7 +108,7 @@
 
     <!-- 列表视图 -->
     <el-card v-show="viewMode === 'list'" shadow="never" class="list-card">
-      <el-table :data="filteredOrders" stripe @row-click="openDetail" style="cursor: pointer">
+      <el-table :data="pagedOrders" stripe @row-click="openDetail" style="cursor: pointer">
         <el-table-column prop="orderNo" label="编号" width="130" />
         <el-table-column label="项目名" min-width="190" show-overflow-tooltip>
           <template #default="{ row }">
@@ -132,7 +151,20 @@
             <el-button link type="danger" @click.stop="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
+        <template #empty>
+          <el-empty :description="hasFilter ? '没有符合筛选条件的项目' : '还没有项目'" />
+        </template>
       </el-table>
+      <div class="list-pager">
+        <el-pagination
+          v-model:current-page="page"
+          v-model:page-size="pageSize"
+          :page-sizes="[20, 50, 100]"
+          :total="filteredOrders.length"
+          layout="total, sizes, prev, pager, next"
+          background
+        />
+      </div>
     </el-card>
 
     <!-- 新增/编辑弹窗 -->
@@ -150,11 +182,13 @@
 import { ref, reactive, computed, watch } from 'vue'
 import draggable from 'vuedraggable'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Grid, List } from '@element-plus/icons-vue'
+import { Plus, Search, Grid, List, Download } from '@element-plus/icons-vue'
 import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
-import { orders, getOrder, createOrder, editOrder, removeOrder, setStatus, currentMember } from '@/mock/store'
+import {
+  orders, getOrder, createOrder, editOrder, removeOrder, setStatus, currentMember, exportOrders
+} from '@/mock/store'
 import { todayStr as todayLocal } from '@/utils/date'
 import {
   STATUS, CHANNEL, MEMBERS, KANBAN_STATUS,
@@ -162,7 +196,8 @@ import {
 } from '@/constants/options'
 
 const viewMode = ref('kanban')
-const filter = reactive({ keyword: '', channel: '', ownerId: '', status: '' })
+const filter = reactive({ keyword: '', channel: '', ownerId: '', status: '', paid: '', overdueOnly: false })
+const createRange = ref(null)
 
 const todayStr = todayLocal()
 const isOverdue = (o) =>
@@ -176,27 +211,92 @@ const channelStyle = (val) => {
 // 当前角色是否对该单有未读新动态
 const isUnread = (o) => o.unread?.includes(currentMember.value.id)
 
+// 筛选条件与服务端导出的条件保持一致（见 exportParams）
 const filteredOrders = computed(() =>
   orders.filter((o) => {
     if (filter.channel && o.channel !== filter.channel) return false
     if (filter.ownerId && o.ownerId !== filter.ownerId) return false
     if (filter.status && o.status !== filter.status) return false
+    if (filter.paid === '1' && !o.paid) return false
+    if (filter.paid === '0' && o.paid) return false
+    if (filter.overdueOnly && !isOverdue(o)) return false
+    if (createRange.value) {
+      const day = String(o.createTime || '').slice(0, 10)
+      if (day < createRange.value[0] || day > createRange.value[1]) return false
+    }
     if (filter.keyword) {
-      const kw = filter.keyword.toLowerCase()
-      if (!`${o.title}${o.customer}`.toLowerCase().includes(kw)) return false
+      const kw = filter.keyword.trim().toLowerCase()
+      if (!`${o.title} ${o.customer || ''} ${o.orderNo || ''}`.toLowerCase().includes(kw)) return false
     }
     return true
   })
 )
 
-// 看板分列
+const hasFilter = computed(
+  () =>
+    !!(filter.keyword || filter.channel || filter.ownerId || filter.status || filter.paid ||
+       filter.overdueOnly || createRange.value)
+)
+function resetFilter() {
+  Object.assign(filter, { keyword: '', channel: '', ownerId: '', status: '', paid: '', overdueOnly: false })
+  createRange.value = null
+}
+
+// 列表视图分页：项目多了也只渲染当前页
+const page = ref(1)
+const pageSize = ref(20)
+const pagedOrders = computed(() => {
+  const start = (page.value - 1) * pageSize.value
+  return filteredOrders.value.slice(start, start + pageSize.value)
+})
+watch([filter, createRange, pageSize], () => { page.value = 1 }, { deep: true })
+// 删除/恢复后总数变少，页码不能停在已经没有数据的位置
+watch(
+  () => filteredOrders.value.length,
+  (n) => {
+    const maxPage = Math.max(1, Math.ceil(n / pageSize.value))
+    if (page.value > maxPage) page.value = maxPage
+  }
+)
+
+// 看板分列：已完成越积越多，只显示最近的一部分，完整的在列表里看
+const KANBAN_LIMIT = { done: 30 }
 const columns = reactive({ pending: [], doing: [], review: [], done: [] })
+const columnTotals = reactive({ pending: 0, doing: 0, review: 0, done: 0 })
 function rebuild() {
   KANBAN_STATUS.forEach((s) => {
-    columns[s] = filteredOrders.value.filter((o) => o.status === s)
+    const all = filteredOrders.value.filter((o) => o.status === s)
+    columnTotals[s] = all.length
+    columns[s] = KANBAN_LIMIT[s] ? all.slice(0, KANBAN_LIMIT[s]) : all
   })
 }
 watch(filteredOrders, rebuild, { immediate: true, deep: true })
+
+// 导出 Excel：把当前的筛选条件交给服务端，导出结果和屏幕上看到的一致（服务端只会导出你有权看的项目）
+const exporting = ref(false)
+function exportParams() {
+  return {
+    keyword: filter.keyword.trim(),
+    channel: filter.channel,
+    ownerId: filter.ownerId,
+    status: filter.status,
+    paid: filter.paid,
+    overdue: filter.overdueOnly ? '1' : '',
+    createFrom: createRange.value?.[0] || '',
+    createTo: createRange.value?.[1] || ''
+  }
+}
+async function doExport() {
+  exporting.value = true
+  try {
+    const name = await exportOrders(exportParams())
+    ElMessage.success(`已导出：${name}`)
+  } catch (e) {
+    ElMessage.error(e.message || '导出失败')
+  } finally {
+    exporting.value = false
+  }
+}
 
 function onDragChange(evt, targetStatus) {
   if (evt.added) {
@@ -262,11 +362,15 @@ async function handleSave(data) {
   }
 }
 function handleDelete(row) {
-  ElMessageBox.confirm(`确定删除「${row.title}」吗？`, '提示', { type: 'warning' })
-    .then(() => {
-      removeOrder(row.id)
-      detailVisible.value = false
-      ElMessage.success('已删除')
+  ElMessageBox.confirm(`确定删除「${row.title}」吗？删除后会放进「回收站」，可以随时恢复。`, '提示', { type: 'warning' })
+    .then(async () => {
+      try {
+        await removeOrder(row.id)
+        detailVisible.value = false
+        ElMessage.success('已放进回收站')
+      } catch (e) {
+        ElMessage.error(e.message || '删除失败')
+      }
     })
     .catch(() => {})
 }
@@ -332,6 +436,18 @@ function handleDelete(row) {
   border-radius: 10px;
   font-size: 12px;
   padding: 1px 9px;
+}
+.col-more {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #909399;
+  background: #fafafa;
+  border-bottom: 1px solid #ebeef5;
+}
+.list-pager {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 14px;
 }
 .col-body {
   padding: 10px;
