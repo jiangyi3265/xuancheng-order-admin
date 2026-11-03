@@ -37,16 +37,18 @@
     >
       <template #title>
         <span>有 {{ unpaidDone.length }} 个已完成的项目还没收齐款（共欠 {{ money(unpaidDoneTotal) }}）：</span>
-        <el-tag
-          v-for="o in unpaidDone.slice(0, 8)"
-          :key="o.id"
-          type="warning"
-          size="small"
-          effect="plain"
-          style="margin-left: 6px"
-        >
-          {{ o.title }}{{ o.customer ? '·' + o.customer : '' }} 欠 {{ money(owed(o)) }}
-        </el-tag>
+        <span class="alert-tags">
+          <el-tag
+            v-for="o in unpaidDone.slice(0, 8)"
+            :key="o.id"
+            class="alert-tag"
+            type="warning"
+            size="small"
+            effect="plain"
+          >
+            {{ o.title }}{{ o.customer ? '·' + o.customer : '' }} 欠 {{ money(owed(o)) }}
+          </el-tag>
+        </span>
         <span v-if="unpaidDone.length > 8" class="more">…等共 {{ unpaidDone.length }} 个，在「接单管理」选「还欠款」查看</span>
       </template>
     </el-alert>
@@ -61,16 +63,18 @@
     >
       <template #title>
         <span>有 {{ overdueList.length }} 个项目已逾期未交付：</span>
-        <el-tag
-          v-for="o in overdueList"
-          :key="o.id"
-          type="danger"
-          size="small"
-          effect="plain"
-          style="margin-left: 6px"
-        >
-          {{ o.title }}（截止 {{ o.deadline }}）
-        </el-tag>
+        <span class="alert-tags">
+          <el-tag
+            v-for="o in overdueList"
+            :key="o.id"
+            class="alert-tag"
+            type="danger"
+            size="small"
+            effect="plain"
+          >
+            {{ o.title }}（截止 {{ o.deadline }}）
+          </el-tag>
+        </span>
       </template>
     </el-alert>
 
@@ -79,13 +83,13 @@
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="chart-card">
           <template #header><span class="chart-title">近 6 个月实收（按收款日期）</span></template>
-          <ChartCard :option="incomeBar" :height="300" />
+          <div class="chart-box"><ChartCard :option="incomeBar" :height="chartH" /></div>
         </el-card>
       </el-col>
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="chart-card">
           <template #header><span class="chart-title">近 6 个月接单趋势</span></template>
-          <ChartCard :option="trendBar" :height="300" />
+          <div class="chart-box"><ChartCard :option="trendBar" :height="chartH" /></div>
         </el-card>
       </el-col>
     </el-row>
@@ -94,13 +98,13 @@
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="chart-card">
           <template #header><span class="chart-title">订单状态分布</span></template>
-          <ChartCard :option="statusPie" :height="300" />
+          <div class="chart-box"><ChartCard :option="statusPie" :height="chartH" /></div>
         </el-card>
       </el-col>
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="chart-card">
           <template #header><span class="chart-title">渠道来源占比</span></template>
-          <ChartCard :option="channelPie" :height="300" />
+          <div class="chart-box"><ChartCard :option="channelPie" :height="chartH" /></div>
         </el-card>
       </el-col>
     </el-row>
@@ -110,7 +114,7 @@
       <el-col :xs="24">
         <el-card shadow="never" class="chart-card">
           <template #header><span class="chart-title">成员工作量对比</span></template>
-          <ChartCard :option="memberBar" :height="300" />
+          <div class="chart-box"><ChartCard :option="memberBar" :height="chartH" /></div>
         </el-card>
       </el-col>
     </el-row>
@@ -124,6 +128,10 @@ import { orders, getIncome } from '@/mock/store'
 import { todayStr as todayLocal } from '@/utils/date'
 import { owed, money } from '@/utils/payment'
 import { STATUS, CHANNEL, MEMBERS } from '@/constants/options'
+import { isMobile } from '@/utils/useMobile'
+
+// 图表高度：手机上矮一点，一屏能多看一张
+const chartH = computed(() => (isMobile.value ? 260 : 300))
 
 const todayStr = todayLocal()
 const isOverdue = (o) =>
@@ -223,8 +231,9 @@ const statusPie = computed(() => ({
   series: [
     {
       type: 'pie',
-      radius: ['42%', '68%'],
-      center: ['50%', '45%'],
+      // 手机上图例会折成两行、外面的标注也要留地方，圆环收小一点
+      radius: isMobile.value ? ['34%', '56%'] : ['42%', '68%'],
+      center: ['50%', isMobile.value ? '42%' : '45%'],
       avoidLabelOverlap: true,
       label: { formatter: '{b}\n{c}' },
       data: STATUS.map((s) => ({
@@ -271,8 +280,10 @@ const channelPie = computed(() => ({
   series: [
     {
       type: 'pie',
-      radius: '62%',
-      center: ['50%', '45%'],
+      radius: isMobile.value ? '54%' : '62%',
+      center: ['50%', isMobile.value ? '42%' : '45%'],
+      label: { show: !isMobile.value },
+      labelLine: { show: !isMobile.value },
       data: CHANNEL.map((c) => ({
         name: c.label,
         value: count((o) => o.channel === c.value),
@@ -351,6 +362,9 @@ const memberBar = computed(() => {
 .overdue-alert {
   margin-bottom: 14px;
 }
+.alert-tag {
+  margin-left: 6px;
+}
 .more {
   margin-left: 8px;
   color: #909399;
@@ -365,5 +379,104 @@ const memberBar = computed(() => {
 .chart-title {
   font-weight: 600;
   font-size: 15px;
+}
+
+/* 手机：指标两个一排、预警条里的标签自动换行、图表卡片窄一点 */
+@media (max-width: 768px) {
+  .stat-grid {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .stat-card {
+    min-width: 0;
+    padding: 10px;
+    gap: 8px;
+  }
+  .stat-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+  }
+  .stat-body {
+    flex: 1;
+    min-width: 0;
+  }
+  /* 大数字放不下就省略，不撑破卡片 */
+  .stat-value {
+    font-size: 20px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .stat-label {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .stat-hint {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  /* 预警条：文字在上，标签在下一块里自动换行；标签自己太长也能折行 */
+  .overdue-alert {
+    --el-alert-padding: 8px 10px;
+    align-items: flex-start;
+    margin-bottom: 10px;
+  }
+  .overdue-alert :deep(.el-alert__icon) {
+    flex-shrink: 0;
+    margin-top: 4px;
+  }
+  .overdue-alert :deep(.el-alert__content) {
+    flex: 1;
+    min-width: 0;
+  }
+  .alert-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .alert-tag {
+    margin-left: 0;
+    max-width: 100%;
+    height: auto;
+    padding: 3px 8px;
+    line-height: 1.4;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+  .more {
+    display: block;
+    margin: 4px 0 0;
+  }
+
+  .chart-row {
+    margin-bottom: 0;
+  }
+  /* 两张图上下叠着放时中间要有空隙 */
+  .chart-card {
+    margin-bottom: 10px;
+  }
+  .chart-card :deep(.el-card__header) {
+    padding: 12px 14px;
+  }
+  .chart-card :deep(.el-card__body) {
+    padding: 10px 8px 8px;
+  }
+  .chart-title {
+    font-size: 14px;
+  }
+  .chart-box {
+    min-width: 0;
+    overflow: hidden;
+  }
+}
+@media (max-width: 400px) {
+  .stat-value {
+    font-size: 18px;
+  }
 }
 </style>

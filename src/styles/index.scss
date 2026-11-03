@@ -45,6 +45,17 @@ a {
   .el-drawer.ltr {
     width: 88% !important;
   }
+  /* 订单详情是整页工作台：手机上铺满整屏，其他抽屉仍是 88% */
+  .el-drawer.rtl.order-workspace-drawer,
+  .el-drawer.ltr.order-workspace-drawer {
+    width: 100% !important;
+  }
+  /* 抽屉容器自身不留白边、不滚动（里面的工作台自己滚动） */
+  .order-workspace-drawer .el-drawer__body {
+    padding: 0;
+    overflow: hidden;
+    background: #f5f7fb;
+  }
   .el-message-box {
     width: 90% !important;
   }

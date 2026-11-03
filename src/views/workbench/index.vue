@@ -78,23 +78,28 @@
           <div class="rc-reason">{{ reasonFor(o) }}</div>
         </div>
         <div class="rc-meta">
-          <template v-if="!isBoss && o.assignState === 'pending'">
-            <el-button size="small" type="primary" :loading="accepting === o.id" @click.stop="doAccept(o)">接收</el-button>
-            <el-button size="small" @click.stop="openReject(o)">拒绝…</el-button>
-          </template>
-          <el-button
-            v-if="naOf(o)"
-            size="small"
-            type="primary"
-            :icon="Promotion"
-            @click.stop="quickNext(o)"
-          >{{ naOf(o).label }}</el-button>
-          <AssignMenu :order="o" />
-          <el-tag size="small" :type="statusMap[o.status]?.type" effect="light">{{ statusMap[o.status]?.label }}</el-tag>
-          <el-tag v-if="dueTag(o)" :type="dueTag(o).type" size="small" effect="dark">{{ dueTag(o).text }}</el-tag>
-          <span class="rc-deadline" :class="{ red: isOverdue(o) }">
-            <el-icon><Clock /></el-icon>{{ o.deadline || '无期限' }}
-          </span>
+          <!-- 按钮一行、状态和期限一行（电脑上这两层不占位，和原来一样排成一行） -->
+          <div class="rc-actions">
+            <template v-if="!isBoss && o.assignState === 'pending'">
+              <el-button size="small" type="primary" :loading="accepting === o.id" @click.stop="doAccept(o)">接收</el-button>
+              <el-button size="small" @click.stop="openReject(o)">拒绝…</el-button>
+            </template>
+            <el-button
+              v-if="naOf(o)"
+              size="small"
+              type="primary"
+              :icon="Promotion"
+              @click.stop="quickNext(o)"
+            >{{ naOf(o).label }}</el-button>
+            <AssignMenu :order="o" />
+          </div>
+          <div class="rc-info">
+            <el-tag size="small" :type="statusMap[o.status]?.type" effect="light">{{ statusMap[o.status]?.label }}</el-tag>
+            <el-tag v-if="dueTag(o)" :type="dueTag(o).type" size="small" effect="dark">{{ dueTag(o).text }}</el-tag>
+            <span class="rc-deadline" :class="{ red: isOverdue(o) }">
+              <el-icon><Clock /></el-icon>{{ o.deadline || '无期限' }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -112,12 +117,16 @@
           <div class="rc-reason gray">{{ waitReasonFor(o) }}</div>
         </div>
         <div class="rc-meta">
-          <el-button size="small" :icon="Bell" @click.stop="quickNudge(o)">催一下</el-button>
-          <AssignMenu :order="o" />
-          <el-tag v-if="dueTag(o)" :type="dueTag(o).type" size="small" effect="dark">{{ dueTag(o).text }}</el-tag>
-          <span class="rc-deadline" :class="{ red: isOverdue(o) }">
-            <el-icon><Clock /></el-icon>{{ o.deadline || '无期限' }}
-          </span>
+          <div class="rc-actions">
+            <el-button size="small" :icon="Bell" @click.stop="quickNudge(o)">催一下</el-button>
+            <AssignMenu :order="o" />
+          </div>
+          <div class="rc-info">
+            <el-tag v-if="dueTag(o)" :type="dueTag(o).type" size="small" effect="dark">{{ dueTag(o).text }}</el-tag>
+            <span class="rc-deadline" :class="{ red: isOverdue(o) }">
+              <el-icon><Clock /></el-icon>{{ o.deadline || '无期限' }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -377,7 +386,8 @@ function handleDelete(row) {
 }
 .approval-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  /* min(…, 100%)：窄屏上一列最多和容器一样宽，不会撑出屏幕；电脑上等于原来的 380px */
+  grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr));
   gap: 12px;
 }
 .team-tip {
@@ -387,7 +397,7 @@ function handleDelete(row) {
 }
 .team {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(230px, 100%), 1fr));
   gap: 12px;
 }
 .member-card {
@@ -436,7 +446,7 @@ function handleDelete(row) {
 }
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: 12px;
 }
 .row-card {
@@ -507,5 +517,125 @@ function handleDelete(row) {
 .rc-deadline.red {
   color: #f56c6c;
   font-weight: 600;
+}
+/* 电脑上这两层只是分组，不生成盒子，里面的东西仍直接排在 .rc-meta 这一行里 */
+.rc-actions,
+.rc-info {
+  display: contents;
+}
+
+/* 手机：卡片单列，按钮一行、状态和期限一行，按钮加大好点 */
+@media (max-width: 768px) {
+  .hello {
+    gap: 10px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .hello-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .hello .hi {
+    font-size: 14px;
+    line-height: 1.4;
+  }
+  .hello :deep(.el-button) {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+  }
+  .section-title {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    margin: 14px 0 10px;
+  }
+  .team-tip {
+    line-height: 1.4;
+  }
+
+  /* 团队：两人一排（一排放不下两个就一人一排） */
+  .team {
+    grid-template-columns: repeat(auto-fill, minmax(min(150px, 100%), 1fr));
+    gap: 10px;
+  }
+  .member-card {
+    min-width: 0;
+    gap: 10px;
+    padding: 10px;
+  }
+  .mc-body {
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+  .mc-line {
+    line-height: 1.5;
+  }
+
+  .approval-list,
+  .cards {
+    gap: 10px;
+  }
+  .row-card {
+    min-width: 0;
+    padding: 12px;
+  }
+  .new-badge {
+    right: -4px;
+  }
+  .rc-main {
+    min-width: 0;
+  }
+  .rc-title,
+  .rc-reason {
+    overflow-wrap: anywhere;
+  }
+  .rc-title .pic {
+    flex-shrink: 0;
+  }
+  .rc-meta {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .rc-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+  .rc-actions:empty {
+    display: none;
+  }
+  /* 按钮：至少 36px 高；直接放在这一行的按钮平分剩余宽度 */
+  .rc-actions :deep(.el-button) {
+    height: auto;
+    min-height: 36px;
+    padding: 8px 14px;
+    font-size: 14px;
+  }
+  .rc-actions > :deep(.el-button) {
+    flex: 1 1 0;
+  }
+  .rc-actions :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+  .rc-info {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 8px;
+  }
+  .rc-deadline {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+}
+/* 特别窄的手机：问候那句再小一点，尽量保持一行 */
+@media (max-width: 340px) {
+  .hello .hi {
+    font-size: 13px;
+  }
 }
 </style>

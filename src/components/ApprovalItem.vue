@@ -140,4 +140,59 @@ async function withdraw() {
   gap: 8px;
   flex-shrink: 0;
 }
+
+/* 手机：改成上下排——标题 / 申请人和时间 / 内容 / 整行按钮，不再横向挤 */
+@media (max-width: 640px) {
+  .ai {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+  }
+  .ai-main {
+    flex: none;
+    width: 100%;
+  }
+  .ai-head {
+    gap: 6px 8px;
+  }
+  .ai-order {
+    flex: 1;
+    min-width: 0;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+  /* 申请人和时间单独占一行，长了也不会把标签挤出屏幕 */
+  .ai-who {
+    flex-basis: 100%;
+    margin-left: 0;
+    line-height: 1.4;
+  }
+  .ai-sum,
+  .ai-reason,
+  .ai-done {
+    overflow-wrap: anywhere;
+  }
+  /* 处理结果的小标签靠左，不要被拉成整行 */
+  .ai > :deep(.el-tag) {
+    align-self: flex-start;
+  }
+  /* 按钮占满一行，左右并排，手指好点 */
+  .ai-actions {
+    flex-shrink: 1;
+    width: 100%;
+    gap: 10px;
+  }
+  .ai-actions :deep(.el-button) {
+    flex: 1;
+    height: auto;
+    min-height: 36px;
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  .ai-actions :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
+}
 </style>

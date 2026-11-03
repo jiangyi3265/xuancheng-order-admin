@@ -1,7 +1,7 @@
 <template>
-  <div class="order-page">
-    <!-- 工具栏 -->
-    <div class="toolbar">
+  <div ref="pageEl" class="order-page">
+    <!-- 工具栏（电脑） -->
+    <div v-if="!isMobile" class="toolbar">
       <div class="left">
         <el-button type="primary" :icon="Plus" @click="openDialog()">快速接单</el-button>
         <el-radio-group v-model="viewMode" style="margin-left: 12px">
@@ -35,6 +35,67 @@
         />
         <el-button v-if="hasFilter" link type="primary" @click="resetFilter">清空筛选</el-button>
         <el-button :icon="Download" :loading="exporting" @click="doExport">导出 Excel</el-button>
+      </div>
+    </div>
+
+    <!-- 工具栏（手机）：第一行 接单 + 看板/列表 + 筛选；第二行 搜索；渠道 / 日期 / 导出 收在「筛选」里 -->
+    <div v-else class="m-toolbar">
+      <div class="m-row">
+        <el-button type="primary" size="large" :icon="Plus" class="m-new" @click="openDialog()">快速接单</el-button>
+        <el-radio-group v-model="viewMode" size="large" class="m-view">
+          <el-radio-button value="kanban">看板</el-radio-button>
+          <el-radio-button value="list">列表</el-radio-button>
+        </el-radio-group>
+        <el-button
+          size="large"
+          plain
+          :type="filterOpen || moreFilterCount ? 'primary' : 'default'"
+          class="m-filter-btn"
+          @click="filterOpen = !filterOpen"
+        >筛选<i v-if="moreFilterCount" class="m-dot"></i></el-button>
+      </div>
+      <el-input
+        v-model="filter.keyword"
+        size="large"
+        placeholder="搜项目名 / 客户 / 联系方式 / 需求"
+        :prefix-icon="Search"
+        clearable
+      />
+      <div v-show="filterOpen" class="m-filters">
+        <div>
+          <span class="m-f-label">渠道</span>
+          <el-select v-model="filter.channel" placeholder="全部渠道" clearable size="large" style="width: 100%">
+            <el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value" />
+          </el-select>
+        </div>
+        <div>
+          <span class="m-f-label">创建日期（选一天就是只看那一天）</span>
+          <div class="m-dates">
+            <el-date-picker
+              v-model="rangeStart"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="开始日期"
+              :editable="false"
+              size="large"
+              style="flex: 1; min-width: 0; width: auto"
+            />
+            <span class="m-sep">至</span>
+            <el-date-picker
+              v-model="rangeEnd"
+              type="date"
+              value-format="YYYY-MM-DD"
+              placeholder="结束日期"
+              :editable="false"
+              size="large"
+              style="flex: 1; min-width: 0; width: auto"
+            />
+          </div>
+        </div>
+        <div class="m-f-btns">
+          <el-button size="large" :icon="Download" :loading="exporting" @click="doExport">导出 Excel</el-button>
+          <el-button v-if="hasFilter" size="large" link type="primary" @click="resetFilter">清空筛选</el-button>
+        </div>
       </div>
     </div>
 
@@ -92,6 +153,7 @@
           class="col-body thin-scroll"
           :animation="180"
           ghost-class="ghost"
+          v-bind="dragOpts"
           @change="(e) => onDragChange(e, st)"
         >
           <template #item="{ element }">
@@ -143,7 +205,7 @@
 
     <!-- 列表视图 -->
     <el-card v-show="viewMode === 'list'" shadow="never" class="list-card">
-      <el-table :data="pagedOrders" stripe @row-click="openDetail" style="cursor: pointer">
+      <el-table v-if="!isMobile" :data="pagedOrders" stripe @row-click="openDetail" style="cursor: pointer">
         <el-table-column prop="orderNo" label="编号" width="130" />
         <el-table-column label="项目名" min-width="190" show-overflow-tooltip>
           <template #default="{ row }">
@@ -239,8 +301,28 @@
           <el-empty :description="hasFilter ? '没有符合筛选条件的项目' : '还没有项目'" />
         </template>
       </el-table>
+      <!-- 手机：一单一张卡片，不用表格 -->
+      <div v-else class="m-list">
+        <OrderMobileCard
+          v-for="row in pagedOrders"
+          :key="row.id"
+          :order="row"
+          :overdue="!!isOverdue(row)"
+          :unread="!!isUnread(row)"
+          :pay="payTagOf(row)"
+          :deadline-text="shortDate(row.deadline)"
+          :can-finish="canFinish(row)"
+          :more-statuses="moreStatuses(row)"
+          @open="openDetail(row)"
+          @pay="openPay(row)"
+          @finish="changeStatus(row, isBoss ? 'done' : 'review')"
+          @more="(c) => onMore(c, row)"
+        />
+        <el-empty v-if="!pagedOrders.length" :description="hasFilter ? '没有符合筛选条件的项目' : '还没有项目'" />
+      </div>
       <div class="list-pager">
         <el-pagination
+          v-if="!isMobile"
           v-model:current-page="page"
           v-model:page-size="pageSize"
           :page-sizes="[20, 50, 100]"
@@ -248,6 +330,19 @@
           layout="total, sizes, prev, pager, next"
           background
         />
+        <template v-else>
+          <span class="m-total">共 {{ filteredOrders.length }} 单</span>
+          <el-pagination
+            v-model:current-page="page"
+            v-model:page-size="pageSize"
+            :total="filteredOrders.length"
+            :pager-count="5"
+            layout="prev, pager, next"
+            small
+            background
+            @current-change="scrollToTop"
+          />
+        </template>
       </div>
     </el-card>
 
@@ -276,6 +371,7 @@ import { Plus, Search, Grid, List, Download, ArrowDown, View } from '@element-pl
 import { useRoute } from 'vue-router'
 import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
+import OrderMobileCard from './components/OrderMobileCard.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
@@ -284,6 +380,7 @@ import { changeOrderStatus } from '@/utils/settle'
 import {
   orders, getOrder, createOrder, editOrder, removeOrder, currentMember, isBoss, exportOrders
 } from '@/mock/store'
+import { isMobile } from '@/utils/useMobile'
 import { todayStr as todayLocal } from '@/utils/date'
 import { PAY_STATE, payState, payFilterOk, owed, money } from '@/utils/payment'
 import {
@@ -420,6 +517,37 @@ function resetFilter() {
   createRange.value = null
 }
 
+// ---- 手机端工具栏 ----
+// 渠道 / 创建日期 / 导出 收在「筛选」里，默认收起；渠道或日期有设置时，「筛选」按钮上亮一个小红点
+const filterOpen = ref(false)
+const moreFilterCount = computed(() => (filter.channel ? 1 : 0) + (createRange.value ? 1 : 0))
+// 日期范围选择器的弹层有 646px 宽，手机上放不下：手机上改用“开始 / 结束”两个单日选择器，
+// 结果仍然写进同一个 createRange。只选一个就当“只看那一天”；选反了自动对齐；清掉任何一个就整段清空
+function setRangeEdge(edge, v) {
+  if (!v) {
+    createRange.value = null
+    return
+  }
+  const cur = createRange.value || [v, v]
+  let s = edge === 0 ? v : cur[0]
+  let e = edge === 1 ? v : cur[1]
+  if (s > e) {
+    if (edge === 0) e = s
+    else s = e
+  }
+  createRange.value = [s, e]
+}
+const rangeStart = computed({
+  get: () => createRange.value?.[0] || null,
+  set: (v) => setRangeEdge(0, v)
+})
+const rangeEnd = computed({
+  get: () => createRange.value?.[1] || null,
+  set: (v) => setRangeEdge(1, v)
+})
+// 手机上看板：按住卡片一会儿才开始拖，手指一划就是左右翻列 / 上下滚动，不会误拖（电脑不受影响）
+const dragOpts = computed(() => (isMobile.value ? { delay: 220, delayOnTouchOnly: true, touchStartThreshold: 12 } : {}))
+
 // 列表视图分页：项目多了也只渲染当前页
 const page = ref(1)
 const pageSize = ref(20)
@@ -428,6 +556,12 @@ const pagedOrders = computed(() => {
   return filteredOrders.value.slice(start, start + pageSize.value)
 })
 watch([filter, createRange, pageSize], () => { page.value = 1 }, { deep: true })
+// 手机翻页后回到页面顶部：页面是在布局的 .main 里滚的，不回去就会停在新一页的最底下（只有手机的翻页器会调用）
+const pageEl = ref(null)
+function scrollToTop() {
+  const box = pageEl.value?.closest('.main')
+  if (box) box.scrollTop = 0
+}
 // 删除/恢复后总数变少，页码不能停在已经没有数据的位置
 watch(
   () => filteredOrders.value.length,
@@ -540,6 +674,11 @@ function payText(o) {
   if (st === 'full') return '已收清'
   return ''
 }
+// 手机卡片上的收款标签：文字和颜色与桌面列表的「收款」列一致
+const payTagOf = (o) => ({
+  label: payText(o) || PAY_STATE[payState(o)].label,
+  type: PAY_STATE[payState(o)].type
+})
 
 // 弹窗 / 抽屉状态
 const dialogVisible = ref(false)
@@ -939,5 +1078,152 @@ function handleDelete(row) {
 }
 .list-card {
   border-radius: 8px;
+}
+
+/* ---- 手机端（<= 768px，和 layout / useMobile 的断点一致）---- */
+/* 工具栏：只在手机上渲染 */
+.m-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.m-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.m-new {
+  flex: 1;
+  min-width: 0;
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.m-view {
+  flex: none;
+}
+.m-view :deep(.el-radio-button__inner) {
+  padding-left: 14px;
+  padding-right: 14px;
+}
+.m-filter-btn {
+  position: relative;
+  flex: none;
+  padding-left: 14px;
+  padding-right: 14px;
+}
+/* 筛选里有设置时的小红点 */
+.m-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f56c6c;
+  box-shadow: 0 0 0 2px #fff;
+}
+.m-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fff;
+}
+.m-f-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: #909399;
+}
+.m-dates {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.m-sep {
+  flex: none;
+  font-size: 13px;
+  color: #909399;
+}
+.m-f-btns {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.m-f-btns :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+/* 列表：一单一张卡片 */
+.m-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.m-total {
+  font-size: 13px;
+  color: #909399;
+}
+
+@media (max-width: 768px) {
+  /* 一键筛选：每一行只占一行，左右滑动；左边的小标题固定不动 */
+  .chip-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  .chip-row::-webkit-scrollbar {
+    display: none;
+  }
+  .chip-label {
+    flex: none;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: #f0f2f5;
+  }
+  .qchip {
+    flex: none;
+    white-space: nowrap;
+    padding: 6px 12px;
+  }
+  .scope-hint {
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+
+  /* 看板：每列约 85% 屏宽，一列一列吸附着滑；列自己在屏幕高度内上下滚 */
+  .kanban {
+    gap: 10px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+  }
+  .kanban-col {
+    flex: 0 0 auto;
+    min-width: 0;
+    width: 85vw;
+    width: min(85vw, 320px);
+    scroll-snap-align: start;
+    max-height: calc(100vh - 260px);
+    max-height: max(280px, calc(100dvh - 260px));
+  }
+
+  /* 列表：去掉外面的白框，卡片直接铺开 */
+  .list-card {
+    border: 0;
+    background: transparent;
+  }
+  .list-card :deep(.el-card__body) {
+    padding: 0;
+  }
+  .list-pager {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+  }
 }
 </style>

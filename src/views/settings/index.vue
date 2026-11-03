@@ -9,6 +9,9 @@
         填上各自的 Server酱 SendKey，新单、待验收、改稿、催办、逾期都会自动推送到微信服务通知。
         获取方式：手机微信扫码登录 <b>sct.ftqq.com</b>，复制 SendKey 粘贴到下面即可。
       </el-alert>
+      <el-alert type="info" :closable="false" class="tip">
+        想在没开网页时也在手机上收到提醒，请配置微信推送（Server酱）。还没配之前，电脑浏览器可以点右上角的小铃铛开启桌面提醒。
+      </el-alert>
 
       <el-form label-width="120px" class="form">
         <el-form-item v-if="isBoss" label="启用推送">

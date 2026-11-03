@@ -26,7 +26,7 @@
           </div>
         </div>
 
-        <div class="head-actions">
+        <div v-if="!isMobile" class="head-actions">
           <!-- 员工：老板刚派来的项目，先接收或拒绝 -->
           <template v-if="pendingAccept">
             <el-button type="primary" :loading="accepting" @click="doAccept">接收这个项目</el-button>
@@ -73,6 +73,39 @@
           </template>
           <el-button circle class="close-btn" :icon="Close" @click="emit('update:visible', false)" />
         </div>
+
+        <!-- 手机端：只留主要操作，其余都收进“更多操作”（每项和电脑端同名按钮做的事一样） -->
+        <div v-else class="head-actions head-actions-m">
+          <template v-if="pendingAccept">
+            <el-button type="primary" :loading="accepting" @click="doAccept">接收这个项目</el-button>
+            <el-button @click="rejectVisible = true">拒绝…</el-button>
+          </template>
+          <el-button v-if="na" type="primary" @click="doNext">{{ na.label }}</el-button>
+          <el-button v-if="isBoss && ['review', 'done'].includes(order.status)" type="warning" plain @click="returnVisible = true">退回返工…</el-button>
+          <el-dropdown v-if="!pendingAccept" trigger="click" max-height="60vh" @command="onMore">
+            <el-button>更多操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item v-for="s in moreStatusOptions" :key="s.value" :command="'status:' + s.value">
+                  设为「{{ s.label }}」
+                </el-dropdown-item>
+                <el-dropdown-item command="pay" :icon="Coin" :divided="moreStatusOptions.length > 0">{{ isBoss ? '记收款' : '申请收款' }}</el-dropdown-item>
+                <el-dropdown-item command="notebook" :icon="Notebook">项目记事本</el-dropdown-item>
+                <el-dropdown-item command="revision" :icon="EditPen">改稿 +1</el-dropdown-item>
+                <el-dropdown-item command="nudge" :icon="Bell">催一下</el-dropdown-item>
+                <el-dropdown-item command="edit" :icon="Edit">编辑</el-dropdown-item>
+                <el-dropdown-item v-if="isBoss" command="delete" :icon="Delete" divided style="color: var(--el-color-danger)">删除</el-dropdown-item>
+                <template v-else>
+                  <el-dropdown-item v-if="!['done', 'cancelled'].includes(order.status)" command="handback" :icon="Back" divided>交回老板…</el-dropdown-item>
+                  <el-dropdown-item command="request:amount" :divided="['done', 'cancelled'].includes(order.status)">申请改报价</el-dropdown-item>
+                  <el-dropdown-item v-if="!['done', 'cancelled'].includes(order.status)" command="request:cancel">申请取消项目</el-dropdown-item>
+                  <el-dropdown-item command="request:delete">申请删除项目</el-dropdown-item>
+                </template>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+          <el-button circle class="close-btn" :icon="Close" aria-label="关闭" @click="emit('update:visible', false)" />
+        </div>
       </header>
 
       <div class="workspace-body">
@@ -90,7 +123,7 @@
               <ApprovalItem v-for="a in pendingHere" :key="a.id" :a="a" :show-order="false" />
             </div>
 
-            <el-descriptions :column="3" border size="small" class="desc">
+            <el-descriptions :column="isMobile ? 1 : 3" border size="small" class="desc">
               <el-descriptions-item label="客户">{{ order.customer || '-' }}</el-descriptions-item>
               <el-descriptions-item label="联系方式">{{ order.contact || '-' }}</el-descriptions-item>
               <el-descriptions-item label="负责人">
@@ -100,7 +133,7 @@
                 ¥{{ order.amount || 0 }}
                 <el-button v-if="!isBoss && !pendingAccept" link type="primary" size="small" @click="openRequest('amount')">申请改价</el-button>
               </el-descriptions-item>
-              <el-descriptions-item label="收款" :span="2">
+              <el-descriptions-item label="收款" :span="isMobile ? 1 : 2">
                 <el-tag size="small" :type="PAY_STATE[payState(order)].type" effect="light">{{ PAY_STATE[payState(order)].label }}</el-tag>
                 <span class="pay-text">
                   已收 {{ money(order.receivedAmount) }}
@@ -116,7 +149,7 @@
               <el-descriptions-item label="截止日期">
                 <span :class="{ red: isOverdue }">{{ order.deadline || '-' }}</span>
               </el-descriptions-item>
-              <el-descriptions-item label="需求" :span="3">
+              <el-descriptions-item label="需求" :span="isMobile ? 1 : 3">
                 <span class="requirement">{{ order.requirement || '-' }}</span>
               </el-descriptions-item>
             </el-descriptions>
@@ -348,6 +381,7 @@ import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
 import { changeOrderStatus } from '@/utils/settle'
 import { PAY_STATE, payState, owed, money } from '@/utils/payment'
+import { isMobile } from '@/utils/useMobile'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -530,6 +564,32 @@ async function doRevision() {
 async function doNudge() {
   await nudge(props.order.id)
   ElMessage.success('已催办，对方会收到提醒')
+}
+
+// ---- 手机端“更多操作”菜单：每一项都走和电脑端同名按钮一样的处理 ----
+// 状态项跳过当前状态（电脑端的“手动设为”下拉里选不选中当前值没意义）
+const moreStatusOptions = computed(() => statusOptions.value.filter((s) => s.value !== props.order?.status))
+const moreActions = {
+  pay: () => { payVisible.value = true },
+  notebook: () => emit('notebook', props.order),
+  revision: doRevision,
+  nudge: doNudge,
+  edit: () => emit('edit', props.order),
+  delete: () => emit('delete', props.order),
+  handback: () => { handbackVisible.value = true }
+}
+function onMore(cmd) {
+  if (typeof cmd !== 'string') return
+  if (cmd.startsWith('status:')) {
+    // 和电脑端下拉一样：先记下选中的值，失败时 onStatus 会把它还原
+    const val = cmd.slice('status:'.length)
+    statusModel.value = val
+    onStatus(val)
+  } else if (cmd.startsWith('request:')) {
+    openRequest(cmd.slice('request:'.length))
+  } else {
+    moreActions[cmd]?.()
+  }
 }
 async function addNote() {
   if (!note.value.trim() && !noteFiles.value.length) return
@@ -1056,6 +1116,177 @@ function dotColor(type) {
   }
   :deep(.desc .el-descriptions__body) {
     overflow-x: auto;
+  }
+}
+
+/* 手机端（<= 768px）：头部压缩、所有区块单列、不出现横向滚动；电脑端不受影响 */
+@media (max-width: 768px) {
+  .workspace {
+    height: 100vh; /* 旧浏览器兜底 */
+    height: 100dvh; /* 手机地址栏收放时，底部输入框不被挡住 */
+  }
+  .workspace-head {
+    position: relative;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 14px;
+  }
+  .title-block {
+    min-width: 0;
+    padding-right: 44px; /* 给右上角的关闭按钮留位置 */
+  }
+  .title-line {
+    gap: 2px 8px;
+  }
+  .title-line h2 {
+    min-width: 0;
+    font-size: 18px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  .order-no {
+    font-size: 12px;
+  }
+  .head-tags {
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .head-tags .el-tag {
+    max-width: 100%;
+  }
+  .head-tags :deep(.el-tag__content) {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .head-actions-m {
+    gap: 8px;
+  }
+  .head-actions-m .el-button {
+    margin-left: 0;
+  }
+  .head-actions-m .el-button:not(.is-circle) {
+    padding: 8px 12px;
+  }
+  .head-actions-m .close-btn {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+  }
+
+  .workspace-body {
+    grid-template-columns: minmax(0, 1fr);
+    /* 两块上下排：行高跟着内容走，整个区域自己滚动。
+       否则两行会被压成容器的一半高，聊天区盖住订单信息 */
+    grid-auto-rows: max-content;
+    align-content: start;
+    gap: 10px;
+    padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+  .left-pane {
+    gap: 10px;
+  }
+  .bug-panel,
+  .record-panel {
+    min-width: 0;
+  }
+  .left-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+  .right-pane {
+    min-height: 0;
+  }
+  .overview-panel,
+  .bug-panel,
+  .record-panel,
+  .chat-panel {
+    padding: 12px;
+  }
+  .section-head {
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .section-head h3 {
+    font-size: 15px;
+  }
+
+  /* 订单信息：一列，标签窄一点 */
+  :deep(.desc .el-descriptions__label) {
+    width: 72px;
+  }
+  :deep(.desc .el-descriptions__content) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* Bug 清单：操作按钮挪到内容下面一排，别把正文挤窄 */
+  .bug-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .bug-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 4px 8px;
+    padding-top: 8px;
+    border-top: 1px dashed #dcdfe6;
+  }
+  .bug-status {
+    margin-bottom: 0;
+  }
+  .bug-actions .el-button {
+    margin-left: 0;
+    padding: 6px 8px;
+  }
+  .bug-meta {
+    overflow-wrap: anywhere;
+  }
+  .update-meta {
+    overflow-wrap: anywhere;
+  }
+
+  /* 内部记录时间线：长文字、长网址要能换行 */
+  .timeline :deep(.el-timeline-item__content) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* 客户沟通：气泡不撑出屏幕；列表限高后在里面滚动，新消息自动滚到底 */
+  .chat-panel {
+    min-width: 0; /* 附件文件名很长时，别把整块撑得比屏幕宽 */
+  }
+  .chat-list {
+    min-height: 160px;
+    max-height: 60vh;
+    max-height: 60dvh;
+  }
+  .bubble-wrap {
+    min-width: 0;
+    max-width: 84%;
+  }
+  .meta {
+    flex-wrap: wrap;
+    gap: 0 8px;
+  }
+  .bubble p {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+  /* 语音附件播放条默认 300px 宽，手机上最多占满所在行 */
+  .workspace :deep(audio) {
+    max-width: 100%;
+  }
+  /* 输入框字号 16px，避免 iPhone 点进去时整页被放大 */
+  .workspace :deep(.el-textarea__inner) {
+    font-size: 16px;
   }
 }
 </style>
