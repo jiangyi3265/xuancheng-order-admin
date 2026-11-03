@@ -268,10 +268,11 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
-import { getOrder, getOrderVersion, setStatus, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate, updateBugStatus, currentMember } from '@/mock/store'
+import { getOrder, getOrderVersion, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate, updateBugStatus, currentMember } from '@/mock/store'
 import { STATUS, statusMap, channelMap, priorityMap, memberMap, roleName } from '@/constants/options'
 import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
+import { changeOrderStatus } from '@/utils/settle'
 import { PAY_STATE, payState, owed, money } from '@/utils/payment'
 
 const props = defineProps({
@@ -387,12 +388,22 @@ const isOverdue = computed(
 )
 
 const na = computed(() => nextAction(props.order, currentMember.value.id))
-function doNext() {
-  if (na.value) setStatus(props.order.id, na.value.to)
+async function doNext() {
+  if (!na.value) return
+  try {
+    await changeOrderStatus(props.order, na.value.to)
+  } catch (e) {
+    ElMessage.error(e.message || '修改状态失败')
+  }
 }
 
-function onStatus(val) {
-  setStatus(props.order.id, val)
+async function onStatus(val) {
+  try {
+    await changeOrderStatus(props.order, val)
+  } catch (e) {
+    statusModel.value = props.order?.status || ''
+    ElMessage.error(e.message || '修改状态失败')
+  }
 }
 async function doRevision() {
   await addRevision(props.order.id)

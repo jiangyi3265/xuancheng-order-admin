@@ -43,7 +43,7 @@ export const menuRoutes = [
     path: 'dashboard',
     name: 'Dashboard',
     component: () => import('@/views/dashboard/index.vue'),
-    meta: { title: '数据站', icon: 'DataLine' }
+    meta: { title: '数据站', icon: 'DataLine', bossMenuOnly: true }
   },
   {
     path: 'settings',

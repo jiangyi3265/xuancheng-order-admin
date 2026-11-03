@@ -57,6 +57,7 @@
     </el-container>
 
     <QuickCapture />
+    <SettleDialog />
     <ChangePasswordDialog v-model:visible="pwdVisible" />
   </el-container>
 </template>
@@ -69,6 +70,7 @@ import { ElMessage } from 'element-plus'
 import { menuRoutes } from '@/router'
 import { roleName } from '@/constants/options'
 import QuickCapture from '@/components/QuickCapture.vue'
+import SettleDialog from '@/components/SettleDialog.vue'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import { orders, currentMember, isBoss, syncOrders, logout } from '@/mock/store'
 import { isMyTodo } from '@/utils/workbench'
@@ -76,8 +78,10 @@ import { isMyTodo } from '@/utils/workbench'
 const route = useRoute()
 const router = useRouter()
 const activeMenu = computed(() => route.path)
-// 「成员管理」只有总管理员看得到
-const visibleRoutes = computed(() => menuRoutes.filter((r) => !r.meta.bossOnly || isBoss.value))
+// 「成员管理」「操作日志」只有总管理员看得到；员工的菜单里不放“数据站”，只留干活用得到的
+const visibleRoutes = computed(() =>
+  menuRoutes.filter((r) => (!r.meta.bossOnly || isBoss.value) && (!r.meta.bossMenuOnly || isBoss.value))
+)
 const currentTitle = computed(() => route.meta.title || '玄成接单系统')
 const mobileOpen = ref(false)
 const pwdVisible = ref(false)

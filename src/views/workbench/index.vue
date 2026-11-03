@@ -1,15 +1,13 @@
 <template>
   <div class="workbench">
-    <!-- 角色问候 -->
+    <!-- 一句话：现在要我做什么 -->
     <div class="hello">
-      <el-avatar :size="40" :style="{ background: currentMember.color }">
+      <el-avatar :size="36" :style="{ background: currentMember.color }">
         {{ currentMember.name.slice(-1) }}
       </el-avatar>
       <div class="hello-text">
-        <div class="hi">{{ greeting }}，{{ currentMember.name }}</div>
-        <div v-if="scopeLine" class="sub">{{ scopeLine }}</div>
-        <div class="sub">
-          你有 <b class="red">{{ todoList.length }}</b> 件事等你处理，
+        <div class="hi">
+          <b class="red">{{ todoList.length }}</b> 件等你处理，
           <b>{{ waitingList.length }}</b> 件在等{{ isBoss ? '员工' : '老板' }}
         </div>
       </div>
@@ -34,7 +32,6 @@
           <div class="mc-body">
             <div class="mc-name">
               {{ t.m.id === currentMember.id ? '我自己' : t.m.name }}
-              <span class="mc-role">{{ roleName(t.m.role) }}</span>
               <span v-if="t.m.status !== '0'" class="mc-role off-tag">已停用</span>
             </div>
             <div class="mc-line">{{ memberLine(t) }}</div>
@@ -66,6 +63,7 @@
             :icon="Promotion"
             @click.stop="quickNext(o)"
           >{{ naOf(o).label }}</el-button>
+          <AssignMenu :order="o" />
           <el-tag size="small" :type="statusMap[o.status]?.type" effect="light">{{ statusMap[o.status]?.label }}</el-tag>
           <el-tag v-if="dueTag(o)" :type="dueTag(o).type" size="small" effect="dark">{{ dueTag(o).text }}</el-tag>
           <span class="rc-deadline" :class="{ red: isOverdue(o) }">
@@ -89,6 +87,7 @@
         </div>
         <div class="rc-meta">
           <el-button size="small" :icon="Bell" @click.stop="quickNudge(o)">催一下</el-button>
+          <AssignMenu :order="o" />
           <el-tag v-if="dueTag(o)" :type="dueTag(o).type" size="small" effect="dark">{{ dueTag(o).text }}</el-tag>
           <span class="rc-deadline" :class="{ red: isOverdue(o) }">
             <el-icon><Clock /></el-icon>{{ o.deadline || '无期限' }}
@@ -118,9 +117,11 @@ import { Paperclip, Clock, Refresh, Promotion, Bell } from '@element-plus/icons-
 import OrderDetail from '@/views/order/components/OrderDetail.vue'
 import OrderDialog from '@/views/order/components/OrderDialog.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
+import AssignMenu from '@/components/AssignMenu.vue'
+import { changeOrderStatus } from '@/utils/settle'
 import { useRouter } from 'vue-router'
-import { orders, getOrder, currentMember, isBoss, editOrder, removeOrder, setStatus, nudge } from '@/mock/store'
-import { statusMap, MEMBERS, memberMap, roleName } from '@/constants/options'
+import { orders, getOrder, currentMember, isBoss, editOrder, removeOrder, nudge } from '@/mock/store'
+import { statusMap, MEMBERS, memberMap } from '@/constants/options'
 import { isMyTodo, isWaitingOther, nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
 
@@ -148,23 +149,8 @@ function waitReasonFor(o) {
   return '已提交，等老板验收'
 }
 
-// ---- 拟人化的问候和团队一览 ----
-const greeting = computed(() => {
-  const h = new Date().getHours()
-  if (h < 6) return '夜深了'
-  if (h < 11) return '早上好'
-  if (h < 14) return '中午好'
-  if (h < 18) return '下午好'
-  return '晚上好'
-})
+// ---- 团队一览（老板）----
 const liveOrders = computed(() => orders.filter((o) => !['done', 'cancelled'].includes(o.status)))
-const scopeLine = computed(() => {
-  if (isBoss.value) {
-    if (MEMBERS.length <= 1) return ''
-    return `你能看到全公司所有人的单子，眼下一共 ${liveOrders.value.length} 单在跑。`
-  }
-  return '这里只放你自己的单子：老板看得到你的进度，别人的单子你看不到。'
-})
 
 // 每个人手上的活（老板能看到全部，所以直接从订单里数）
 const team = computed(() =>
@@ -194,7 +180,7 @@ async function quickNext(o) {
   const na = naOf(o)
   if (!na) return
   try {
-    await setStatus(o.id, na.to)
+    await changeOrderStatus(o, na.to)
     ElMessage.success(`「${o.title}」→ ${statusMap[na.to]?.label}`)
   } catch (e) {
     ElMessage.error(e.message || '修改状态失败')

@@ -23,12 +23,12 @@ export function payState(o) {
   return a > 0 ? 'none' : 'free'
 }
 
-// 列表筛选：'' 不筛 / '1' 已收清 / '0' 还欠款 / 'part' 部分已收（与服务端导出的筛选一致）
+// 列表筛选：'' 不筛 / '1' 已收清 / '0' 还欠款 / 'part' 部分已收（与服务端导出的筛选一致；欠款类不含已取消的项目）
 export function payFilterOk(o, filter) {
   if (!filter) return true
   if (filter === '1') return payState(o) === 'full'
-  if (filter === '0') return owed(o) > 0
-  if (filter === 'part') return payState(o) === 'part'
+  if (filter === '0') return o?.status !== 'cancelled' && owed(o) > 0
+  if (filter === 'part') return o?.status !== 'cancelled' && payState(o) === 'part'
   return true
 }
 

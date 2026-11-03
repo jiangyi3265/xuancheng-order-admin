@@ -24,17 +24,6 @@
         <el-select v-model="filter.channel" placeholder="渠道" clearable style="width: 110px">
           <el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value" />
         </el-select>
-        <el-select v-if="MEMBERS.length > 1" v-model="filter.ownerId" placeholder="负责人" clearable style="width: 110px">
-          <el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" />
-        </el-select>
-        <el-select v-model="filter.status" placeholder="状态" clearable style="width: 110px">
-          <el-option v-for="s in STATUS" :key="s.value" :label="s.label" :value="s.value" />
-        </el-select>
-        <el-select v-model="filter.paid" placeholder="收款" clearable style="width: 110px">
-          <el-option label="还欠款" value="0" />
-          <el-option label="部分已收" value="part" />
-          <el-option label="已收清" value="1" />
-        </el-select>
         <el-date-picker
           v-model="createRange"
           type="daterange"
@@ -44,9 +33,36 @@
           end-placeholder="创建结束"
           style="width: 230px"
         />
-        <el-checkbox v-model="filter.overdueOnly" border>仅看逾期</el-checkbox>
         <el-button v-if="hasFilter" link type="primary" @click="resetFilter">清空筛选</el-button>
         <el-button :icon="Download" :loading="exporting" @click="doExport">导出 Excel</el-button>
+      </div>
+    </div>
+
+    <!-- 一键筛选：点一下就切，数字是现在有几单 -->
+    <div class="quick-bar">
+      <div class="chip-row">
+        <span class="chip-label">看什么</span>
+        <span
+          v-for="q in QUICK"
+          :key="q.key"
+          class="qchip"
+          :class="{ on: quick === q.key, warn: q.warn && quickCounts[q.key] > 0 }"
+          @click="setQuick(q.key)"
+        >{{ q.label }}<b>{{ quickCounts[q.key] }}</b></span>
+      </div>
+      <div v-if="showPeople" class="chip-row">
+        <span class="chip-label">看谁的</span>
+        <span class="qchip" :class="{ on: !filter.ownerId }" @click="filter.ownerId = ''">所有人</span>
+        <span
+          v-for="p in people"
+          :key="p.m.id"
+          class="qchip"
+          :class="{ on: filter.ownerId === p.m.id }"
+          @click="filter.ownerId = p.m.id"
+        >
+          <el-avatar :size="18" :style="{ background: p.m.color, fontSize: '10px' }">{{ p.m.name.slice(-1) }}</el-avatar>
+          {{ p.m.id === currentMember.id ? '我自己' : p.m.name }}<b>{{ p.active }}</b>
+        </span>
       </div>
     </div>
 
@@ -54,7 +70,6 @@
     <div v-if="scopeHint" class="scope-hint">
       <el-icon><View /></el-icon>
       <span>{{ scopeHint }}</span>
-      <el-button v-if="isBoss && filter.ownerId" link type="primary" @click="filter.ownerId = ''">看全部人的</el-button>
     </div>
 
     <!-- 看板视图 -->
@@ -100,10 +115,14 @@
                 <span v-if="element.revisions > 0" class="rev-flag">改{{ element.revisions }}</span>
               </div>
               <div class="card-foot">
-                <el-avatar :size="22" :style="{ background: memberMap[element.ownerId]?.color, fontSize: '12px' }">
-                  {{ memberMap[element.ownerId]?.name?.slice(-1) }}
-                </el-avatar>
-                <span v-if="MEMBERS.length > 1" class="owner-name">{{ memberMap[element.ownerId]?.name }}</span>
+                <AssignMenu :order="element" plain>
+                  <span class="who" title="点一下改派给别人">
+                    <el-avatar :size="22" :style="{ background: memberMap[element.ownerId]?.color, fontSize: '12px' }">
+                      {{ memberMap[element.ownerId]?.name?.slice(-1) }}
+                    </el-avatar>
+                    <span v-if="MEMBERS.length > 1" class="owner-name">{{ memberMap[element.ownerId]?.name }}</span>
+                  </span>
+                </AssignMenu>
                 <span class="deadline" :class="{ red: isOverdue(element) }">
                   <el-icon><Clock /></el-icon> <span :title="element.deadline || ''">{{ shortDate(element.deadline) }}</span>
                 </span>
@@ -138,7 +157,11 @@
         </el-table-column>
         <el-table-column prop="customer" label="客户" width="120" show-overflow-tooltip />
         <el-table-column label="负责人" width="90">
-          <template #default="{ row }">{{ memberMap[row.ownerId]?.name }}</template>
+          <template #default="{ row }">
+            <AssignMenu :order="row" plain>
+              <span class="who" title="点一下改派给别人">{{ memberMap[row.ownerId]?.name }}</span>
+            </AssignMenu>
+          </template>
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="{ row }">
@@ -235,8 +258,10 @@ import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
+import AssignMenu from '@/components/AssignMenu.vue'
+import { changeOrderStatus } from '@/utils/settle'
 import {
-  orders, getOrder, createOrder, editOrder, removeOrder, setStatus, currentMember, isBoss, exportOrders
+  orders, getOrder, createOrder, editOrder, removeOrder, currentMember, isBoss, exportOrders
 } from '@/mock/store'
 import { todayStr as todayLocal } from '@/utils/date'
 import { PAY_STATE, payState, payFilterOk, owed, money } from '@/utils/payment'
@@ -245,7 +270,23 @@ import {
   statusMap, channelMap, priorityMap, memberMap
 } from '@/constants/options'
 
-const viewMode = ref('kanban')
+// 记住上次用的是看板还是列表
+const VIEW_KEY = 'xc.orderView'
+const readView = () => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'kanban'
+  } catch (e) {
+    return 'kanban'
+  }
+}
+const viewMode = ref(readView())
+watch(viewMode, (v) => {
+  try {
+    localStorage.setItem(VIEW_KEY, v)
+  } catch (e) {
+    // 存不了就算了，只是下次不记得
+  }
+})
 const filter = reactive({ keyword: '', channel: '', ownerId: '', status: '', paid: '', overdueOnly: false })
 const createRange = ref(null)
 
@@ -258,6 +299,50 @@ watch(
   },
   { immediate: true }
 )
+// ---- 一键筛选条 ----
+// 「看什么」互斥：全部 / 各状态 / 已逾期 / 还欠款；「看谁的」是另一个维度，可以叠加
+const quick = computed(() => (filter.overdueOnly ? 'overdue' : filter.paid === '0' ? 'owing' : filter.status || 'all'))
+function setQuick(key) {
+  filter.status = ''
+  filter.overdueOnly = false
+  filter.paid = ''
+  if (key === 'overdue') filter.overdueOnly = true
+  else if (key === 'owing') filter.paid = '0'
+  else if (key !== 'all') filter.status = key
+}
+const scopedOrders = computed(() => orders.filter((o) => !filter.ownerId || o.ownerId === filter.ownerId))
+const quickCounts = computed(() => {
+  const c = { all: scopedOrders.value.length, overdue: 0, owing: 0, pending: 0, doing: 0, review: 0, done: 0, cancelled: 0 }
+  for (const o of scopedOrders.value) {
+    if (c[o.status] !== undefined) c[o.status]++
+    if (isOverdue(o)) c.overdue++
+    if (payFilterOk(o, '0')) c.owing++
+  }
+  return c
+})
+const QUICK = computed(() => {
+  const list = [
+    { key: 'all', label: '全部' },
+    { key: 'pending', label: '待确认' },
+    { key: 'doing', label: '进行中' }
+  ]
+  // 一个人用时没有“验收”这一步；有员工、或确实有待验收的单子时才显示
+  if (MEMBERS.length > 1 || quickCounts.value.review > 0) list.push({ key: 'review', label: '待验收' })
+  list.push(
+    { key: 'overdue', label: '已逾期', warn: true },
+    { key: 'owing', label: '还欠款', warn: true },
+    { key: 'done', label: '已完成' }
+  )
+  return list
+})
+const showPeople = computed(() => isBoss.value && MEMBERS.length > 1)
+const people = computed(() =>
+  MEMBERS.map((m) => ({
+    m,
+    active: orders.filter((o) => o.ownerId === m.id && !['done', 'cancelled'].includes(o.status)).length
+  }))
+)
+
 const scopeHint = computed(() => {
   if (!isBoss.value) return '这里只有你自己的单子：老板能看到你的进度，别人的单子你看不到。'
   if (MEMBERS.length <= 1) return ''
@@ -375,7 +460,7 @@ async function onDragChange(evt, targetStatus) {
   const moved = evt.added.element
   if (!moved || moved.status === targetStatus) return
   try {
-    await setStatus(moved.id, targetStatus)
+    await changeOrderStatus(moved, targetStatus)
     ElMessage.success(`「${moved.title}」已移到 ${statusMap[targetStatus].label}`)
   } catch (e) {
     // 服务器没改成功：把卡片放回原来的列，并说清楚
@@ -387,7 +472,7 @@ async function onDragChange(evt, targetStatus) {
 // 列表里一键改状态（完成 / 更多里的设为…）
 async function changeStatus(row, status) {
   try {
-    await setStatus(row.id, status)
+    await changeOrderStatus(row, status)
     ElMessage.success(`「${row.title}」→ ${statusMap[status].label}`)
   } catch (e) {
     ElMessage.error(e.message || '修改状态失败')
@@ -709,6 +794,65 @@ function handleDelete(row) {
 }
 .pay-tag {
   cursor: pointer;
+}
+.quick-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.chip-label {
+  width: 48px;
+  font-size: 12px;
+  color: #909399;
+}
+.qchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 16px;
+  background: #fff;
+  font-size: 13px;
+  color: #606266;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s;
+}
+.qchip b {
+  font-size: 12px;
+  font-weight: 600;
+  color: #909399;
+}
+.qchip:hover {
+  border-color: #409eff;
+}
+.qchip.on {
+  background: #ecf5ff;
+  border-color: #409eff;
+  color: #409eff;
+}
+.qchip.on b {
+  color: #409eff;
+}
+.qchip.warn b {
+  color: #f56c6c;
+}
+.who {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.who:hover {
+  color: #409eff;
 }
 .scope-hint {
   display: flex;
