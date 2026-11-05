@@ -47,3 +47,7 @@ npm run dev
 - 后端由同域名 `/jiedan/**`、`/login`、`/captchaImage` 代理。
 - GitHub Actions 只构建并保存产物，不自动部署。发布操作见后端仓库 `deploy/production.md`。
 - 正式管理员密码单独交付；客户账号由管理员在「客户账号」中创建。线上没有预置演示数据。
+
+## 新电脑协作
+
+当前开发版本已合并至默认 main 分支。安装 Node.js 22 后执行 npm ci、npm run dev。完整的克隆、本地数据库、Redis 和后端启动步骤见 [后端开发说明](https://github.com/jiangyi3265/xuancheng-order-backend#新电脑协作开发)。
