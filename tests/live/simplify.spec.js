@@ -77,6 +77,10 @@ test('real browser: fewer clicks on workbench and project detail', async ({ brow
       expect((await api(boss, '/jiedan/order/' + id + '/next', 'PUT', { content: '老板确认首页' + tag, ownerId: bossId, due: '' })).code).toBe(200)
       await boss.goto('/#/workbench')
       await boss.reload()
+      // 「需要我处理」先放 8 条：测试库里老板的待办很多，没定日期的下一步排在后面，先展开
+      await expect(boss.locator('.row-card.todo').first()).toBeVisible()
+      const more = boss.getByRole('button', { name: /还有 \d+ 条，展开/ })
+      if (await more.count()) await more.click()
       const card = boss.locator('.row-card.todo').filter({ hasText: title })
       await card.getByRole('button', { name: '完成这一步', exact: true }).click()
       const box = boss.locator('.el-message-box')

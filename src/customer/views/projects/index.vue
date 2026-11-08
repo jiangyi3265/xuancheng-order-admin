@@ -22,20 +22,22 @@
           <ProjectCover :order="o" compact class="customer-card-cover" />
           <div class="line1">
             <span class="title">{{ o.title }}</span>
+            <span v-if="o.status === 'review'" class="new-reply accept-due">待你验收</span>
             <span v-if="hasNewReply(o)" class="new-reply" title="团队有新回复">新回复</span>
             <el-tag size="small" :class="'project-status-'+o.status" :type="statusMap[o.status]?.type">{{ statusMap[o.status]?.label || o.status }}</el-tag>
           </div>
           <ProgressSteps :status="o.status" compact class="card-progress" />
           <div class="line2">
             <span class="no">{{ o.orderNo }}</span>
-            <span class="customer-card-description">{{ o.requirement || (o.deadline ? '截止：'+o.deadline : '查看项目需求与交付进度') }}</span>
+            <span class="customer-card-description">{{ descOf(o) }}</span>
             <span v-if="o.amount" class="amount">¥{{ o.amount }}</span>
           </div>
           <div class="line3">
             <span class="last">{{ lastLine(o) }}</span>
             <span class="chat"><el-icon><ChatDotRound /></el-icon>{{ msgCount(o) }}</span>
           </div>
-          <div class="project-actions"><el-button @click.stop="open(o.id)">查看详情</el-button><el-button type="primary" plain @click.stop="$router.push('/projects/'+o.id+'?tab=chat')">联系负责人</el-button></div>
+          <div v-if="o.status === 'review'" class="project-actions"><el-button @click.stop="$router.push('/projects/'+o.id+'?tab=chat')">联系负责人</el-button><el-button type="primary" @click.stop="open(o.id)">去验收</el-button></div>
+          <div v-else class="project-actions"><el-button @click.stop="open(o.id)">查看详情</el-button><el-button type="primary" plain @click.stop="$router.push('/projects/'+o.id+'?tab=chat')">联系负责人</el-button></div>
         </div>
       </template>
       <el-button class="customer-new-request" type="primary" @click="$router.push('/intake')"><el-icon><Plus/></el-icon> 提交新需求</el-button>
@@ -87,6 +89,13 @@ function lastLine(o) {
   return `${who}: ${body}`.slice(0, 46)
 }
 
+// 卡片上的一句描述：需求和项目名一样时（客户常常只写一句）不再重复显示
+function descOf(o) {
+  const req = String(o.requirement || '').trim()
+  if (req && req !== String(o.title || '').trim()) return req
+  return o.deadline ? '截止：' + o.deadline : '查看项目需求与交付进度'
+}
+
 function msgCount(o) {
   if (o.messageCount !== undefined && o.messageCount !== null) return o.messageCount
   return chatItems(o).length
@@ -135,6 +144,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .card-progress { margin: 12px 0 6px; }
 .new-reply { flex: none; margin-left: auto; margin-right: 6px; padding: 1px 7px; border-radius: 10px; background: #fef0f0; color: #f56c6c; font-size: 12px; font-weight: 600; }
+.new-reply.accept-due { background: #fdf6ec; color: #b26a00; }
+.new-reply.accept-due + .new-reply { margin-left: 0; }
 .projects-page {
   min-height: 100vh;
   background: #f0f2f5;

@@ -51,6 +51,11 @@ export async function removeMyOrder(id) {
   return await customerHttp('/jiedan/portal/orders/' + id, { method: 'DELETE' })
 }
 
+// 确认验收：团队提交验收后，客户自己点确认，项目直接变成「已完成」
+export async function acceptMyOrder(id) {
+  return await customerHttp('/jiedan/portal/orders/' + id + '/accept', { method: 'PUT' })
+}
+
 export async function changeMyPassword(oldPassword, newPassword) {
   return await customerHttp('/jiedan/account/password', {
     method: 'PUT',

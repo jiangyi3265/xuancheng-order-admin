@@ -638,6 +638,14 @@ export async function addRevision(id) {
   return vo
 }
 
+export async function completePendingItem(order, kind, bugId) {
+  const updated = await http(`${BASE}/${order.id}/pending-completion`, {
+    method: 'POST',
+    body: JSON.stringify({ kind, bugId, version: orderVersions.get(order) ?? order.version })
+  })
+  return upsert(updated)
+}
+
 export function remindPendingItem(order, kind, bugId) {
   return http(`${BASE}/${order.id}/pending-reminder`, {
     method: 'POST',

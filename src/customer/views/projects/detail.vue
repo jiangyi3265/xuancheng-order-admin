@@ -4,7 +4,7 @@
       <el-icon class="back" :size="20" @click="router.push('/projects')"><ArrowLeft /></el-icon>
       <div class="tt">
         <strong>{{ order?.title || '项目详情' }}</strong>
-        <span v-if="order">{{ order.requirement?.split('\n')[0] || order.orderNo }}</span>
+        <span v-if="order">{{ subtitle }}</span>
       </div>
       <el-tag v-if="order" :class="'project-status-'+order.status" size="small" :type="statusMap[order.status]?.type">
         {{ statusMap[order.status]?.label || order.status }}
@@ -22,6 +22,7 @@
 
     <section v-if="order && detailTab==='overview'" class="customer-project-summary">
       <ProgressSteps :status="order.status" :deadline="order.deadline" class="summary-progress" />
+      <p v-if="order.status === 'review'" class="accept-hint" role="status">团队已经交付，请检查一下。没问题点「确认验收」，有不满意的地方点「还有问题」。</p>
       <div class="info-row summary-price"><label><el-icon><PriceTag/></el-icon> 报价：</label><span v-if="Number(order.amount)">¥{{ Number(order.amount).toLocaleString() }}</span><span v-else class="summary-unpriced">待报价</span></div>
       <div class="info-row"><label><el-icon><Calendar/></el-icon> 截止日期：</label><span>{{ order.deadline || '未设置' }}</span></div>
       <div class="info-row"><label><el-icon><User/></el-icon> 负责团队：</label><span>{{ TEAM_NAME }}</span></div>
@@ -153,7 +154,8 @@
       </template>
     </main>
 
-    <div v-if="order && detailTab==='overview'" class="detail-footer"><el-button @click="detailTab='chat'"><el-icon><Phone/></el-icon>联系负责人</el-button><el-button type="primary" @click="detailTab='bugs'; openBugCreate()"><el-icon><ChatDotRound/></el-icon>反馈问题</el-button></div>
+    <div v-if="order && detailTab==='overview' && order.status === 'review'" class="detail-footer"><el-button @click="detailTab='bugs'; openBugCreate()"><el-icon><ChatDotRound/></el-icon>还有问题</el-button><el-button type="primary" :loading="accepting" @click="confirmAccept"><el-icon><CircleCheck/></el-icon>确认验收</el-button></div>
+    <div v-else-if="order && detailTab==='overview'" class="detail-footer"><el-button @click="detailTab='chat'"><el-icon><Phone/></el-icon>联系负责人</el-button><el-button type="primary" @click="detailTab='bugs'; openBugCreate()"><el-icon><ChatDotRound/></el-icon>反馈问题</el-button></div>
     <el-dialog v-model="bugCreateOpen" title="反馈问题" append-to-body><section class="bug-associated"><small>关联项目</small><h3>{{ order?.title }}</h3></section><el-form label-position="top" data-paste-zone="反馈问题"><el-form-item label="问题说明"><el-input v-model="bugText" type="textarea" :rows="7" placeholder="请描述具体问题、出现位置及预期效果"/></el-form-item><el-form-item label="截图 / 相关文件"><AttachmentUploader v-model="bugFiles" class="bug-upload"/></el-form-item></el-form><p class="muted">提交后负责人会收到通知，你可以在问题列表查看处理进度。</p><template #footer><el-button @click="bugCreateOpen=false">取消</el-button><el-button type="primary" :loading="bugSubmitting" @click="submitBug">提交反馈</el-button></template></el-dialog>
     <MessageComposer v-if="order && detailTab==='chat'" :draft="draft" @send="onSend" />
   </div>
@@ -172,7 +174,7 @@ import { chatDraft, sendDraft } from '@/utils/chatDraft'
 import MessageComposer from '@/customer/components/MessageComposer.vue'
 import ProgressSteps from '@/customer/components/ProgressSteps.vue'
 import { markSeen, seenAt } from '@/customer/utils/seen'
-import { getMyOrder, getMyOrderVersion, removeMyOrder, createBug, deleteBug, appendBugUpdate, updateBugStatus, sendMessage } from '@/customer/mock/store'
+import { getMyOrder, getMyOrderVersion, removeMyOrder, createBug, deleteBug, appendBugUpdate, updateBugStatus, sendMessage, acceptMyOrder } from '@/customer/mock/store'
 import { statusMap, priorityMap, TEAM_NAME } from '@/customer/constants/options'
 
 const route = useRoute()
@@ -209,6 +211,36 @@ watch([detailTab, () => lastChat.value?.time], () => {
   if (detailTab.value === 'chat' && lastChat.value) markSeen(order.value?.id, lastChat.value.time)
 }, { immediate: true })
 const bugItems = computed(() => order.value?.bugs || [])
+// 标题下面那行：需求第一行和项目名一样时（客户经常只写一句），改显示编号，不再重复两遍
+const subtitle = computed(() => {
+  const first = String(order.value?.requirement || '').split('\n')[0].trim()
+  return first && first !== String(order.value?.title || '').trim() ? first : order.value?.orderNo || ''
+})
+
+// 确认验收：团队提交验收后，客户自己点确认，项目直接变成「已完成」，负责人会收到提醒
+const accepting = ref(false)
+async function confirmAccept() {
+  if (accepting.value) return
+  try {
+    await ElMessageBox.confirm('项目已经按要求完成了吗？确认后会标记为「已完成」，团队会收到通知。', '确认验收', {
+      confirmButtonText: '确认验收',
+      cancelButtonText: '再看看',
+      type: 'success'
+    })
+  } catch {
+    return
+  }
+  accepting.value = true
+  try {
+    order.value = await acceptMyOrder(id)
+    ElMessage.success('已确认验收，感谢配合！')
+  } catch (e) {
+    ElMessage.error(e.message || '确认失败，请稍后重试')
+    await load(false, true)
+  } finally {
+    accepting.value = false
+  }
+}
 
 function bugStatus(bug) {
   return bug?.status === 'resolved' ? 'resolved' : 'open'
@@ -489,6 +521,7 @@ onBeforeUnmount(() => {
 .tab-new-dot { display: inline-block; width: 7px; height: 7px; margin-left: 4px; border-radius: 50%; background: #f56c6c; vertical-align: top; }
 .summary-progress { margin: 10px 0 6px; }
 .summary-unpriced { color: #8592a6 !important; font-size: 15px !important; font-weight: 500 !important; }
+.accept-hint { margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px; background: #fdf6ec; color: #8a5a12; font-size: 14px; line-height: 1.6; }
 .info-row {
   display: flex;
   gap: 10px;

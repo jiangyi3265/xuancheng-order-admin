@@ -1,6 +1,6 @@
 <template>
   <div ref="pageEl" class="order-page" :class="{'is-kanban':viewMode==='kanban'}">
-    <BoardHeader v-if="isMobile" :brand="viewMode==='list'" :title="viewMode==='list'?'玄成接单':'项目看板'" :subtitle="viewMode==='list'?'项目管理 · 交付协同 · 高效落地':''" :bell="viewMode==='list'" @bell="$router.push('/messages')"/>
+    <BoardHeader v-if="isMobile" :brand="viewMode==='list'" :title="viewMode==='list'?'玄成接单':'项目看板'" :subtitle="viewMode==='list'?'项目管理 · 交付协同 · 高效落地':''"><PendingBell /></BoardHeader>
     <!-- 工具栏（电脑） -->
     <div v-if="!isMobile" class="toolbar">
       <div class="left">
@@ -22,9 +22,20 @@
           clearable
           style="width: 250px"
         />
-        <el-select v-model="filter.channel" placeholder="渠道" clearable style="width: 110px">
+        <!-- 渠道、创建日期不常用：收进「筛选」，点开才多出一行（以前和搜索框挤在一排） -->
+        <el-button :type="moreFilterCount ? 'primary' : ''" :plain="!!moreFilterCount" @click="filterOpen = !filterOpen">
+          筛选{{ moreFilterCount ? '（' + moreFilterCount + '）' : '' }}
+          <el-icon class="el-icon--right"><component :is="filterOpen ? 'ArrowUp' : 'ArrowDown'" /></el-icon>
+        </el-button>
+        <el-button v-if="hasFilter" link type="primary" @click="resetFilter">清空筛选</el-button>
+        <el-button :icon="Download" :loading="exporting" @click="doExport">导出 Excel</el-button>
+      </div>
+      <div v-if="filterOpen" class="toolbar-extra">
+        <span class="extra-label">渠道</span>
+        <el-select v-model="filter.channel" placeholder="全部渠道" clearable style="width: 130px">
           <el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value" />
         </el-select>
+        <span class="extra-label">创建日期</span>
         <el-date-picker
           v-model="createRange"
           type="daterange"
@@ -32,18 +43,16 @@
           range-separator="至"
           start-placeholder="创建开始"
           end-placeholder="创建结束"
-          style="width: 230px"
+          style="width: 240px"
         />
-        <el-button v-if="hasFilter" link type="primary" @click="resetFilter">清空筛选</el-button>
-        <el-button :icon="Download" :loading="exporting" @click="doExport">导出 Excel</el-button>
       </div>
     </div>
 
     <div v-else class="board-project-tools">
       <div v-if="viewMode==='kanban'" class="board-kanban-counts"><button type="button" @click="chooseGroup('all')"><b>{{ quickCounts.all }}</b><span>全部项目</span></button><button v-for="st in ['pending','doing','review']" :key="st" type="button" @click="chooseGroup(st,true)"><b>{{ quickCounts[st] }}</b><span>{{ statusMap[st].label }}</span></button></div>
       <el-input v-model="filter.keyword" placeholder="项目/客户/联系方式" :prefix-icon="Search" clearable/>
-      <div class="board-filter-row"><el-select v-model="filter.channel" placeholder="渠道" clearable><el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value"/></el-select><el-button @click="filterOpen=!filterOpen">日期 <el-icon><ArrowDown/></el-icon></el-button><el-button v-if="!selectionMode" :disabled="batchBusy" @click="toggleSelection">多选</el-button></div>
-      <div v-if="filterOpen" class="m-dates"><el-date-picker v-model="rangeStart" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" style="width:48%"/><el-date-picker v-model="rangeEnd" type="date" value-format="YYYY-MM-DD" placeholder="结束日期" style="width:48%"/></div>
+      <div class="board-filter-row"><el-button @click="filterOpen=!filterOpen">筛选{{ moreFilterCount ? '（' + moreFilterCount + '）' : '' }} <el-icon><component :is="filterOpen ? 'ArrowUp' : 'ArrowDown'"/></el-icon></el-button><el-button v-if="!selectionMode" :disabled="batchBusy" @click="toggleSelection">多选</el-button></div>
+      <div v-if="filterOpen" class="m-filters"><el-select v-model="filter.channel" placeholder="全部渠道" clearable><el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value"/></el-select><div class="m-dates"><el-date-picker v-model="rangeStart" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" style="width:48%"/><el-date-picker v-model="rangeEnd" type="date" value-format="YYYY-MM-DD" placeholder="结束日期" style="width:48%"/></div></div>
       <div class="board-view-row"><el-radio-group v-model="viewMode"><el-radio-button value="list"><el-icon><List/></el-icon> 列表</el-radio-button><el-radio-button value="kanban"><el-icon><Grid/></el-icon> 看板</el-radio-button></el-radio-group><el-button text @click="quickCapture?.show()">极速建单</el-button><el-button text :icon="Download" :loading="exporting" @click="doExport">导出</el-button></div>
       <el-button v-if="hasFilter" link @click="resetFilter">清空筛选</el-button>
     </div>
@@ -405,6 +414,7 @@ import { useRoute, useRouter } from 'vue-router'
 import ProjectCover from '@/components/ProjectCover.vue'
 import QuickCapture from '@/components/QuickCapture.vue'
 const quickCapture=ref(null)
+import PendingBell from '@/components/PendingBell.vue'
 import BoardHeader from '@/components/board/BoardHeader.vue'
 import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
@@ -1049,6 +1059,18 @@ function handleDelete(row) {
   gap: 8px;
   flex-wrap: wrap;
 }
+/* 「筛选」点开后多出的一行：渠道 + 创建日期 */
+.toolbar-extra {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.extra-label { font-size: 13px; color: #606266; }
+.m-filters { display: grid; gap: 8px; }
+.m-filters > .el-select { width: 100%; }
 
 /* 看板 */
 .kanban {

@@ -738,9 +738,20 @@ function startSync() {
   poller = setInterval(syncNow, 2000)
 }
 
+// 手机上默认打开最需要处理的那一栏（电脑上「全部」一屏都能看到，不用换）：
+// 客户的消息还没人回 → 沟通；有要我处理的问题 → 问题；其他 → 需求
+function defaultMobileTab() {
+  if (props.order?.ownerId !== currentMember.value.id) return 'overview'
+  const lastChat = chatItems.value[chatItems.value.length - 1]
+  const waiting = lastChat ? lastChat.type === 'message' : props.order?.lastMessage?.type === 'message'
+  if (waiting && props.order?.status !== 'cancelled') return 'chat'
+  if (Number(props.order?.actionBugCount) > 0) return 'bugs'
+  return 'overview'
+}
+
 function onOpen() {
   desktopTab.value = props.noticeTab || 'all'
-  mobileTab.value = props.noticeTab || (Number(props.order?.actionBugCount) > 0 && props.order?.ownerId === currentMember.value.id ? 'bugs' : 'overview')
+  mobileTab.value = props.noticeTab || defaultMobileTab()
   syncNow(false)
   scrollChatBottom()
   startSync()

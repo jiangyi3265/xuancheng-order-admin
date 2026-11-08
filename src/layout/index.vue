@@ -56,16 +56,7 @@
             {{ currentMember.name.slice(-1) }}
           </el-avatar>
           <span class="name">{{ currentMember.name }}</span>
-          <el-icon
-            v-if="notifySupported"
-            class="bell"
-            :class="{ 'bell-on': notifyStatus === 'on', 'bell-denied': notifyStatus === 'denied' }"
-            :size="18"
-            :title="bellTitle"
-            @click="onBellClick"
-          >
-            <component :is="notifyStatus === 'on' ? BellFilled : Bell" />
-          </el-icon>
+          <PendingBell v-if="!isMobile" />
           <el-icon class="key-icon" :size="18" title="修改密码" @click="pwdVisible = true"><Key /></el-icon>
           <el-icon class="logout" :size="18" title="退出登录" @click="doLogout"><SwitchButton /></el-icon>
         </div>
@@ -79,7 +70,7 @@
 
     <nav class="mobile-nav" aria-label="主导航">
       <router-link v-for="item in primaryNav" :key="item.path" :to="item.path" :class="{selected: route.path === item.path}" :aria-label="item.label">
-        <el-badge :is-dot="item.path === '/messages' && (unreadCount > 0 || unreadQuotes.length > 0)"><el-icon><component :is="route.path===item.path && item.icon==='House'?'HomeFilled':route.path===item.path && item.icon==='User'?'UserFilled':item.icon" /></el-icon></el-badge><span>{{ item.label }}</span>
+        <el-badge :is-dot="item.path === '/workbench' && todoCount > 0"><el-icon><component :is="route.path===item.path && item.icon==='House'?'HomeFilled':route.path===item.path && item.icon==='User'?'UserFilled':item.icon" /></el-icon></el-badge><span>{{ item.label }}</span>
       </router-link>
     </nav>
     <QuickCapture :show-fab="!isMobile && ['/order','/workbench'].includes(route.path)" />
@@ -91,11 +82,12 @@
 <script setup>
 import {syncQuotes,unreadQuotes,quotes} from '@/stores/quotes'
 import WorkSearch from '@/components/WorkSearch.vue'
+import PendingBell from '@/components/PendingBell.vue'
 import BrandLogo from '@/components/board/BrandLogo.vue'
 import { isMobile } from '@/utils/useMobile'
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { SwitchButton, Key, Bell, BellFilled, Menu } from '@element-plus/icons-vue'
+import { SwitchButton, Key, Menu } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { menuRoutes } from '@/router'
 
@@ -103,8 +95,8 @@ import QuickCapture from '@/components/QuickCapture.vue'
 import SettleDialog from '@/components/SettleDialog.vue'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import { orders, approvals, pendingApprovals, currentMember, isBoss, syncOrders, signOutDevice, loadCollabConfig } from '@/mock/store'
-import { isMyTodo } from '@/utils/workbench'
-import { isNotifySupported, notifyState, enableNotify, disableNotify, hasBackgroundPush, showNotify } from '@/utils/notify'
+import { todoItems } from '@/utils/todos'
+import { hasBackgroundPush, showNotify } from '@/utils/notify'
 
 // 浏览器标签页标题：有待办时前面带数字，切到别的标签也能看见
 const BASE_TITLE = '玄成科技 · 接单系统'
@@ -143,22 +135,11 @@ const pwdVisible = ref(false)
 let orderPoller = null
 let alive = true
 
-// 桌面提醒（浏览器通知）：手机浏览器大多不支持，这时小铃铛整个不显示
-const notifySupported = isNotifySupported()
-const notifyStatus = ref(notifyState())
-const bellTitle = computed(() => {
-  if (notifyStatus.value === 'on') return '桌面提醒已开启，点一下关闭'
-  if (notifyStatus.value === 'denied') return '浏览器里禁止了通知，请在地址栏左边的设置里允许'
-  return '点这里开启桌面提醒（网页开着、最小化也能收到）'
-})
-
 // 每次只问服务端一个很轻的“变更戳”，项目有变化才重新拉列表；
 // 第一次进入（force）一定拉一遍。
 // 页面在后台（切到别的标签 / 最小化）也要继续查：不然标签页上的数字和桌面提醒都更新不了。
 function refreshOrders(force = false) {
   const quoteRefresh = syncQuotes().then(checkAttention).catch(()=>{})
-  // 浏览器里随时可能改通知权限，顺手同步一下铃铛状态
-  notifyStatus.value = notifyState()
   const projectRefresh = syncOrders(force === true)
     .then(checkAttention)
     .catch((e) => {
@@ -208,8 +189,8 @@ async function doLogout() {
 
 const todoCount = computed(
   () =>
-    orders.filter((o) => isMyTodo(o, currentMember.value.id)).length +
-    (isBoss.value ? pendingApprovals.value.length : 0) + unreadQuotes.value.length
+    // 和工作台「需要我处理」同一份清单（含老板的审批），再加上待处理的报价单
+    todoItems.value.length + unreadQuotes.value.length
 )
 
 // 换页面时回到顶部（以前会停在上一个页面滚到的位置，打开项目管理看到的是半截看板）
@@ -351,36 +332,10 @@ function checkAttention() {
   }
 }
 
-async function onBellClick() {
-  const state = notifyStatus.value
-  if (state === 'denied') {
-    ElMessage.warning('浏览器里禁止了通知，请在地址栏左边的设置里允许')
-    return
-  }
-  if (state === 'on') {
-    disableNotify()
-    notifyStatus.value = notifyState()
-    ElMessage.info('桌面提醒已关闭')
-    return
-  }
-  const next = await enableNotify()
-  notifyStatus.value = next
-  if (next === 'on') {
-    ElMessage.success(hasBackgroundPush() ? '系统推送已开启' : '页面提醒已开启，请保持页面打开')
-  } else if (next === 'denied') {
-    ElMessage.warning('浏览器里禁止了通知，请在地址栏左边的设置里允许')
-  } else {
-    ElMessage.info('没有开启成功，请在浏览器弹出的询问里选「允许」')
-  }
-}
-const unreadCount = computed(
-  () => orders.filter((o) => o.unread?.includes(currentMember.value.id)).length
-)
 function badgeOf(path) {
   if(path==='quotes')return unreadQuotes.value.length
-  if(path==='messages')return unreadCount.value + unreadQuotes.value.length
+  // 要处理的事都汇总在工作台「需要我处理」里：红点只挂在工作台；消息中心只是动态记录，不再挂一个几十的数字催人
   if (path === 'workbench') return todoCount.value
-  // 项目管理不再重复显示同一个未读数（消息中心已经有了），侧栏只留一处红点
   return 0
 }
 </script>
@@ -494,20 +449,6 @@ function badgeOf(path) {
 }
 .key-icon:hover {
   color: #409eff;
-}
-.bell {
-  cursor: pointer;
-  color: #909399;
-  margin-left: 2px;
-}
-.bell:hover {
-  color: #409eff;
-}
-.bell.bell-on {
-  color: #409eff;
-}
-.bell.bell-denied {
-  color: #c0c4cc;
 }
 .main {
   background: #f0f2f5;

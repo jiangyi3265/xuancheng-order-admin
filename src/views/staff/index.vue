@@ -9,8 +9,8 @@
     </div>
 
     <section class="staff-summary mobile-only"><div><el-icon><User/></el-icon><span><b>{{ MEMBERS.length }}</b> 位成员</span></div><div><el-icon><Folder/></el-icon><span><b>{{ MEMBERS.reduce((n,m)=>n+Number(m.unfinishedCount||0),0) }}</b> 个未完成项目</span></div></section>
-    <div class="entity-cards" v-loading="loading"><article v-for="row in MEMBERS" :key="row.id" class="entity-card"><div class="entity-card-head"><el-avatar :size="48">{{ row.name.slice(-1) }}</el-avatar><div><h3>{{ row.name }}</h3><p>{{ row.userName }}</p><p>负责 {{ row.orderCount || 0 }} 项 · 未完成 {{ row.unfinishedCount || 0 }} 项</p></div><el-tag :type="row.status==='0'?'success':'warning'">{{ row.status==='0'?'正常':'已停用' }}</el-tag></div><div v-if="row.role!=='boss'" class="entity-actions"><el-button @click="selectedMember=row">管理</el-button></div><p v-else>此账号受保护</p></article></div>
-    <el-dialog :model-value="!!selectedMember" title="成员设置与权限" @close="selectedMember=null"><template v-if="selectedMember"><div class="board-account-profile"><el-avatar :size="58">{{ selectedMember.name.slice(-1) }}</el-avatar><h2>{{ selectedMember.name }}</h2></div><el-form label-position="top"><el-form-item label="登录账号"><el-input :model-value="selectedMember.userName" readonly/></el-form-item></el-form><div class="board-account-actions"><el-button @click="doToggle(selectedMember)">{{ selectedMember.status==='0'?'停用账号':'启用账号' }}</el-button><el-button @click="doReset(selectedMember)">重置密码</el-button></div><table class="permission-table"><thead><tr><th>功能权限</th><th>{{ selectedMember.name }}</th></tr></thead><tbody><tr><td>管理自己的项目 / 客户</td><td>允许</td></tr><tr><td>提交验收 / 报价申请</td><td>允许</td></tr><tr><td>审批 / 完成 / 删除项目</td><td>需审批</td></tr><tr><td>成员管理 / 全局统计</td><td>不可访问</td></tr></tbody></table><p class="muted">权限按账号配置。停用账号后，该成员将无法登录。</p></template><template #footer><el-button type="danger" plain @click="doDelete(selectedMember)">删除成员</el-button><el-button type="primary" @click="selectedMember=null">完成</el-button></template></el-dialog>
+    <div class="entity-cards" v-loading="loading"><article v-for="row in MEMBERS" :key="row.id" class="entity-card"><div class="entity-card-head"><el-avatar :size="48">{{ row.name.slice(-1) }}</el-avatar><div><h3>{{ row.name }}</h3><p>{{ row.userName }}</p><p>负责 {{ row.orderCount || 0 }} 项 · 未完成 {{ row.unfinishedCount || 0 }} 项</p><p>企业微信：{{ wecomUsers[row.id] || '未填' }}</p></div><el-tag :type="row.status==='0'?'success':'warning'">{{ row.status==='0'?'正常':'已停用' }}</el-tag></div><div v-if="row.role!=='boss'" class="entity-actions"><el-button @click="selectedMember=row">管理</el-button></div><p v-else>此账号受保护</p></article></div>
+    <el-dialog :model-value="!!selectedMember" title="成员设置与权限" @close="selectedMember=null"><template v-if="selectedMember"><div class="board-account-profile"><el-avatar :size="58">{{ selectedMember.name.slice(-1) }}</el-avatar><h2>{{ selectedMember.name }}</h2></div><el-form label-position="top"><el-form-item label="登录账号"><el-input :model-value="selectedMember.userName" readonly/></el-form-item><el-form-item label="企业微信账号（填了才能在微信里收到提醒）"><InlineEdit :model-value="wecomUsers[selectedMember.id] || ''" placeholder="未填，点击填写" :maxlength="64" :save="(v) => saveWecom(selectedMember, v)" /></el-form-item></el-form><div class="board-account-actions"><el-button @click="doToggle(selectedMember)">{{ selectedMember.status==='0'?'停用账号':'启用账号' }}</el-button><el-button @click="doReset(selectedMember)">重置密码</el-button></div><table class="permission-table"><thead><tr><th>功能权限</th><th>{{ selectedMember.name }}</th></tr></thead><tbody><tr><td>管理自己的项目 / 客户</td><td>允许</td></tr><tr><td>提交验收 / 报价申请</td><td>允许</td></tr><tr><td>审批 / 完成 / 删除项目</td><td>需审批</td></tr><tr><td>成员管理 / 全局统计</td><td>不可访问</td></tr></tbody></table><p class="muted">权限按账号配置。停用账号后，该成员将无法登录。</p></template><template #footer><el-button type="danger" plain @click="doDelete(selectedMember)">删除成员</el-button><el-button type="primary" @click="selectedMember=null">完成</el-button></template></el-dialog>
     <el-table :data="MEMBERS" v-loading="loading" border stripe>
       <el-table-column label="姓名" min-width="130">
         <template #default="{ row }">
@@ -21,7 +21,12 @@
         </template>
       </el-table-column>
       <el-table-column label="登录账号" prop="userName" min-width="120" />
-      
+      <el-table-column label="企业微信" min-width="150">
+        <template #default="{ row }">
+          <InlineEdit :model-value="wecomUsers[row.id] || ''" placeholder="未填，点击填写" :maxlength="64" :save="(v) => saveWecom(row, v)" />
+        </template>
+      </el-table-column>
+
       <el-table-column label="名下项目" width="150" align="center">
         <template #default="{ row }">
           <span>{{ row.orderCount || 0 }} 个</span>
@@ -72,6 +77,9 @@
         <el-form-item label="初始密码" prop="password">
           <el-input v-model="createForm.password" placeholder="5-20 位" show-password />
         </el-form-item>
+        <el-form-item label="企业微信" prop="wecom">
+          <el-input v-model="createForm.wecom" placeholder="选填：通讯录里的「账号」，填了能收到微信提醒" clearable />
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="createVisible = false">取消</el-button>
@@ -88,15 +96,35 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { MEMBERS } from '@/constants/options'
-import { loadStaff, createStaff, resetStaffPwd, setStaffStatus, deleteStaff } from '@/mock/store'
+import { loadStaff, createStaff, resetStaffPwd, setStaffStatus, deleteStaff, getPushConfig, savePushConfig } from '@/mock/store'
 import { offerLoginInfo } from '@/utils/loginInfo'
 import { fmtTime } from '@/utils/time'
+import InlineEdit from '@/components/InlineEdit.vue'
 
 const loading = ref(false)
 const saving = ref(false)
 const createVisible = ref(false)
 const formRef = ref()
-const createForm = reactive({ userName: '', nickName: '', password: '' })
+const createForm = reactive({ userName: '', nickName: '', password: '', wecom: '' })
+
+// 企业微信账号：以前要另外去「通知设置」里填，现在建成员时、成员列表里直接填（存的是同一项设置）
+const WECOM_PREFIX = 'push.wecom.user.'
+const wecomUsers = reactive({})
+async function loadWecom() {
+  try {
+    const cfg = (await getPushConfig()) || {}
+    for (const [k, v] of Object.entries(cfg)) {
+      if (k.startsWith(WECOM_PREFIX)) wecomUsers[k.slice(WECOM_PREFIX.length)] = v || ''
+    }
+  } catch {
+    // 读不到就先显示「未填」，不影响成员管理
+  }
+}
+async function saveWecom(row, value) {
+  const v = String(value || '').trim()
+  await savePushConfig({ [WECOM_PREFIX + row.id]: v })
+  wecomUsers[row.id] = v
+}
 
 const rules = {
   userName: [
@@ -107,7 +135,8 @@ const rules = {
   password: [
     { required: true, message: '请填写密码', trigger: 'blur' },
     { min: 5, max: 20, message: '5-20 位', trigger: 'blur' }
-  ]
+  ],
+  wecom: [{ pattern: /^[A-Za-z0-9_.@-]{0,64}$/, message: '企业微信账号只能是字母、数字和 _ . @ -', trigger: 'blur' }]
 }
 
 async function load() {
@@ -125,6 +154,7 @@ function openCreate() {
   createForm.userName = ''
   createForm.nickName = ''
   createForm.password = ''
+  createForm.wecom = ''
   createVisible.value = true
   formRef.value?.clearValidate()
 }
@@ -135,11 +165,24 @@ function submitCreate() {
     saving.value = true
     try {
       const info = { name: createForm.nickName.trim(), userName: createForm.userName.trim(), password: createForm.password }
-      await createStaff({ ...createForm })
+      const wecom = createForm.wecom.trim()
+      await createStaff({ userName: createForm.userName, nickName: createForm.nickName, password: createForm.password })
       createVisible.value = false
-      load()
-      // 顺手把登录信息整理好发给同事；企业微信账号要到「通知设置」里填，这里提醒一句
-      offerLoginInfo({ ...info, who: 'staff', hint: '记得到「通知设置」里填上 TA 的企业微信账号，TA 才能在微信里收到提醒。' })
+      await load()
+      // 填了企业微信就顺手存上（建成员的接口不回新 id，按登录账号在刚刷新的名单里找）
+      let hint = '还没填 TA 的企业微信账号，可以在成员列表里补上，填了 TA 才能在微信里收到提醒。'
+      if (wecom) {
+        const m = MEMBERS.find((x) => x.userName === info.userName)
+        try {
+          if (!m) throw new Error('没找到刚建的成员')
+          await saveWecom(m, wecom)
+          hint = ''
+        } catch (e) {
+          hint = '企业微信账号没存上（' + (e.message || '请稍后重试') + '），可以在成员列表里再填一次。'
+        }
+      }
+      // 顺手把登录信息整理好发给同事
+      offerLoginInfo({ ...info, who: 'staff', hint })
     } catch (e) {
       ElMessage.error(e.message || '创建失败')
     } finally {
@@ -202,7 +245,10 @@ async function doDelete(row) {
   }
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  loadWecom()
+})
 </script>
 
 <style scoped>

@@ -1,49 +1,69 @@
 <template>
   <div class="workbench">
-    <QuotePanel embedded/>
     <section v-if="isMobile" class="board-workbench" :class="isBoss?'boss-workbench':'employee-workbench'">
-      <header class="wb-person"><BoardAvatar :role="isBoss?'boss':'employee'" :size="48"/><div><h1>{{ isBoss ? currentMember.name+'，'+greeting : currentMember.name }}<span v-if="isBoss"> 👋</span></h1><p>{{ isBoss?'统筹项目与交付，让每一天有序':'专注项目执行，稳步完成每一次交付' }}</p></div><button class="icon-button" aria-label="消息中心" @click="router.push('/messages')"><el-icon><Bell/></el-icon></button></header>
+      <header class="wb-person wb-person-compact"><BoardAvatar :role="isBoss?'boss':'employee'" :size="40"/><div><h1>{{ currentMember.name }}，{{ greeting }}</h1></div><PendingBell /></header>
       <template v-if="isBoss">
         <section class="wb-stat-panel"><button v-for="(s,i) in overview" :key="s.label" :class="'tone-'+i" @click="router.push(s.path)"><span class="stat-symbol"><el-icon><component :is="s.icon"/></el-icon></span><div><small>{{ s.label }}</small><strong>{{ s.value }}</strong></div></button></section>
         <section class="wb-shortcuts wb-shortcuts-5"><button @click="openDialog()"><span><el-icon><Plus/></el-icon></span>新建项目</button><button @click="router.push('/quotes')"><span><el-icon><PriceTag/></el-icon><i v-if="unreadQuotes.length" class="shortcut-badge">{{ unreadQuotes.length }}</i></span>报价中心</button><button @click="router.push('/approvals')"><span><el-icon><Finished/></el-icon><i v-if="pendingApprovals.length" class="shortcut-badge">{{ pendingApprovals.length }}</i></span>审批中心</button><button @click="router.push('/customers')"><span><el-icon><User/></el-icon></span>客户账号</button><button @click="router.push('/dashboard')"><span><el-icon><DataLine/></el-icon></span>数据统计</button></section>
-        <section class="wb-todos"><div class="board-section-title"><h2>今日待办</h2><span class="section-actions"><button v-if="unreadCount" :disabled="marking" @click="readAll">全部已读</button><button v-if="allMobileTodos.length > MOBILE_TODO_LIMIT" @click="todoExpanded=!todoExpanded">{{ todoExpanded ? '收起' : '全部 ' + allMobileTodos.length + ' 条' }} <el-icon><component :is="todoExpanded ? 'ArrowUp' : 'ArrowDown'"/></el-icon></button><button v-else @click="router.push('/order')">查看项目 <el-icon><ArrowRight/></el-icon></button></span></div><div v-for="t in mobileTodos" :key="t.key" class="wb-todo" role="button" tabindex="0" @click="t.run()" @keydown.enter.self="t.run()"><span class="todo-symbol"><el-icon><component :is="t.icon"/></el-icon></span><div><h3>{{ t.title }}</h3><p>{{ t.subtitle }}</p><p v-if="t.deadline" class="todo-deadline"><el-icon><Calendar/></el-icon>截止：{{ t.deadline }}</p><div v-if="t.order && (naOf(t.order) || isBoss || isMyNext(t.order) || t.order.assignState === 'pending')" class="wb-todo-actions" @click.stop><AssignMenu :order="t.order"/><el-button v-if="isMyNext(t.order)" size="small" type="success" :loading="completing === t.order.id" :aria-label="'完成这一步：' + t.order.title" @click="quickCompleteNext(t.order)">完成这一步</el-button><el-button v-if="!isBoss && t.order.assignState === 'pending'" size="small" type="primary" :loading="accepting === t.order.id" :aria-label="'接收：' + t.order.title" @click="doAccept(t.order)">接收</el-button><el-button v-if="naOf(t.order)" size="small" type="primary" :loading="acting===t.order.id" :aria-label="naOf(t.order).label+'：'+t.order.title" @click="mobileNext(t.order)">{{ naOf(t.order).label }}</el-button></div></div><el-tag :type="t.type" size="small">{{ t.status }}</el-tag><el-icon><ArrowRight/></el-icon></div><p v-if="!mobileTodos.length" class="todo-empty todo-empty-m">今日暂无待办</p></section>
-        <section v-if="myHands.length" class="wb-todos wb-hands"><div class="board-section-title"><h2>我手上的</h2><span class="stalled-tip hands-tip">{{ myHands.length }} 个</span></div><div v-for="o in shownHands" :key="'h'+o.id" class="wb-todo" role="button" tabindex="0" @click="openDetail(o)" @keydown.enter.self="openDetail(o)"><span class="todo-symbol"><el-icon><Document/></el-icon></span><div><h3>{{ o.title }}</h3><p>{{ handReason(o) }}</p><p v-if="o.deadline" class="todo-deadline"><el-icon><Calendar/></el-icon>截止：{{ o.deadline }}</p><div v-if="naOf(o)" class="wb-todo-actions" @click.stop><el-button size="small" type="primary" :loading="acting===o.id" :aria-label="naOf(o).label+'：'+o.title" @click="mobileNext(o)">{{ naOf(o).label }}</el-button></div></div><el-tag :type="statusMap[o.status]?.type" size="small">{{ statusMap[o.status]?.label }}</el-tag><el-icon><ArrowRight/></el-icon></div><button v-if="myHands.length > listLimit" class="stalled-more" @click="handsExpanded = !handsExpanded">{{ handsExpanded ? '收起' : '展开其余 ' + (myHands.length - listLimit) + ' 个' }}</button></section>
       </template>
-      <template v-else>
-        <section class="wb-todos"><div class="board-section-title"><h2>需要我处理</h2><span class="section-actions"><button v-if="unreadCount" :disabled="marking" @click="readAll">全部已读</button><button v-if="allMobileTodos.length > MOBILE_TODO_LIMIT" @click="todoExpanded=!todoExpanded">{{ todoExpanded ? '收起' : '全部 ' + allMobileTodos.length + ' 条' }} <el-icon><component :is="todoExpanded ? 'ArrowUp' : 'ArrowDown'"/></el-icon></button><button v-else @click="router.push('/order')">查看项目 <el-icon><ArrowRight/></el-icon></button></span></div><div v-for="t in mobileTodos" :key="t.key" class="wb-todo" role="button" tabindex="0" @click="t.run()" @keydown.enter.self="t.run()"><span class="todo-symbol"><el-icon><component :is="t.icon"/></el-icon></span><div><h3>{{ t.title }}</h3><p>{{ t.subtitle }}</p><p v-if="t.deadline" class="todo-deadline"><el-icon><Calendar/></el-icon>截止：{{ t.deadline }}</p><div v-if="t.order && (naOf(t.order) || isBoss || isMyNext(t.order) || t.order.assignState === 'pending')" class="wb-todo-actions" @click.stop><AssignMenu :order="t.order"/><el-button v-if="isMyNext(t.order)" size="small" type="success" :loading="completing === t.order.id" :aria-label="'完成这一步：' + t.order.title" @click="quickCompleteNext(t.order)">完成这一步</el-button><el-button v-if="!isBoss && t.order.assignState === 'pending'" size="small" type="primary" :loading="accepting === t.order.id" :aria-label="'接收：' + t.order.title" @click="doAccept(t.order)">接收</el-button><el-button v-if="naOf(t.order)" size="small" type="primary" :loading="acting===t.order.id" :aria-label="naOf(t.order).label+'：'+t.order.title" @click="mobileNext(t.order)">{{ naOf(t.order).label }}</el-button></div></div><el-tag :type="t.type" size="small">{{ t.status }}</el-tag><el-icon><ArrowRight/></el-icon></div><p v-if="!mobileTodos.length" class="todo-empty todo-empty-m">今日暂无待办</p></section>
+      <!-- 需要我处理：老板和员工同一份清单（审批、拒单、客户消息、下一步、验收……），每条直接带处理按钮 -->
+      <section class="wb-todos">
+        <div class="board-section-title"><h2>需要我处理</h2><span class="section-actions"><button v-if="unreadCount" :disabled="marking" @click="readAll">全部已读</button><button v-if="todoItems.length > MOBILE_TODO_LIMIT" @click="todoExpanded=!todoExpanded">{{ todoExpanded ? '收起' : '全部 ' + todoItems.length + ' 条' }} <el-icon><component :is="todoExpanded ? 'ArrowUp' : 'ArrowDown'"/></el-icon></button><button v-else @click="router.push('/order')">查看项目 <el-icon><ArrowRight/></el-icon></button></span></div>
+        <template v-for="t in mobileTodos" :key="t.key">
+          <ApprovalItem v-if="t.kind === 'approval'" :a="t.approval"/>
+          <div v-else class="wb-todo" role="button" tabindex="0" @click="openDetail(t.order)" @keydown.enter.self="openDetail(t.order)">
+            <span class="todo-symbol"><el-icon><component :is="todoIcon(t)"/></el-icon></span>
+            <div>
+              <h3>{{ t.order.title }}</h3>
+              <p>{{ t.text }}</p>
+              <p v-if="todoDeadline(t)" class="todo-deadline"><el-icon><Calendar/></el-icon>截止：{{ todoDeadline(t) }}</p>
+              <div class="wb-todo-actions" @click.stop>
+                <template v-if="t.kind === 'assign'">
+                  <el-button size="small" type="primary" :loading="accepting === t.order.id" :aria-label="'接收：' + t.order.title" @click="doAccept(t.order)">接收</el-button>
+                  <el-button size="small" @click="openReject(t.order)">拒绝…</el-button>
+                </template>
+                <template v-else-if="isBoss && (t.kind === 'returned' || t.kind === 'request')">
+                  <AssignMenu :order="t.order"><el-button size="small" type="primary">{{ t.kind === 'returned' ? '改派给…' : '派给…' }}</el-button></AssignMenu>
+                  <el-button size="small" :loading="acting === t.order.id" @click="doMyself(t.order)">我自己做</el-button>
+                </template>
+                <template v-else>
+                  <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click="finishPending(t)">标为已处理</el-button>
+                  <el-button v-else-if="t.kind === 'reply'" size="small" type="primary" @click="openDetail(t.order, 'chat')">回复</el-button>
+                  <el-button v-else-if="t.kind === 'mention'" size="small" type="primary" plain @click="openDetail(t.order, 'internal')">查看</el-button>
+                  <el-button v-else-if="t.kind === 'next' && isMyNext(t.order)" size="small" type="success" :loading="completing === t.order.id" :aria-label="'完成这一步：' + t.order.title" @click="quickCompleteNext(t.order)">完成这一步</el-button>
+                  <el-button v-else-if="naOf(t.order)" size="small" type="primary" :loading="acting === t.order.id" :aria-label="naOf(t.order).label + '：' + t.order.title" @click="mobileNext(t.order)">{{ naOf(t.order).label }}</el-button>
+                  <AssignMenu v-if="isBoss" :order="t.order"/>
+                </template>
+              </div>
+            </div>
+            <el-tag :type="statusMap[t.order.status]?.type" size="small">{{ statusMap[t.order.status]?.label }}</el-tag><el-icon><ArrowRight/></el-icon>
+          </div>
+        </template>
+        <p v-if="!mobileTodos.length" class="todo-empty todo-empty-m">今日暂无待办</p>
+      </section>
+      <!-- 报价单放在待办下面（以前排在最上面）；没有报价单时只占一行 -->
+      <QuotePanel embedded/>
+      <template v-if="!isBoss">
+        <!-- 待接收的项目已经在上面「需要我处理」里，这里不再重复列一遍 -->
         <nav class="board-tabs"><button v-for="t in employeeTabs" :key="t.key" :class="{active:employeeTab===t.key}" @click="employeeTab=t.key">{{ t.label }} <b>{{ t.count }}</b></button></nav>
         <div class="board-section-title"><h2>{{ employeeTabs.find(t=>t.key===employeeTab)?.label }}项目（{{ employeeOrders.length }}）</h2></div>
-        <article v-for="o in employeeOrders" :key="o.id" class="employee-project"><ProjectCover :order="o" compact/><div class="employee-project-copy"><h3>{{ o.title }}</h3><p>客户：{{ o.customer || '未填写' }}</p><p class="two-lines">{{ o.requirement || '打开详情查看项目需求' }}</p><div class="employee-actions"><el-button @click="openDetail(o)">查看详情</el-button><el-button v-if="o.assignState==='pending'" type="primary" :loading="accepting===o.id" @click="doAccept(o)">接单</el-button><el-button v-else-if="naOf(o)" type="primary" :loading="acting===o.id" :aria-label="naOf(o).label+'：'+o.title" @click="mobileNext(o)">{{ naOf(o).label }}</el-button></div></div></article>
-        <el-empty v-if="!employeeOrders.length" description="暂无项目" :image-size="72"/>
-        <section v-if="employeeTab==='pending' && orders.some(o=>o.status==='doing')" class="employee-ongoing"><div class="board-section-title"><h2>进行中的项目</h2></div><article v-for="o in orders.filter(o=>o.status==='doing').slice(0,2)" :key="o.id" class="employee-project"><ProjectCover :order="o" compact/><div class="employee-project-copy"><h3>{{ o.title }}</h3><p>客户：{{ o.customer || '未填写' }}</p><p>截止：{{ o.deadline || '未设置' }}</p><el-button type="primary" size="small" @click="openDetail(o)">查看进度</el-button></div></article></section>
+        <article v-for="o in employeeOrders" :key="o.id" class="employee-project"><ProjectCover :order="o" compact/><div class="employee-project-copy"><h3>{{ o.title }}</h3><p>客户：{{ o.customer || '未填写' }}</p><p class="two-lines">{{ o.requirement || '打开详情查看项目需求' }}</p><div class="employee-actions"><el-button @click="openDetail(o)">查看详情</el-button><el-button v-if="naOf(o)" type="primary" :loading="acting===o.id" :aria-label="naOf(o).label+'：'+o.title" @click="mobileNext(o)">{{ naOf(o).label }}</el-button></div></div></article>
+        <el-empty v-if="!employeeOrders.length" :description="todoItems.length ? '没有别的项目了，要处理的都在上面' : '暂无项目'" :image-size="72"/>
         <section v-if="myRequests.length" class="employee-requests"><div class="board-section-title"><h2>我的申请</h2><button @click="router.push('/approvals')">查看全部 <el-icon><ArrowRight/></el-icon></button></div><ApprovalItem v-for="a in myRequests.slice(0,2)" :key="a.id" :a="a"/></section>
       </template>
       <!-- 快被忘了：待确认 / 进行中、超过 N 天没有任何动静的项目 -->
       <section v-if="stalledList.length" class="wb-todos wb-stalled"><div class="board-section-title"><h2>快被忘了</h2><span class="stalled-tip">超过 {{ collab.stallDays }} 天没动静</span></div><div v-for="s in stalledList.slice(0, stalledExpanded ? undefined : 4)" :key="'s'+s.o.id" class="wb-todo" role="button" tabindex="0" @click="openDetail(s.o)" @keydown.enter.self="openDetail(s.o)"><span class="todo-symbol stalled-symbol"><el-icon><Clock/></el-icon></span><div><h3>{{ s.o.title }}</h3><p>{{ s.days }} 天没有任何记录 · {{ s.o.ownerId === currentMember.id ? '我负责' : ownerName(s.o) }}</p><div class="wb-todo-actions" @click.stop><el-button v-if="s.o.ownerId !== currentMember.id" size="small" :icon="Bell" @click="quickNudge(s.o)">催一下</el-button><el-button v-else size="small" type="primary" plain @click="openDetail(s.o, 'internal')">写进展</el-button></div></div><el-tag type="warning" size="small">{{ statusMap[s.o.status]?.label }}</el-tag><el-icon><ArrowRight/></el-icon></div><button v-if="stalledList.length > 4" class="stalled-more" @click="stalledExpanded = !stalledExpanded">{{ stalledExpanded ? '收起' : '展开其余 ' + (stalledList.length - 4) + ' 个' }}</button></section>
     </section>
     <div v-else class="desktop-workbench">
-    <div class="overview-stats">
-      <button class="overview-stat" v-for="s in overview" :key="s.label" @click="router.push(s.path)"><el-icon><component :is="s.icon" /></el-icon><div><small>{{ s.label }}</small><strong>{{ s.value }}</strong></div></button>
-    </div>
-    <div class="quick-entries quick-entries-5 slim-entries">
-      <button @click="openDialog()"><el-icon><Plus /></el-icon>新建项目</button>
-      <button @click="router.push('/quotes')"><span class="entry-icon"><el-icon><PriceTag /></el-icon><i v-if="unreadQuotes.length" class="shortcut-badge">{{ unreadQuotes.length }}</i></span>{{ isBoss ? '报价中心' : '我的报价' }}</button>
-      <button @click="router.push('/approvals')"><span class="entry-icon"><el-icon><Finished /></el-icon><i v-if="isBoss && pendingApprovals.length" class="shortcut-badge">{{ pendingApprovals.length }}</i></span>{{ isBoss ? '审批中心' : '我的申请' }}</button>
-      <button @click="router.push('/customers')"><el-icon><User /></el-icon>客户账号</button>
-      <button @click="router.push(isBoss ? '/dashboard' : '/messages')"><el-icon><component :is="isBoss ? 'DataLine' : 'ChatDotRound'" /></el-icon>{{ isBoss ? '数据统计' : '我的消息' }}</button>
-    </div>
-    <!-- 老板：员工提交的申请，批了才生效 -->
-    <template v-if="isBoss && pendingApprovals.length">
-      <div class="section-title amber-bar">
-        <span>待我批准</span>
-        <el-tag type="warning" effect="dark" round size="small">{{ pendingApprovals.length }}</el-tag>
+    <!-- 数字卡一行；常用页面都在左侧菜单里，这里只留「新建项目」 -->
+    <div class="overview-row">
+      <div class="overview-stats">
+        <button class="overview-stat" v-for="s in overview" :key="s.label" @click="router.push(s.path)"><el-icon><component :is="s.icon" /></el-icon><div><small>{{ s.label }}</small><strong>{{ s.value }}</strong></div></button>
       </div>
-      <div class="approval-list">
-        <ApprovalItem v-for="a in pendingApprovals" :key="a.id" :a="a" />
-      </div>
-    </template>
+      <el-button type="primary" size="large" :icon="Plus" class="overview-create" @click="openDialog()">新建项目</el-button>
+    </div>
 
-    <!-- 员工：自己提交过的申请，老板批了才生效 -->
+    <!-- 员工：还在等老板批的申请（批完的结果会发消息，不在这里堆着） -->
     <template v-if="!isBoss && myRequests.length">
       <div class="section-title gray-bar">
         <span>我的申请</span>
@@ -54,70 +74,88 @@
       </div>
     </template>
 
-    <!-- 需要我处理 -->
+    <!-- 需要我处理：审批、员工拒单、客户新需求和消息、下一步、验收、逾期……都在这一处 -->
     <div class="section-title red-bar">
       <span>需要我处理</span>
       <span class="todo-head-right">
         <el-button v-if="unreadCount" link type="primary" :loading="marking" @click="readAll">新动态全部已读（{{ unreadCount }}）</el-button>
         <el-button :icon="Refresh" link :loading="refreshing" aria-label="刷新" title="刷新" @click="refreshAll" />
-        <el-tag v-if="todoList.length" type="danger" effect="dark" round size="small">{{ todoList.length }}</el-tag>
+        <el-tag v-if="todoItems.length" type="danger" effect="dark" round size="small">{{ todoItems.length }}</el-tag>
       </span>
     </div>
-    <div v-if="todoList.length" class="cards">
-      <div v-for="o in todoList" :key="o.id" class="row-card todo" @click="openDetail(o)">
-        <span v-if="isUnread(o)" class="new-badge">NEW</span>
-        <div class="rc-main">
-          <div class="rc-title">
-            {{ o.title }}
-            <el-icon v-if="o.attachmentCount || (o.attachments && o.attachments.length)" class="pic"><Paperclip /></el-icon>
+    <div v-if="todoItems.length" class="cards">
+      <template v-for="t in shownTodos" :key="t.key">
+        <ApprovalItem v-if="t.kind === 'approval'" :a="t.approval" />
+        <div v-else class="row-card todo" :class="'todo-' + t.kind" @click="openDetail(t.order)">
+          <span v-if="isUnread(t.order)" class="new-badge">NEW</span>
+          <div class="rc-main">
+            <div class="rc-title">
+              {{ t.order.title }}
+              <el-icon v-if="t.order.attachmentCount || (t.order.attachments && t.order.attachments.length)" class="pic"><Paperclip /></el-icon>
+            </div>
+            <div class="rc-reason">{{ t.text }}</div>
           </div>
-          <div class="rc-reason">{{ reasonFor(o) }}</div>
+          <div class="rc-meta">
+            <!-- 按钮一行、状态和期限一行（电脑上这两层不占位，和原来一样排成一行） -->
+            <div class="rc-actions">
+              <template v-if="t.kind === 'assign'">
+                <el-button size="small" type="primary" :loading="accepting === t.order.id" @click.stop="doAccept(t.order)">接收</el-button>
+                <el-button size="small" @click.stop="openReject(t.order)">拒绝…</el-button>
+              </template>
+              <template v-else-if="isBoss && (t.kind === 'returned' || t.kind === 'request')">
+                <AssignMenu :order="t.order"><el-button size="small" type="primary">{{ t.kind === 'returned' ? '改派给…' : '派给…' }}</el-button></AssignMenu>
+                <el-button size="small" :loading="acting === t.order.id" @click.stop="doMyself(t.order)">我自己做</el-button>
+              </template>
+              <template v-else>
+                <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click.stop="finishPending(t)">标为已处理</el-button>
+                <el-button v-else-if="t.kind === 'reply'" size="small" type="primary" :icon="ChatDotRound" @click.stop="openDetail(t.order, 'chat')">回复</el-button>
+                <el-button v-else-if="t.kind === 'mention'" size="small" type="primary" plain @click.stop="openDetail(t.order, 'internal')">查看</el-button>
+                <el-button
+                  v-else-if="t.kind === 'next' && isMyNext(t.order)"
+                  size="small"
+                  type="success"
+                  :icon="Check"
+                  :loading="completing === t.order.id"
+                  @click.stop="quickCompleteNext(t.order)"
+                >完成这一步</el-button>
+                <el-button
+                  v-else-if="naOf(t.order)"
+                  size="small"
+                  type="primary"
+                  :icon="Promotion"
+                  @click.stop="quickNext(t.order)"
+                >{{ naOf(t.order).label }}</el-button>
+                <AssignMenu v-if="isBoss" :order="t.order" />
+              </template>
+            </div>
+            <div class="rc-info">
+              <el-tag size="small" :type="statusMap[t.order.status]?.type" effect="light">{{ statusMap[t.order.status]?.label }}</el-tag>
+              <el-tag v-if="dueTag(t.order)" :type="dueTag(t.order).type" size="small" effect="dark">{{ dueTag(t.order).text }}</el-tag>
+              <span v-if="t.order.deadline" class="rc-deadline" :class="{ red: isOverdue(t.order) }">
+                <el-icon><Clock /></el-icon>{{ t.order.deadline }}
+              </span>
+            </div>
+          </div>
         </div>
-        <div class="rc-meta">
-          <!-- 按钮一行、状态和期限一行（电脑上这两层不占位，和原来一样排成一行） -->
-          <div class="rc-actions">
-            <template v-if="!isBoss && o.assignState === 'pending'">
-              <el-button size="small" type="primary" :loading="accepting === o.id" @click.stop="doAccept(o)">接收</el-button>
-              <el-button size="small" @click.stop="openReject(o)">拒绝…</el-button>
-            </template>
-            <el-button
-              v-if="isMyNext(o)"
-              size="small"
-              type="success"
-              :icon="Check"
-              :loading="completing === o.id"
-              @click.stop="quickCompleteNext(o)"
-            >完成这一步</el-button>
-            <el-button
-              v-if="naOf(o)"
-              size="small"
-              type="primary"
-              :icon="Promotion"
-              @click.stop="quickNext(o)"
-            >{{ naOf(o).label }}</el-button>
-            <AssignMenu :order="o" />
-          </div>
-          <div class="rc-info">
-            <el-tag size="small" :type="statusMap[o.status]?.type" effect="light">{{ statusMap[o.status]?.label }}</el-tag>
-            <el-tag v-if="dueTag(o)" :type="dueTag(o).type" size="small" effect="dark">{{ dueTag(o).text }}</el-tag>
-            <span v-if="o.deadline" class="rc-deadline" :class="{ red: isOverdue(o) }">
-              <el-icon><Clock /></el-icon>{{ o.deadline }}
-            </span>
-          </div>
-        </div>
-      </div>
+      </template>
     </div>
     <!-- 没有待办时只占一行，不再放一大块空白插图 -->
     <p v-else class="todo-empty">待办都清空啦 🎉</p>
+    <el-button v-if="todoItems.length > TODO_LIMIT" text type="primary" class="team-toggle" @click="todosExpanded = !todosExpanded">
+      {{ todosExpanded ? '收起' : `还有 ${todoItems.length - TODO_LIMIT} 条，展开` }}
+    </el-button>
 
-    <!-- 快被忘了：待确认 / 进行中、超过 N 天没有任何动静 -->
+    <!-- 报价单放在待办下面（以前排在最上面）；没有报价单时只占一行 -->
+    <QuotePanel embedded class="wb-quote-panel"/>
+
+    <!-- 快被忘了：待确认 / 进行中、超过 N 天没动静 -->
     <template v-if="stalledList.length">
       <div class="section-title amber-bar">
         <span>快被忘了 · 超过 {{ collab.stallDays }} 天没动静</span>
         <el-tag type="warning" effect="dark" round size="small">{{ stalledList.length }}</el-tag>
       </div>
       <div class="cards">
-        <div v-for="s in stalledList" :key="'s' + s.o.id" class="row-card stalled" @click="openDetail(s.o)">
+        <div v-for="s in shownStalled" :key="'s' + s.o.id" class="row-card stalled" @click="openDetail(s.o)">
           <div class="rc-main">
             <div class="rc-title">{{ s.o.title }}</div>
             <div class="rc-reason amber">{{ s.days }} 天没有任何记录或进展 · {{ s.o.ownerId === currentMember.id ? '我负责' : ownerName(s.o) }}</div>
@@ -133,10 +171,13 @@
           </div>
         </div>
       </div>
+      <el-button v-if="stalledList.length > listLimit" text type="primary" class="team-toggle" @click="stalledExpanded = !stalledExpanded">
+        {{ stalledExpanded ? '收起' : `还有 ${stalledList.length - listLimit} 个，展开` }}
+      </el-button>
     </template>
 
-    <!-- 我手上的：我负责、已接收、待开工 / 进行中（以前接收后就从工作台消失了，要去项目管理里翻） -->
-    <template v-if="myHands.length">
+    <!-- 员工：我手上的（我负责、已接收、待开工 / 进行中） -->
+    <template v-if="!isBoss && myHands.length">
       <div class="section-title blue-bar">
         <span>我手上的</span>
         <el-tag type="primary" effect="plain" round size="small">{{ myHands.length }}</el-tag>
@@ -167,7 +208,7 @@
       </el-button>
     </template>
 
-    <!-- 老板：每个人手上有多少单，点进去只看这个人的（放在待办后面；没单子的人默认收起） -->
+    <!-- 老板：每个人手上有多少单，点进去只看这个人的（没单子的人默认收起） -->
     <template v-if="isBoss && team.length > 1">
       <div class="section-title blue-bar">
         <span>我的团队</span>
@@ -196,8 +237,8 @@
       </el-button>
     </template>
 
-    <!-- 等对方处理：只是看一眼，默认显示前几个，其余点「展开」（以前几十张卡片一直排到底） -->
-    <template v-if="waitingList.length">
+    <!-- 员工：已提交、等老板验收的 -->
+    <template v-if="!isBoss && waitingList.length">
       <div class="section-title gray-bar">
         <span>等对方处理</span>
         <el-tag type="info" effect="plain" round size="small">{{ waitingList.length }}</el-tag>
@@ -211,7 +252,6 @@
           <div class="rc-meta">
             <div class="rc-actions">
               <el-button size="small" :icon="Bell" @click.stop="quickNudge(o)">催一下</el-button>
-              <AssignMenu :order="o" />
             </div>
             <div class="rc-info">
               <el-tag v-if="dueTag(o)" :type="dueTag(o).type" size="small" effect="dark">{{ dueTag(o).text }}</el-tag>
@@ -256,12 +296,13 @@
 <script setup>
 import QuotePanel from '@/views/quotes/index.vue'
 import {unreadQuotes, markInboxRead} from '@/stores/quotes'
+import PendingBell from '@/components/PendingBell.vue'
 import BoardAvatar from '@/components/board/BoardAvatar.vue'
 import ProjectCover from '@/components/ProjectCover.vue'
 import { isMobile } from '@/utils/useMobile'
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Paperclip, Clock, Refresh, Promotion, Bell, Check } from '@element-plus/icons-vue'
+import { Paperclip, Clock, Refresh, Promotion, Bell, Check, ChatDotRound, Plus } from '@element-plus/icons-vue'
 import OrderDetail from '@/views/order/components/OrderDetail.vue'
 import OrderDialog from '@/views/order/components/OrderDialog.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
@@ -274,10 +315,11 @@ import { changeOrderStatus } from '@/utils/settle'
 import { useRouter } from 'vue-router'
 import {
   orders, approvals, pendingApprovals, getOrder, currentMember, isBoss, editOrder, createOrder, removeOrder, nudge,
-  acceptOrder, rejectOrder, syncOrders, loadApprovals, collab, completeNextStep, setNextStep
+  acceptOrder, rejectOrder, syncOrders, loadApprovals, collab, completeNextStep, setNextStep, completePendingItem
 } from '@/mock/store'
 import { statusMap, MEMBERS, memberMap } from '@/constants/options'
-import { isMyTodo, isWaitingOther, nextAction, nextDueState, shortDue, stalledDays } from '@/utils/workbench'
+import { isWaitingOther, nextAction, stalledDays } from '@/utils/workbench'
+import { todoItems, todoOrderIds, isMyNextStep } from '@/utils/todos'
 import { owed, money } from '@/utils/payment'
 import { todayStr as todayLocal } from '@/utils/date'
 
@@ -288,24 +330,34 @@ const isOverdue = (o) =>
 const isUnread = (o) => o.unread?.includes(currentMember.value.id)
 
 // 下一步交给我的项目
-const isMyNext = (o) => !!o.nextStep && o.nextOwnerId === currentMember.value.id
-// 待办排序：@我 的 → 交给我的下一步已过期 / 今天到期 → 项目逾期 → 其他
-function urgency(o) {
-  if (o.myMention) return 0
-  const due = isMyNext(o) ? nextDueState(o) : null
-  if (due === 'overdue') return 1
-  if (due === 'today') return 2
-  if (isOverdue(o)) return 3
-  return 4
+const isMyNext = (o) => isMyNextStep(o, currentMember.value.id)
+// 「需要我处理」清单在 utils/todos.js（侧栏红点用同一份）；电脑上先放 8 条，其余点「展开」
+const TODO_LIMIT = 8
+const todosExpanded = ref(false)
+const shownTodos = computed(() => (todosExpanded.value ? todoItems.value : todoItems.value.slice(0, TODO_LIMIT)))
+const TODO_ICONS = { returned: 'Back', urgent: 'AlarmClock', mention: 'ChatLineRound', reply: 'ChatDotRound', next: 'Promotion', assign: 'User', request: 'Tickets', bugs: 'Warning', manual: 'Flag', review: 'CircleCheck', overdue: 'Clock' }
+// 加急 / 手动标记：和顶部铃铛里一样，处理完直接点「标为已处理」
+const finishing = ref('')
+async function finishPending(t) {
+  if (finishing.value) return
+  finishing.value = t.key
+  try {
+    await completePendingItem(t.order, t.kind)
+    ElMessage.success(t.kind === 'urgent' ? '已结束本次加急' : '已标为已处理')
+  } catch (e) {
+    ElMessage.error(e.message || '标记失败，请重试')
+  } finally {
+    finishing.value = ''
+  }
 }
-const todoList = computed(() =>
-  orders.filter((o) => isMyTodo(o, currentMember.value.id)).sort((a, b) => urgency(a) - urgency(b))
-)
-// 快被忘了：待确认 / 进行中、超过设置天数没有任何动静（老板看全部，员工看自己的）
+const todoIcon = (t) => TODO_ICONS[t.kind] || 'Document'
+// 点卡片是普通打开项目；要直达「沟通」「内部」「问题」点卡片上的按钮（手机上打开时也会自动停在要处理的那一栏）
+const todoDeadline = (t) => (t.kind === 'next' && t.order.nextDue) || t.order.deadline || ''
+// 快被忘了：待确认 / 进行中、超过设置天数没有任何动静（老板看全部，员工看自己的）；已经在待办里的不重复列
 const stalledList = computed(() =>
   orders
     .map((o) => ({ o, days: stalledDays(o, collab.stallDays) }))
-    .filter((s) => s.days > 0)
+    .filter((s) => s.days > 0 && !todoOrderIds.value.has(s.o.id))
     .sort((a, b) => b.days - a.days)
 )
 const stalledExpanded = ref(false)
@@ -319,9 +371,9 @@ const waitingList = computed(() =>
 const listLimit = computed(() => (isMobile.value ? 3 : 6))
 const waitingExpanded = ref(false)
 const shownWaiting = computed(() => (waitingExpanded.value ? waitingList.value : waitingList.value.slice(0, listLimit.value)))
+const shownStalled = computed(() => (stalledExpanded.value ? stalledList.value : stalledList.value.slice(0, listLimit.value)))
 
 // 我手上的：我负责、已接收、待开工 / 进行中，且不在「需要我处理」「快被忘了」里；有截止日期的排前面
-const todoIds = computed(() => new Set(todoList.value.map((o) => o.id)))
 const myHands = computed(() =>
   orders
     .filter(
@@ -329,7 +381,7 @@ const myHands = computed(() =>
         o.ownerId === currentMember.value.id &&
         ['pending', 'doing'].includes(o.status) &&
         o.assignState !== 'pending' &&
-        !todoIds.value.has(o.id) &&
+        !todoOrderIds.value.has(o.id) &&
         !stalledIds.value.has(o.id)
     )
     .sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'))
@@ -400,38 +452,34 @@ const overview = computed(() => [
  {label:'待验收',value:orders.filter(o=>o.status==='review').length,icon:'CircleCheck',path:'/order?status=review'},
  {label:isBoss.value?'待收款':'我的申请',value:isBoss.value?money(orders.filter(o=>o.status!=='cancelled').reduce((n,o)=>n+owed(o),0)):approvals.length,icon:isBoss.value?'Wallet':'Finished',path:isBoss.value?'/order?status=owing':'/approvals'}
 ])
-const employeeTab=ref('pending')
+// 员工手机上的分栏：待接收的已经在「需要我处理」里，这里只分「手上的」（没开工 + 进行中）和「待验收」；
+// 已经列在「需要我处理」里的项目不再在下面重复出现
+const employeeTab=ref('doing')
+const inHand=(o)=>['pending','doing'].includes(o.status)&&o.assignState!=='pending'
+const notInTodo=(o)=>!todoOrderIds.value.has(o.id)
 const employeeTabs=computed(()=>[
- {key:'pending',label:'待接单',count:orders.filter(o=>o.assignState==='pending').length},
- {key:'doing',label:'进行中',count:orders.filter(o=>o.status==='doing'&&o.assignState!=='pending').length},
- {key:'review',label:'待验收',count:orders.filter(o=>o.status==='review').length}
+ {key:'doing',label:'手上的',count:orders.filter(o=>inHand(o)&&notInTodo(o)).length},
+ {key:'review',label:'待验收',count:orders.filter(o=>o.status==='review'&&notInTodo(o)).length}
 ])
-const employeeOrders=computed(()=>orders.filter(o=>employeeTab.value==='pending'?o.assignState==='pending':o.status===employeeTab.value&&o.assignState!=='pending'))
-// 手机待办默认显示 6 条，「全部 N 条」原地展开（以前跳去项目列表，看到的是全部项目而不是待办）
+const employeeOrders=computed(()=>orders.filter(o=>notInTodo(o)&&(employeeTab.value==='doing'?inHand(o):o.status==='review')))
+// 手机待办默认显示 6 条，「全部 N 条」原地展开
 const MOBILE_TODO_LIMIT=6
 const todoExpanded=ref(false)
-const mobileTodos=computed(()=>todoExpanded.value?allMobileTodos.value:allMobileTodos.value.slice(0,MOBILE_TODO_LIMIT))
-const allMobileTodos=computed(()=>[
- ...todoList.value.map(o=>({key:'o'+o.id,order:o,title:({review:'项目验收：',doing:'进行中：'}[o.status]||'项目确认：')+o.title,subtitle:o.ownerId === currentMember.value.id && Number(o.actionBugCount)>0 ? reasonFor(o) : o.myMention?`${o.myMention.from} @了你：${o.myMention.content}`:isMyNext(o)?`下一步：${o.nextStep}`:'客户：'+(o.customer||'未填写'),deadline:isMyNext(o)&&o.nextDue?o.nextDue:o.deadline,status:statusMap[o.status]?.label,type:statusMap[o.status]?.type,icon:'Document',run:()=>openDetail(o)})),
- ...(isBoss.value?pendingApprovals.value:[]).map(a=>({key:'a'+a.id,title:'审批申请：'+(a.typeLabel||'项目变更'),subtitle:'申请人：'+a.requesterName,status:'待审批',type:'success',icon:'User',run:()=>router.push('/approvals')}))
-])
+const mobileTodos=computed(()=>todoExpanded.value?todoItems.value:todoItems.value.slice(0,MOBILE_TODO_LIMIT))
 const ownerName = (o) => memberMap[o.ownerId]?.name || '负责人'
-function reasonFor(o) {
-  if (o.ownerId === currentMember.value.id && Number(o.actionBugCount) > 0) return o.actionBugCount + ' 条问题已标记需处理'
-  if (!isBoss.value && o.assignState === 'pending') return '分配给你的新项目：先接收，再开工'
-  if (o.myMention) return `${o.myMention.from} @了你：${o.myMention.content}`
-  if (isMyNext(o)) {
-    const due = nextDueState(o)
-    const when = o.nextDue ? (due === 'overdue' ? '（已过期 · ' + shortDue(o.nextDue) + '）' : '（' + shortDue(o.nextDue) + ' 前）') : ''
-    return '下一步：' + o.nextStep + when
+
+// 员工拒单 / 客户新需求：老板决定自己做，直接开工（项目本来就在老板名下）
+async function doMyself(o) {
+  if (acting.value) return
+  acting.value = o.id
+  try {
+    await changeOrderStatus(o, 'doing')
+    ElMessage.success(`「${o.title}」已开工，在你手上了`)
+  } catch (e) {
+    ElMessage.error(e.message || '操作失败')
+  } finally {
+    acting.value = null
   }
-  
-  if (isBoss.value && o.status === 'review') return `${ownerName(o)} 做完提交了，等你验收`
-  if (isBoss.value && o.status === 'pending' && o.ownerId !== currentMember.value.id) {
-    return `客户需求已录入，确认后让 ${ownerName(o)} 开工`
-  }
-  if (o.status === 'doing') return '进行中，记得推进并回报进度'
-  return '待处理'
 }
 function waitReasonFor(o) {
   if (isBoss.value && o.assignState === 'pending') return `${ownerName(o)} 还没接收，等 TA 回复`
@@ -463,19 +511,20 @@ async function doReject(reason) {
   ElMessage.success('已拒绝，项目已交回')
 }
 
-// 员工自己提交过的申请（待批的排在前面），最多显示 6 条
-const myRequests = computed(() => approvals.slice(0, 6))
+// 员工自己提交、还在等老板批的申请（批完的结果会发消息，不在工作台上堆着），最多显示 6 条
+const myRequests = computed(() => approvals.filter((a) => a.status === 'pending').slice(0, 6))
 
 // ---- 团队一览（老板）----
 const liveOrders = computed(() => orders.filter((o) => ['doing', 'review'].includes(o.status)))
 
-// 每个人手上的活（老板能看到全部，所以直接从订单里数）
+// 每个人手上的活（老板能看到全部，所以直接从订单里数）；「还没接收」以前在「等对方处理」里，现在直接写在人名下面
 const team = computed(() =>
   MEMBERS.map((m) => {
     const mine = liveOrders.value.filter((o) => o.ownerId === m.id)
     return {
       m,
       active: mine.length,
+      waiting: orders.filter((o) => o.ownerId === m.id && o.assignState === 'pending' && !['done', 'cancelled'].includes(o.status)).length,
       review: mine.filter((o) => o.status === 'review').length,
       overdue: mine.filter((o) => o.deadline && o.deadline < todayStr).length
     }
@@ -483,12 +532,15 @@ const team = computed(() =>
 )
 // 有单子的人排前面；没单子的默认收起，人多时不再把待办挤到屏幕外
 const showIdle = ref(false)
-const sortedTeam = computed(() => [...team.value].sort((a, b) => (b.m.id === currentMember.value.id) - (a.m.id === currentMember.value.id) || b.active - a.active))
-const idleCount = computed(() => team.value.filter((t) => !t.active && t.m.id !== currentMember.value.id).length)
-const shownTeam = computed(() => (showIdle.value ? sortedTeam.value : sortedTeam.value.filter((t) => t.active || t.m.id === currentMember.value.id)))
+const busy = (t) => t.active + t.waiting
+const sortedTeam = computed(() => [...team.value].sort((a, b) => (b.m.id === currentMember.value.id) - (a.m.id === currentMember.value.id) || busy(b) - busy(a)))
+const idleCount = computed(() => team.value.filter((t) => !busy(t) && t.m.id !== currentMember.value.id).length)
+const shownTeam = computed(() => (showIdle.value ? sortedTeam.value : sortedTeam.value.filter((t) => busy(t) || t.m.id === currentMember.value.id)))
 function memberLine(t) {
-  if (!t.active) return '手上没有单子'
-  const parts = [`手上 ${t.active} 单`]
+  if (!busy(t)) return '手上没有单子'
+  const parts = []
+  if (t.active) parts.push(`手上 ${t.active} 单`)
+  if (t.waiting) parts.push(`${t.waiting} 单还没接收`)
   if (t.review) parts.push(`${t.review} 单等你验收`)
   if (t.overdue) parts.push(`${t.overdue} 单已逾期`)
   return parts.join('，')
@@ -1020,4 +1072,13 @@ function handleDelete(row) {
 .stalled-tip { font-size: 12px; color: #c27c0e; }
 .stalled-symbol { color: #e6a23c !important; background: #fff6e6 !important; }
 .stalled-more { display: block; width: 100%; border: 0; background: none; color: #3b6cff; font-size: 13px; padding: 6px 0 10px; cursor: pointer; text-align: center; }
+/* 数字卡和「新建项目」放一行（以前下面还有一排和左侧菜单重复的快捷入口） */
+.overview-row { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+.overview-row .overview-stats { flex: 1; margin-bottom: 0; }
+.overview-create { flex: none; }
+.desktop-workbench .wb-quote-panel { margin-top: 20px; }
+/* 手机顶部：头像和问候缩成一行，不再占小半屏 */
+.wb-person.wb-person-compact { padding: 10px 0 14px; }
+.wb-person.wb-person-compact h1 { font-size: 19px; margin: 0; }
+.wb-person.wb-person-compact :deep(.board-avatar) { width: 40px !important; height: 40px !important; }
 </style>
