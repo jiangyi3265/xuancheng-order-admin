@@ -1,108 +1,109 @@
-// 浏览器桌面提醒：纯前端，不依赖微信推送。
-// 网页开着（可以最小化、切到别的标签）时，有新待办就弹一条系统通知。
-// 手机浏览器大多没有这个能力，此时 isNotifySupported() 为 false，界面上整个功能都不显示。
-
-const SWITCH_KEY = 'xc.notify'
-
-// 安卓/苹果手机浏览器：有的（如安卓 Chrome）声明了 Notification，但一创建就报错，当作不支持
-const PHONE_UA = /Android|iPhone|iPad|iPod|HarmonyOS|Mobile/i
+const switchKey = 'xc.notify'
+const bindingKey = 'xc.notify.binding'
+const endpoint = '/jiedan/webpush'
 
 export function isNotifySupported() {
-  if (typeof Notification === 'undefined') return false
-  try {
-    return !PHONE_UA.test(navigator.userAgent || '')
-  } catch (e) {
-    return true
-  }
+  return window.isSecureContext && 'Notification' in window
 }
-
-function readSwitch() {
-  try {
-    return localStorage.getItem(SWITCH_KEY) === '1'
-  } catch (e) {
-    return false
-  }
-}
-
-function writeSwitch(on) {
-  try {
-    if (on) localStorage.setItem(SWITCH_KEY, '1')
-    else localStorage.removeItem(SWITCH_KEY)
-  } catch (e) {
-    // 存不了（隐私模式等）就算了，这次只在当前页面有效
-  }
-}
-
-function readPermission() {
-  try {
-    return Notification.permission
-  } catch (e) {
-    return 'default'
-  }
-}
-
-// 'unsupported' 不支持 | 'denied' 浏览器里被禁止 | 'off' 没开 | 'on' 已开（已授权，且用户开关也是开的）
 export function notifyState() {
   if (!isNotifySupported()) return 'unsupported'
-  const permission = readPermission()
-  if (permission === 'denied') return 'denied'
-  if (permission === 'granted' && readSwitch()) return 'on'
-  return 'off'
+  if (Notification.permission === 'denied') return 'denied'
+  return Notification.permission === 'granted' && localStorage.getItem(switchKey) === '1' ? 'on' : 'off'
+}
+const failedBindingKey='xc.notify.failedBinding'
+export function hasBackgroundPush() {
+  const binding=localStorage.getItem(bindingKey)
+  return !!binding && localStorage.getItem(failedBindingKey)!==binding
 }
 
-// 向浏览器要权限（老 Safari 只认回调写法，新浏览器返回 Promise，两种都兼容）
-function askPermission() {
-  return new Promise((resolve) => {
-    try {
-      const ret = Notification.requestPermission((p) => resolve(p))
-      if (ret && typeof ret.then === 'function') ret.then(resolve, () => resolve('default'))
-    } catch (e) {
-      resolve('default')
-    }
+async function api(path, method, body, token = localStorage.getItem('token')) {
+  const response = await fetch(endpoint + path, {
+    method, headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: body && JSON.stringify(body), cache: 'no-store'
   })
+  const result = await response.json()
+  if (result.code !== 200) throw new Error(result.msg || '推送请求失败')
+  return result.data
 }
 
-// 必须在点击事件里调用（浏览器只在用户点击时才肯弹出授权询问）。返回开启后的状态。
+let workerReady
+function registerWorker() {
+  if (!workerReady) {
+    workerReady = navigator.serviceWorker.register('/system-notifications.js')
+      .then(() => navigator.serviceWorker.ready)
+      .catch(error => { workerReady = undefined; throw error })
+  }
+  return workerReady
+}
+
 export async function enableNotify() {
   if (!isNotifySupported()) return 'unsupported'
+  const permission = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
+  if (permission !== 'granted') return notifyState()
+  localStorage.setItem(switchKey, '1')
+  if (!('PushManager' in window) || !('serviceWorker' in navigator)) return 'on'
+  const token = localStorage.getItem('token')
   try {
-    let permission = readPermission()
-    if (permission === 'default') permission = await askPermission()
-    if (permission === 'granted') writeSwitch(true)
-  } catch (e) {
-    // 忽略，下面按当前状态返回
-  }
+    const reg = await registerWorker()
+    const {key} = await api('/key','GET',undefined,token)
+    const publicKey = Uint8Array.from(atob(key.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0))
+    const existing = await reg.pushManager.getSubscription()
+    let timer
+    let sub
+    try {
+      sub = existing || await Promise.race([
+        reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey }),
+        new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('推送服务连接超时')),12000)})
+      ])
+    } finally { clearTimeout(timer) }
+    const binding = crypto.randomUUID()
+    const cache = await caches.open('xc-notification-state')
+    await api('/device','POST',{endpoint:sub.endpoint,...sub.toJSON().keys,binding},token)
+    if (localStorage.getItem('token') !== token || localStorage.getItem(switchKey) !== '1') {
+      await api('/device/'+binding,'DELETE',undefined,token)
+      return 'off'
+    }
+    await cache.put('/.notification-binding',new Response(binding))
+    localStorage.setItem(bindingKey,binding)
+  } catch { /* Local delivery is still available when the browser's push provider cannot connect. */ }
   return notifyState()
 }
 
-// 只是关掉我们自己的开关；浏览器里的授权没法由网页撤销，下次再开不会重新询问
 export function disableNotify() {
-  writeSwitch(false)
+  const binding = localStorage.getItem(bindingKey)
+  localStorage.removeItem(bindingKey)
+  localStorage.removeItem(switchKey)
+  if (binding) {
+    api('/device/'+binding,'DELETE').catch(()=>{})
+    caches.open('xc-notification-state').then(async cache => {
+      const response = await cache.match('/.notification-binding')
+      if (response && await response.text() === binding) await cache.delete('/.notification-binding')
+    }).catch(()=>{})
+  }
 }
 
-// 弹一条通知。没开启时什么也不做。同一个 tag 的通知会互相替换，不会越堆越多。
-export function showNotify(title, body, tag) {
+export async function showNotify(title, body, tag, path='/#/messages') {
   if (notifyState() !== 'on') return
-  try {
-    const options = { body }
-    if (tag) {
-      options.tag = tag
-      options.renotify = true // 替换旧通知时仍然提醒一下
-    }
-    const n = new Notification(title, options)
-    n.onclick = () => {
-      try {
-        window.focus()
-      } catch (e) {
-        // ignore
-      }
-      try {
-        n.close()
-      } catch (e) {
-        // ignore
-      }
-    }
-  } catch (e) {
-    // 创建失败（浏览器不允许等）直接忽略，不影响页面
+  if ('serviceWorker' in navigator) {
+    const reg = await registerWorker()
+    await reg.showNotification(title,{ body, tag, data:{path} })
+  } else {
+    const notification = new Notification(title,{body,tag})
+    notification.onclick = () => { window.focus(); window.location.hash = path.slice(1); notification.close() }
   }
+}
+export async function testSystemNotification() {
+  const binding = localStorage.getItem(bindingKey)
+  if(binding) {
+    try {
+      await api('/test/'+binding,'POST')
+      localStorage.removeItem(failedBindingKey)
+      return 'background'
+    } catch(e) {
+      localStorage.setItem(failedBindingKey,binding)
+      await showNotify('玄成接单 · 页面通知测试','本机可以接收网页打开期间的通知。','xc-test')
+      throw e
+    }
+  }
+  await showNotify('玄成接单 · 测试通知','这台设备已收到系统提醒。','xc-test')
 }

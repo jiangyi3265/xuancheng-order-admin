@@ -1,0 +1,162 @@
+const { test, expect } = require('@playwright/test')
+const { fixture, order } = require('./fixtures.cjs')
+const ok = (route, data) => route.fulfill({json:{code:200,data}})
+
+async function openIssues(page, width) {
+  await fixture(page, 'employee')
+  await page.setViewportSize({width,height:700})
+  await page.addInitScript(() => localStorage.setItem('token','fixture-employee'))
+  const bug = (id, status) => ({...order.bugs[0], id, status, content:'问题 '+id})
+  const project = {...order, bugs:[bug(11,'open'),bug(22,'action'),bug(33,'action'),bug(44,'resolved')],actionBugCount:2,unread:[]}
+  await page.route('**/jiedan/order/list', r=>ok(r,[project]))
+  await page.route('**/jiedan/order/1', r=>ok(r,project))
+  await page.route('**/jiedan/order/1/version', r=>ok(r,{version:project.version}))
+  await page.route('**/jiedan/order/read', r=>ok(r,{id:1,version:project.version}))
+  await page.goto('/#/order?id=1&tab=bugs&bug=33')
+  const panel=page.locator('.bug-panel')
+  await expect(panel.locator('.notice-target')).toContainText('问题 33')
+  await panel.getByRole('button',{name:/^逐条处理（/}).click()
+  await expect(panel.locator('.bug-item')).toHaveCount(1)
+  await expect(panel.locator('.bug-item')).toContainText('问题 33')
+  return {project,panel}
+}
+
+for (const width of [375,1366]) {
+  test('逐条处理只更新明确点击的问题，失败可原地重试 · '+width,async({page})=>{
+    const {project,panel}=await openIssues(page,width)
+    const writes=[]
+    let held
+    await page.route(/\/jiedan\/order\/bug\/\d+\/status$/, async route=>{
+      const id=Number(/bug\/(\d+)/.exec(route.request().url())[1])
+      writes.push([id,route.request().postDataJSON().status])
+      if(writes.length===1){held=route;return}
+      project.bugs.find(b=>b.id===id).status='resolved'
+      project.actionBugCount--
+      project.version++
+      await ok(route,project)
+    })
+    await panel.getByRole('button',{name:'上一条',exact:true}).click()
+    await expect(panel.locator('.bug-item')).toContainText('问题 22')
+    await panel.getByRole('button',{name:'下一条',exact:true}).click()
+    await expect(panel.locator('.bug-item')).toContainText('问题 33')
+    expect(writes).toHaveLength(0)
+    const resolve=panel.getByRole('button',{name:'解决并继续'})
+    await resolve.click()
+    await expect.poll(()=>!!held).toBe(true)
+    await expect(resolve).toBeDisabled()
+    await expect(panel.locator('.bug-item')).toContainText('问题 33')
+    await held.fulfill({json:{code:500,msg:'暂时无法保存'}})
+    await expect(page.getByText('暂时无法保存')).toBeVisible()
+    await expect(panel.getByRole('status')).toContainText('剩余 2 条')
+    await resolve.click()
+    await expect(panel.locator('.bug-item')).toContainText('问题 22')
+    await expect(panel.getByRole('status')).toContainText('剩余 1 条')
+    await panel.getByRole('button',{name:'解决最后一条'}).click()
+    await expect(panel.getByRole('status')).toHaveText('本项目当前没有需处理的问题')
+    await panel.getByRole('button',{name:'返回全部问题'}).click()
+    await expect(panel.locator('.bug-item')).toHaveCount(4)
+    await expect(panel.locator('[data-notice-id="11"] .bug-summary-status')).toHaveText('未标记')
+    expect(writes).toEqual([[33,'resolved'],[33,'resolved'],[22,'resolved']])
+  })
+}
+
+test('逐条处理时打开历史问题通知仍可看到该条',async({page})=>{
+  const {panel}=await openIssues(page,390)
+  await page.evaluate(()=>location.hash='/order?id=1&tab=bugs&bug=44')
+  await expect(panel.locator('.bug-item')).toHaveCount(4)
+  await expect(panel.locator('.notice-target')).toContainText('问题 44')
+  await expect(panel.locator('.notice-target')).toBeInViewport()
+})
+
+test('慢网时重复提交和打开另一条通知不会重复追加或清掉另一条草稿', async ({page}) => {
+  const {project,panel} = await openIssues(page,390)
+  const writes = []
+  await page.route(/\/jiedan\/order\/bug\/\d+\/update$/, route => { writes.push(route) })
+  const toggle = panel.getByRole('button',{name:'补充说明'})
+  const text = panel.getByPlaceholder('补充新的说明或变更，可以粘贴截图')
+  await toggle.click()
+  await text.fill('问题33的反馈')
+  await text.press('Control+Enter')
+  await text.press('Control+Enter')
+  await expect.poll(() => writes.length).toBeGreaterThan(0)
+  await page.evaluate(() => { location.hash='/order?id=1&tab=bugs&bug=22' })
+  await expect(panel.locator('.notice-target')).toContainText('问题 22')
+  await toggle.click()
+  await text.fill('问题22的草稿')
+  expect(writes).toHaveLength(1)
+  expect(writes[0].request().url()).toContain('/bug/33/update')
+  expect(writes[0].request().postDataJSON().content).toBe('问题33的反馈')
+  await ok(writes[0],project)
+  await expect(page.getByText('已补充说明')).toBeVisible()
+  await expect(text).toHaveValue('问题22的草稿')
+  await page.evaluate(() => { location.hash='/order?id=1&tab=bugs&bug=33' })
+  await expect(panel.locator('.notice-target')).toContainText('问题 33')
+  await toggle.click()
+  await expect(text).toHaveValue('')
+  await page.evaluate(() => { location.hash='/order?id=1&tab=bugs&bug=22' })
+  await expect(panel.locator('.notice-target')).toContainText('问题 22')
+  await toggle.click()
+  await expect(text).toHaveValue('问题22的草稿')
+})
+
+test('切换问题时仍保留原 QA 的附件，上传和失败重试不会串到另一条', async ({page}) => {
+  const {project,panel} = await openIssues(page,1366)
+  const requests = []
+  let upload
+  await page.route('**/jiedan/media/upload', route => { upload = route })
+  await page.route('**/jiedan/order/bug/*/update', async route => {
+    requests.push([route.request().url(),route.request().postDataJSON()])
+    if (requests.length === 1) return route.fulfill({json:{code:500,msg:'暂时无法追加'}})
+    return ok(route, project)
+  })
+  const toggle = panel.getByRole('button',{name:'补充说明'})
+  const text = panel.getByPlaceholder('补充新的说明或变更，可以粘贴截图')
+  const submit = panel.getByRole('button',{name:'提交补充'})
+  await toggle.click()
+  await text.fill('问题33的补充')
+  await panel.locator('.bug-update-form input[type=file]').setInputFiles({name:'附件.txt',mimeType:'text/plain',buffer:Buffer.from('33')})
+  await expect.poll(() => !!upload).toBe(true)
+  await expect(submit).toBeDisabled()
+  await text.press('Control+Enter')
+  await page.evaluate(() => { location.hash='/order?id=1&tab=bugs&bug=22' })
+  await expect(panel.locator('.notice-target')).toContainText('问题 22')
+  await toggle.click()
+  await ok(upload, {url:'/profile/test/33.txt'})
+  await expect(text).toHaveValue('')
+  await expect(panel.locator('.bug-update-form .file-row')).toHaveCount(0)
+  await page.evaluate(() => { location.hash='/order?id=1&tab=bugs&bug=33' })
+  await expect(panel.locator('.notice-target')).toContainText('问题 33')
+  await toggle.click()
+  await expect(text).toHaveValue('问题33的补充')
+  await expect(panel.locator('.bug-update-form .file-row')).toContainText('附件.txt')
+  expect(requests).toHaveLength(0)
+  await submit.click()
+  await expect(page.getByText('暂时无法追加')).toBeVisible()
+  await expect(text).toHaveValue('问题33的补充')
+  await submit.click()
+  await expect(page.getByText('已补充说明')).toBeVisible()
+  expect(requests).toHaveLength(2)
+  for (const [url,payload] of requests) {
+    expect(url).toContain('/bug/33/update')
+    expect(payload.content).toBe('问题33的补充')
+    expect(payload.attachments.map(item => item.url)).toEqual(['/profile/test/33.txt'])
+  }
+})
+
+test('编辑中的问题被协作者删除后仍能处理其余问题', async ({page}) => {
+  const {project,panel} = await openIssues(page,1366)
+  await panel.getByRole('button',{name:'返回全部问题'}).click()
+  const historical = panel.locator('[data-notice-id="44"]')
+  await historical.locator('.bug-disclosure').click()
+  await historical.getByRole('button',{name:'补充说明'}).click()
+  await historical.locator('textarea').fill('记录一下')
+  const begin = panel.getByRole('button',{name:/^逐条处理（/})
+  await expect(begin).toBeDisabled()
+  project.bugs = project.bugs.filter(bug => bug.id !== 44)
+  project.version++
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(historical).toHaveCount(0)
+  await expect(begin).toBeEnabled()
+  await begin.click()
+  await expect(panel.getByRole('status')).toContainText('剩余 2 条需处理')
+})

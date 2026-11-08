@@ -1,20 +1,21 @@
 <template>
-  <el-container class="app-wrapper">
+  <el-container class="app-wrapper design-app">
     <el-aside width="220px" class="sidebar" :class="{ 'mobile-open': mobileOpen }">
       <div class="logo">
-        <el-icon :size="22"><Histogram /></el-icon>
-        <span class="logo-text">玄成 · 接单系统</span>
+        <BrandLogo/>
+        <span class="logo-text">玄成接单</span>
       </div>
       <el-menu
         :default-active="activeMenu"
+        :default-openeds="moreActive ? ['more'] : []"
         router
         class="side-menu"
-        background-color="#304156"
-        text-color="#bfcbd9"
-        active-text-color="#ffffff"
+        background-color="transparent"
+        text-color="#64748b"
+        active-text-color="#165dff"
         @select="mobileOpen = false"
       >
-        <el-menu-item v-for="r in visibleRoutes" :key="r.path" :index="'/' + r.path">
+        <el-menu-item v-for="r in mainRoutes" :key="r.path" :index="'/' + r.path">
           <el-icon><component :is="r.meta.icon" /></el-icon>
           <span class="menu-content">
             <span class="menu-title">{{ r.meta.title }}</span>
@@ -27,21 +28,30 @@
             />
           </span>
         </el-menu-item>
+        <!-- 不常用的页面收进「更多」，侧栏只留每天要用的 -->
+        <el-sub-menu v-if="moreRoutes.length" index="more">
+          <template #title>
+            <el-icon><Menu /></el-icon>
+            <span class="menu-title">更多</span>
+          </template>
+          <el-menu-item v-for="r in moreRoutes" :key="r.path" :index="'/' + r.path">
+            <el-icon><component :is="r.meta.icon" /></el-icon>
+            <span class="menu-title">{{ r.meta.title }}</span>
+          </el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
 
     <div v-if="mobileOpen" class="mobile-mask" @click="mobileOpen = false"></div>
 
     <el-container>
-      <el-header class="header">
+      <el-header class="header" :class="{'page-owned-header': isMobile}"><BrandLogo class="mobile-brand"/>
         <div class="left">
           <el-icon class="hamburger" :size="22" @click="mobileOpen = !mobileOpen"><Expand /></el-icon>
           <div class="title">{{ currentTitle }}</div>
         </div>
+        <WorkSearch v-if="!isMobile" ref="jumpRef" class="header-search" :loading="searchLoading" />
         <div class="user">
-          <el-tag size="small" effect="plain" :type="isBoss ? 'primary' : 'info'">
-            {{ roleName(currentMember.role) }}
-          </el-tag>
           <el-avatar :size="30" :style="{ background: currentMember.color }">
             {{ currentMember.name.slice(-1) }}
           </el-avatar>
@@ -56,35 +66,45 @@
           >
             <component :is="notifyStatus === 'on' ? BellFilled : Bell" />
           </el-icon>
-          <el-icon class="logout" :size="18" title="修改密码" @click="pwdVisible = true"><Key /></el-icon>
+          <el-icon class="key-icon" :size="18" title="修改密码" @click="pwdVisible = true"><Key /></el-icon>
           <el-icon class="logout" :size="18" title="退出登录" @click="doLogout"><SwitchButton /></el-icon>
         </div>
       </el-header>
 
-      <el-main class="main thin-scroll">
+      <el-main ref="mainRef" class="main thin-scroll" :data-page="route.path.slice(1)">
+        <WorkSearch v-if="isMobile && route.name === 'Workbench'" :loading="searchLoading" />
         <router-view />
       </el-main>
     </el-container>
 
-    <QuickCapture />
+    <nav class="mobile-nav" aria-label="主导航">
+      <router-link v-for="item in primaryNav" :key="item.path" :to="item.path" :class="{selected: route.path === item.path}" :aria-label="item.label">
+        <el-badge :is-dot="item.path === '/messages' && (unreadCount > 0 || unreadQuotes.length > 0)"><el-icon><component :is="route.path===item.path && item.icon==='House'?'HomeFilled':route.path===item.path && item.icon==='User'?'UserFilled':item.icon" /></el-icon></el-badge><span>{{ item.label }}</span>
+      </router-link>
+    </nav>
+    <QuickCapture :show-fab="!isMobile && ['/order','/workbench'].includes(route.path)" />
     <SettleDialog />
     <ChangePasswordDialog v-model:visible="pwdVisible" />
   </el-container>
 </template>
 
 <script setup>
+import {syncQuotes,unreadQuotes,quotes} from '@/stores/quotes'
+import WorkSearch from '@/components/WorkSearch.vue'
+import BrandLogo from '@/components/board/BrandLogo.vue'
+import { isMobile } from '@/utils/useMobile'
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { SwitchButton, Key, Bell, BellFilled } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { SwitchButton, Key, Bell, BellFilled, Menu } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import { menuRoutes } from '@/router'
-import { roleName } from '@/constants/options'
+
 import QuickCapture from '@/components/QuickCapture.vue'
 import SettleDialog from '@/components/SettleDialog.vue'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
-import { orders, approvals, pendingApprovals, currentMember, isBoss, syncOrders, logout } from '@/mock/store'
+import { orders, approvals, pendingApprovals, currentMember, isBoss, syncOrders, signOutDevice, loadCollabConfig } from '@/mock/store'
 import { isMyTodo } from '@/utils/workbench'
-import { isNotifySupported, notifyState, enableNotify, disableNotify, showNotify } from '@/utils/notify'
+import { isNotifySupported, notifyState, enableNotify, disableNotify, hasBackgroundPush, showNotify } from '@/utils/notify'
 
 // 浏览器标签页标题：有待办时前面带数字，切到别的标签也能看见
 const BASE_TITLE = '玄成科技 · 接单系统'
@@ -94,10 +114,31 @@ const router = useRouter()
 const activeMenu = computed(() => route.path)
 // 「成员管理」「操作日志」只有总管理员看得到；员工的菜单里不放“数据站”，只留干活用得到的
 const visibleRoutes = computed(() =>
-  menuRoutes.filter((r) => (!r.meta.bossOnly || isBoss.value) && (!r.meta.bossMenuOnly || isBoss.value))
+  menuRoutes.filter((r) => !r.meta.hidden && (!r.meta.bossOnly || isBoss.value) && (!r.meta.bossMenuOnly || isBoss.value)).sort((a,b)=>['workbench','order','quotes','messages','approvals','customers','staff','dashboard','trash','audit','settings','mine'].indexOf(a.path)-['workbench','order','quotes','messages','approvals','customers','staff','dashboard','trash','audit','settings','mine'].indexOf(b.path))
 )
+// 侧栏分两组：每天用的直接摆出来，成员 / 回收站 / 日志 / 设置 / 我的 放进「更多」
+const MORE_PATHS = ['staff', 'trash', 'audit', 'settings', 'mine']
+const mainRoutes = computed(() => visibleRoutes.value.filter((r) => !MORE_PATHS.includes(r.path)))
+const moreRoutes = computed(() => visibleRoutes.value.filter((r) => MORE_PATHS.includes(r.path)))
+const moreActive = computed(() => MORE_PATHS.includes(route.path.slice(1)))
+const primaryNav = [{path:'/workbench', label:'工作台', icon:'House'}, {path:'/order', label:'项目', icon:'FolderOpened'}, {path:'/messages', label:'消息', icon:'ChatDotRound'}, {path:'/mine', label:'我的', icon:'User'}]
 const currentTitle = computed(() => route.meta.title || '玄成接单系统')
 const mobileOpen = ref(false)
+
+// ---- 顶部全局搜索 ----
+const jumpRef = ref(null)
+const searchLoading = ref(true)
+function onJumpKey(event) {
+  if (isMobile.value || event.defaultPrevented || event.isComposing || event.keyCode === 229) return
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName) || event.target?.isContentEditable
+  const shortcut = (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) ||
+    (event.key === '/' && !typing && !event.metaKey && !event.ctrlKey && !event.altKey)
+  if (!shortcut) return
+  const dialogs = document.querySelectorAll('[role="dialog"], [role="alertdialog"]')
+  if (Array.from(dialogs).some(dialog => dialog.getClientRects().length > 0)) return
+  event.preventDefault()
+  jumpRef.value?.focus()
+}
 const pwdVisible = ref(false)
 let orderPoller = null
 let alive = true
@@ -115,20 +156,30 @@ const bellTitle = computed(() => {
 // 第一次进入（force）一定拉一遍。
 // 页面在后台（切到别的标签 / 最小化）也要继续查：不然标签页上的数字和桌面提醒都更新不了。
 function refreshOrders(force = false) {
+  const quoteRefresh = syncQuotes().then(checkAttention).catch(()=>{})
   // 浏览器里随时可能改通知权限，顺手同步一下铃铛状态
   notifyStatus.value = notifyState()
-  syncOrders(force === true)
+  const projectRefresh = syncOrders(force === true)
     .then(checkAttention)
     .catch((e) => {
-      if (force === true) ElMessage.error('加载订单失败：' + e.message)
+      if (force === true) ElMessage.error('加载项目失败：' + e.message)
     })
+  if (searchLoading.value) {
+    Promise.all([quoteRefresh, projectRefresh]).then(() => { searchLoading.value = false })
+  }
+}
+
+function refreshWhenVisible() {
+  if (document.visibilityState === 'visible') refreshOrders()
 }
 
 onMounted(() => {
   refreshOrders(true)
+  loadCollabConfig()
   orderPoller = setInterval(refreshOrders, 10000)
   window.addEventListener('focus', refreshOrders)
-  document.addEventListener('visibilitychange', refreshOrders)
+  document.addEventListener('visibilitychange', refreshWhenVisible)
+  window.addEventListener('keydown', onJumpKey)
 })
 
 onBeforeUnmount(() => {
@@ -137,21 +188,39 @@ onBeforeUnmount(() => {
   document.title = BASE_TITLE
   if (orderPoller) clearInterval(orderPoller)
   window.removeEventListener('focus', refreshOrders)
-  document.removeEventListener('visibilitychange', refreshOrders)
+  document.removeEventListener('visibilitychange', refreshWhenVisible)
+  window.removeEventListener('keydown', onJumpKey)
 })
 
-function doLogout() {
+async function doLogout() {
+  // 顶部这个图标很小、紧挨着「修改密码」，先问一句，免得点错就被踢回登录页
+  try {
+    await ElMessageBox.confirm('确定退出登录吗？', '退出登录', { confirmButtonText: '退出', cancelButtonText: '取消', type: 'warning' })
+  } catch {
+    return
+  }
   // 退出登录：清掉提醒的记录，标签页标题也恢复原样
   attnPrev = null
   document.title = BASE_TITLE
-  logout()
-  router.push('/login')
+  try { await signOutDevice(); router.push('/login') }
+  catch(e){ ElMessage.error(e.message || '退出未完成，请重试') }
 }
 
 const todoCount = computed(
   () =>
     orders.filter((o) => isMyTodo(o, currentMember.value.id)).length +
-    (isBoss.value ? pendingApprovals.value.length : 0)
+    (isBoss.value ? pendingApprovals.value.length : 0) + unreadQuotes.value.length
+)
+
+// 换页面时回到顶部（以前会停在上一个页面滚到的位置，打开项目管理看到的是半截看板）
+const mainRef = ref(null)
+watch(
+  () => route.path,
+  () => {
+    const el = mainRef.value?.$el
+    if (el) el.scrollTop = 0
+    window.scrollTo(0, 0)
+  }
 )
 
 // 标签页标题：(3) 玄成科技 · 接单系统
@@ -171,15 +240,18 @@ const attention = computed(() => {
   const me = currentMember.value.id
   const list = []
   if (!me) return list
+  unreadQuotes.value.forEach(q=>list.push('q:'+q.id+':'+q.noticeVersion+':'+(q.replyVersion || 0)))
   if (isBoss.value) {
+    quotes.value.filter(q=>q.creatorId===me && q.status==='pending')
+      .forEach(q=>list.push('sent:'+q.id+':'+q.noticeVersion))
     pendingApprovals.value.forEach((a) => list.push('a:' + a.id))
     orders.forEach((o) => {
-      if (o.unread?.includes(me)) list.push('u:' + o.id)
+      if (o.unread?.includes(me)) list.push('u:' + o.id + ':' + (o.bugCount || 0) + ':' + (o.messageCount || 0) + ':' + (o.actionBugCount || 0))
     })
   } else {
     orders.forEach((o) => {
       if (o.assignState === 'pending') list.push('p:' + o.id)
-      if (o.unread?.includes(me)) list.push('u:' + o.id)
+      if (o.unread?.includes(me)) list.push('u:' + o.id + ':' + (o.bugCount || 0) + ':' + (o.messageCount || 0) + ':' + (o.actionBugCount || 0))
     })
     approvals.forEach((a) => {
       if (a.requesterId === me && (a.status === 'approved' || a.status === 'rejected')) {
@@ -191,39 +263,11 @@ const attention = computed(() => {
 })
 
 let attnPrev = null // 上一次的清单；null 表示登录后还没算过
+let lastProjectCounts = new Map()
 let attnOwner = 0 // 上一次清单属于谁（换了人就当第一次）
 
-// 把“新出现的事”写成一句人话
-function notifyText(added) {
-  const addedSet = new Set(added)
-  const count = (prefix) => added.filter((k) => k.startsWith(prefix)).length
-  const parts = []
-  if (isBoss.value) {
-    const a = count('a:')
-    // 有待批申请的项目本身会变成“未读”，不再重复算成“新动态”
-    const waiting = new Set(pendingApprovals.value.map((x) => String(x.orderId)))
-    const u = added.filter((k) => k.startsWith('u:') && !waiting.has(k.slice(2))).length
-    if (a) parts.push(`有 ${a} 条新申请等你批准`)
-    if (u) parts.push(`${u} 个项目有新动态`)
-  } else {
-    const p = count('p:')
-    // 新派来的项目本身带着“未读”，不再重复算成“新动态”
-    // 申请有结果的项目也会变成“未读”，同样不重复算
-    const decided = new Set(
-      added
-        .filter((k) => k.startsWith('r:'))
-        .map((k) => {
-          const a = approvals.find((x) => 'r:' + x.id + ':' + x.status === k)
-          return a ? String(a.orderId) : ''
-        })
-    )
-    const u = added.filter((k) => k.startsWith('u:') && !addedSet.has('p:' + k.slice(2)) && !decided.has(k.slice(2))).length
-    const r = count('r:')
-    if (p) parts.push(`老板派给你 ${p} 个新项目，请接收`)
-    if (u) parts.push(`${u} 个项目有新动态`)
-    if (r) parts.push(r === 1 ? '你的申请有结果了' : `你的 ${r} 条申请有结果了`)
-  }
-  return parts.join('；')
+function notifyItem(title, body, path) {
+  showNotify('玄成接单 · ' + title, body, 'xc-' + path + '-' + title, '/#' + path).catch(() => {})
 }
 
 // 每次刷新完项目后对一下清单：
@@ -238,6 +282,18 @@ function checkAttention() {
       attnOwner = 0
       return
     }
+    const counts = new Map(orders.map(o => [o.id, { bugs: Number(o.bugCount || 0), messages: Number(o.messageCount || 0), actions: Number(o.actionBugCount || 0) }]))
+    const arrivals = []
+    if (attnPrev && attnOwner === me) for (const o of orders) {
+      const previous = lastProjectCounts.get(o.id)
+      if (!previous || !o.unread?.includes(me)) continue
+      const latest = counts.get(o.id)
+      const path = '/order?id=' + o.id
+      if (latest.actions > previous.actions) arrivals.push({ title:'问题需处理', order:o, path:path+'&tab=bugs'+(o.actionBugId?'&bug='+o.actionBugId:'') })
+      if (latest.bugs > previous.bugs) arrivals.push({ title:'新问题', order:o, path:path+'&tab=bugs'+(o.lastBugId?'&bug='+o.lastBugId:'') })
+      if (latest.messages > previous.messages) arrivals.push({ title:'新消息', order:o, path:path+'&tab=chat'+(o.lastMessageId?'&entry='+o.lastMessageId:'') })
+    }
+    lastProjectCounts = counts
     const list = attention.value
     const now = new Set(list)
     if (attnPrev === null || attnOwner !== me) {
@@ -248,10 +304,48 @@ function checkAttention() {
     const added = list.filter((k) => !attnPrev.has(k))
     attnPrev = now
     if (!added.length) return
-    // 人就在页面上（没切走、没最小化），不用再弹
-    if (!document.hidden && document.hasFocus()) return
-    const text = notifyText(added)
-    if (text) showNotify('玄成 · 接单系统', text, 'xc-todo')
+    for (const key of added) {
+      const [kind,id]=key.split(':')
+      if(kind!=='q' && kind!=='sent')continue
+      const quote=quotes.value.find(q=>String(q.id)===id)
+      if(!quote)continue
+      const reply=kind==='q' && quote.replyVersion>0
+      let title='新需求待报价'
+      if(kind==='sent')title='报价邀请已发出'
+      else if(reply)title='报价有新回复'
+      else if(isBoss.value)title='收到新报价'
+      const path='/quotes?id='+id+(reply?'&tab=chat':'')
+      const body=[quote.quoteNo,quote.title===quote.quoteNo?'':quote.title].filter(Boolean).join(' · ')
+      if(!document.hidden){
+        const notice=ElNotification({title,message:body, duration:5500,onClick:()=>{router.push(path);notice.close()}})
+      }
+      if(!hasBackgroundPush())notifyItem(title,body,path)
+    }
+    if (hasBackgroundPush()) return
+    const covered = new Set()
+    for (const event of arrivals) {
+      notifyItem(event.title, event.order.title, event.path)
+      covered.add(String(event.order.id))
+    }
+    for (const key of added) {
+      const [kind, id] = key.split(':')
+      if (kind === 'a' || kind === 'r') {
+        const approval = approvals.find(a => String(a.id) === id)
+        if (approval) {
+          notifyItem(kind === 'a' ? '待审批' : '申请有结果了', approval.orderTitle, '/approvals?id=' + id)
+          covered.add(String(approval.orderId))
+        }
+      } else if (kind === 'p') {
+        const project = orders.find(o => String(o.id) === id)
+        if (project) notifyItem('新项目待接收', project.title, '/order?id=' + id)
+        covered.add(id)
+      }
+    }
+    for (const key of added.filter(k => k.startsWith('u:'))) {
+      const id = key.split(':')[1]
+      const project = orders.find(o => String(o.id) === id)
+      if (project && !covered.has(id)) notifyItem('项目有新动态', project.title, '/order?id=' + id)
+    }
   } catch (e) {
     // 提醒是锦上添花，出任何问题都不能影响页面
   }
@@ -272,7 +366,7 @@ async function onBellClick() {
   const next = await enableNotify()
   notifyStatus.value = next
   if (next === 'on') {
-    ElMessage.success('已开启：有新的待办会弹出提醒（需要保持这个网页开着）')
+    ElMessage.success(hasBackgroundPush() ? '系统推送已开启' : '页面提醒已开启，请保持页面打开')
   } else if (next === 'denied') {
     ElMessage.warning('浏览器里禁止了通知，请在地址栏左边的设置里允许')
   } else {
@@ -283,8 +377,10 @@ const unreadCount = computed(
   () => orders.filter((o) => o.unread?.includes(currentMember.value.id)).length
 )
 function badgeOf(path) {
+  if(path==='quotes')return unreadQuotes.value.length
+  if(path==='messages')return unreadCount.value + unreadQuotes.value.length
   if (path === 'workbench') return todoCount.value
-  if (path === 'order') return unreadCount.value
+  // 项目管理不再重复显示同一个未读数（消息中心已经有了），侧栏只留一处红点
   return 0
 }
 </script>
@@ -371,6 +467,11 @@ function badgeOf(path) {
   font-size: 17px;
   font-weight: 600;
 }
+.header .left,
+.header .user {
+  flex: none;
+  white-space: nowrap;
+}
 .header .user {
   display: flex;
   align-items: center;
@@ -385,6 +486,14 @@ function badgeOf(path) {
 }
 .logout:hover {
   color: #f56c6c;
+}
+.key-icon {
+  cursor: pointer;
+  color: #909399;
+  margin-left: 2px;
+}
+.key-icon:hover {
+  color: #409eff;
 }
 .bell {
   cursor: pointer;

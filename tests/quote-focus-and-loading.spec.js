@@ -1,0 +1,140 @@
+const {test,expect}=require('@playwright/test')
+const {fixture}=require('./fixtures.cjs')
+const ok=(r,data)=>r.fulfill({json:{code:200,data}})
+const base={creatorId:1,creatorName:'尚琦凯',employeeId:2,employeeName:'小陈',version:2,status:'quoted',noticeVersion:2,readVersion:2}
+async function start(page,role='boss'){
+  await fixture(page,role)
+  await page.addInitScript(role=>localStorage.setItem('token','fixture-'+role),role)
+}
+test('工作台前三张优先显示未读，已读但仍等我报价排在普通单子前',async({page})=>{
+  await start(page,'employee')
+  const rows=['普通甲','普通乙','普通丙','等我报价','对方刚回复','新邀请'].map((title,i)=>({...base,id:i+1,title}))
+  Object.assign(rows[3],{status:'pending'})
+  Object.assign(rows[4],{replyVersion:15})
+  Object.assign(rows[5],{status:'pending',readVersion:1})
+  await page.route('**/jiedan/quote/list',r=>ok(r,rows))
+  await page.goto('/#/workbench')
+  const panel=page.locator('.workbench-quotes')
+  await expect(panel.locator('.quote-card h2')).toHaveText(['对方刚回复','新邀请','等我报价'])
+  await expect(panel.locator('.quote-reason')).toHaveText(['有新回复','报价邀请'])
+  await panel.getByRole('button',{name:'只看未读'}).click()
+  await expect(panel.locator('.quote-card')).toHaveCount(2)
+  await panel.getByRole('button',{name:'只看未读'}).click()
+  await expect(panel.locator('.quote-card')).toHaveCount(3)
+})
+test('搜索支持发起人姓名，筛选后批量已读只影响当前结果',async({page})=>{
+  await start(page)
+  const rows=[{...base,id:1,title:'官网',readVersion:0},{...base,id:2,title:'商城',readVersion:0}]
+  const writes=[]
+  await page.route('**/jiedan/quote/list',r=>ok(r,rows))
+  await page.route('**/jiedan/quote/read',r=>{
+    const ids=r.request().postDataJSON().map(row=>row.id)
+    writes.push(ids);rows.forEach(q=>{if(ids.includes(q.id))q.readVersion=q.noticeVersion})
+    return ok(r,{})
+  })
+  await page.goto('/#/quotes')
+  const search=page.getByPlaceholder('搜索单号、项目名称或姓名')
+  await search.fill('尚琦凯')
+  await expect(page.locator('.quote-card')).toHaveCount(2)
+  await search.fill('官网')
+  await page.getByRole('button',{name:'只看未读'}).click()
+  await page.getByRole('button',{name:'当前结果标为已读'}).click()
+  await expect(page.getByText('当前没有未读报价',{exact:true})).toBeVisible()
+  expect(writes).toEqual([[1]])
+  await search.fill('')
+  await expect(page.locator('.quote-card h2')).toHaveText(['商城'])
+})
+test('慢网打开其他报价时旧单不可操作，后退不会被迟到的详情重新打开',async({page})=>{
+  await start(page)
+  const rows=[{...base,id:11,title:'第一份'},{...base,id:22,title:'第二份'}]
+  let late
+  await page.route('**/jiedan/quote/list',r=>ok(r,rows))
+  await page.route('**/jiedan/quote/11',r=>ok(r,rows[0]))
+  await page.route('**/jiedan/quote/22',r=>{late=r})
+  await page.goto('/#/quotes')
+  await page.locator('.quote-open').first().click()
+  const dialog=page.getByRole('dialog',{name:'报价详情'})
+  await expect(dialog.getByRole('heading',{name:'第一份'})).toBeVisible()
+  await page.evaluate(()=>location.hash='/quotes?id=22')
+  await expect(dialog.getByText('正在打开报价单…')).toBeVisible()
+  await expect(dialog.getByRole('button',{name:'编辑报价单'})).toHaveCount(0)
+  await page.evaluate(()=>location.hash='/quotes')
+  await expect(dialog).toBeHidden()
+  const response=page.waitForResponse(r=>r.url().endsWith('/jiedan/quote/22'))
+  await ok(late,rows[1]);await (await response).finished()
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))))
+  await expect(page).toHaveURL(/#\/quotes$/)
+  await expect(dialog).toBeHidden()
+})
+test('详情暂时加载失败可以原地重试',async({page})=>{
+  await start(page)
+  let attempts=0
+  await page.route('**/jiedan/quote/11',r=>++attempts===1?r.fulfill({json:{code:503,msg:'暂时读取失败'}}):ok(r,{...base,id:11,title:'重试后可见'}))
+  await page.goto('/#/quotes?id=11')
+  const dialog=page.getByRole('dialog',{name:'报价详情'})
+  await expect(dialog.getByText('暂时读取失败')).toBeVisible()
+  await dialog.getByRole('button',{name:'重新加载'}).click()
+  await expect(dialog.getByRole('heading',{name:'重试后可见'})).toBeVisible()
+  expect(attempts).toBe(2)
+})
+test('对方改需求时保留已填金额和说明，核对新版本后才能提交',async({page})=>{
+  await start(page,'employee')
+  let q={...base,id:19,title:'报价范围核对',amount:null,status:'pending',requirement:'原范围'}
+  const writes=[]
+  await page.route('**/jiedan/quote/list',r=>ok(r,[q]))
+  await page.route('**/jiedan/quote/19',r=>ok(r,q))
+  await page.route('**/jiedan/quote/19/price',r=>{
+    const data=r.request().postDataJSON();writes.push(data)
+    q={...q,...data,version:q.version+1,status:'quoted'}
+    return ok(r,q)
+  })
+  await page.goto('/#/quotes?id=19')
+  const d=page.getByRole('dialog',{name:'报价详情'})
+  const amount=d.getByRole('spinbutton')
+  const note=d.getByPlaceholder('例如：包含哪些内容、预计工期、报价有效期')
+  await amount.fill('3200')
+  await note.fill('五天交付')
+  q={...q,requirement:'加入第二种语言',version:3}
+  await page.evaluate(()=>dispatchEvent(new Event('focus')))
+  await expect(d.locator('.quote-requirement')).toHaveText('加入第二种语言')
+  const submit=d.getByRole('button',{name:'提交报价'})
+  await expect(submit).toBeDisabled()
+  await expect(amount).toHaveValue('3200.00')
+  await expect(note).toHaveValue('五天交付')
+  await d.getByRole('button',{name:'已核对新需求'}).click()
+  await submit.click()
+  await expect(d.locator('.quote-result')).toContainText('3,200.00')
+  expect(writes).toEqual([{amount:3200,quoteNote:'五天交付',version:3}])
+})
+test('编辑报价时附件未传完或失败不能发邀请，重试后一次带上文件',async({page})=>{
+  await start(page)
+  let q={...base,id:8,title:'含附件的报价',requirement:'已写好的需求',attachments:[]}
+  let upload,attempts=0
+  const writes=[]
+  await page.route('**/jiedan/quote/list',r=>ok(r,[q]))
+  await page.route('**/jiedan/quote/8',r=>{
+    if(r.request().method()==='PUT'){writes.push(r.request().postDataJSON());q={...q,...writes[0],version:3}}
+    return ok(r,q)
+  })
+  await page.route('**/jiedan/media/upload',r=>{
+    if(++attempts===1){upload=r;return}
+    return ok(r,{url:'/profile/报价说明.pdf'})
+  })
+  await page.goto('/#/quotes')
+  await page.locator('.quote-card').getByRole('button',{name:'编辑'}).click()
+  const d=page.getByRole('dialog',{name:'编辑报价单'})
+  await d.locator('input[type=file]').setInputFiles({name:'报价说明.pdf',mimeType:'application/pdf',buffer:Buffer.from('mock document')})
+  const invite=d.getByRole('button',{name:'保存并邀请报价'})
+  await expect(invite).toBeDisabled()
+  await expect.poll(()=>!!upload).toBe(true)
+  await upload.fulfill({json:{code:500,msg:'连接中断'}})
+  await expect(d.locator('.upload-feedback')).toContainText('报价说明.pdf')
+  await expect(invite).toBeDisabled()
+  expect(writes).toEqual([])
+  await d.getByRole('button',{name:'重试',exact:true}).click()
+  await expect(invite).toBeEnabled()
+  await invite.click()
+  await expect(d).toBeHidden()
+  expect(writes).toHaveLength(1)
+  expect(writes[0]).toMatchObject({requestPrice:true,attachments:[{name:'报价说明.pdf'}]})
+})

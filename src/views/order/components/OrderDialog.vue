@@ -1,126 +1,30 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="form.id ? '编辑订单' : '快速接单'"
+    :title="form.id ? '编辑项目' : '新建项目'"
     width="560px"
+    class="design-order-dialog"
     @update:model-value="(v) => emit('update:visible', v)"
     @open="onOpen"
   >
-    <el-form ref="formRef" :model="form" :rules="rules" label-width="84px">
-      <el-form-item label="项目名" prop="title">
-        <el-input v-model="form.title" placeholder="一句话写清做什么，比如：餐饮点餐小程序" />
-      </el-form-item>
-
-      <el-row :gutter="12">
-        <el-col :span="12">
-          <el-form-item label="来源渠道" prop="channel">
-            <el-select v-model="form.channel" style="width: 100%">
-              <el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="负责人">
-            <el-select v-model="form.ownerId" style="width: 100%" :disabled="!isBoss">
-              <el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" :disabled="m.status !== '0'" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <el-row :gutter="12">
-        <el-col :span="12">
-          <el-form-item label="客户">
-            <el-input v-model="form.customer" placeholder="选填" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="12">
-          <el-form-item label="联系方式">
-            <el-input v-model="form.contact" placeholder="微信/旺旺号，选填" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <el-form-item label="客户账号">
-        <div class="cust-account">
-          <el-select
-            v-model="form.customerAccount"
-            filterable
-            clearable
-            placeholder="选填：绑定后该客户可登录查看此项目并与你沟通"
-            style="flex: 1"
-          >
-            <el-option
-              v-for="c in customers"
-              :key="c.userId"
-              :label="`${c.userName}（${c.nickName}）`"
-              :value="c.userName"
-            />
-          </el-select>
-          <el-button :icon="Plus" @click="openQuickCreate">新建账号</el-button>
-        </div>
-      </el-form-item>
-
-      <el-row :gutter="12">
-        <el-col :span="8">
-          <el-form-item label="报价(元)">
-            <el-input-number
-              v-model="form.amount"
-              :min="0"
-              :step="100"
-              controls-position="right"
-              style="width: 100%"
-              :disabled="!!form.id && !isBoss"
-            />
-            <div v-if="!!form.id && !isBoss" class="amount-hint">改报价要申请：在项目详情里点“申请改价”</div>
-          </el-form-item>
-        </el-col>
-        <el-col :span="8">
-          <el-form-item label="优先级">
-            <el-select v-model="form.priority" style="width: 100%">
-              <el-option v-for="p in PRIORITY" :key="p.value" :label="p.label" :value="p.value" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :span="8">
-          <el-form-item label="状态">
-            <el-select v-model="form.status" style="width: 100%">
-              <el-option v-for="s in statusOpts" :key="s.value" :label="s.label" :value="s.value" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-      </el-row>
-
-      <el-form-item label="截止日期">
-        <div style="width: 100%">
-          <el-date-picker
-            v-model="form.deadline"
-            type="date"
-            value-format="YYYY-MM-DD"
-            placeholder="选填，建议都填上以便提醒"
-            style="width: 100%; margin-bottom: 8px"
-          />
-          <DeadlineChips v-model="form.deadline" />
-        </div>
-      </el-form-item>
-
-      <el-form-item label="需求描述">
-        <el-input
-          v-model="form.requirement"
-          type="textarea"
-          :rows="3"
-          placeholder="把客户需求贴进来，避免来回翻聊天记录"
-        />
-      </el-form-item>
-
-      <el-form-item label="需求材料">
-        <AttachmentUploader v-model="form.attachments" />
-      </el-form-item>
+    <template #header="{ titleId }"><div class="design-form-heading"><h2 :id="titleId" :aria-label="form.id ? '编辑项目' : '新建项目'">{{ form.id ? '编辑项目' : '完整建单' }}</h2><p>完善项目信息，规范管理与交付</p></div></template>
+    <el-form ref="formRef" :model="form" :rules="rules" label-width="84px" class="design-order-form" data-paste-zone="新建项目">
+      <el-form-item class="field-title" label="项目名" prop="title"><el-input v-model="form.title" placeholder="一句话写清做什么，比如：餐饮点餐小程序" /></el-form-item>
+      <el-form-item class="field-customer" label="客户 / 联系方式"><div class="customer-inline"><el-input v-model="form.customer" placeholder="客户称呼"/><el-input v-model="form.contact" placeholder="微信/旺旺号，选填"/></div></el-form-item>
+      <el-form-item class="field-account" label="客户账号"><div class="cust-account"><el-select v-model="form.customerAccount" filterable clearable placeholder="选择绑定客户"><el-option v-for="c in customers" :key="c.userId" :label="`${c.userName}（${c.nickName}）`" :value="c.userName"/></el-select><el-button :icon="Plus" aria-label="新建账号" title="新建账号" @click="openQuickCreate"/></div></el-form-item>
+      <el-form-item class="field-owner" label="负责人"><el-select v-model="form.ownerId" :disabled="!isBoss"><el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" :disabled="m.status !== '0'"/></el-select></el-form-item>
+      <el-form-item class="field-amount" label="报价(元)"><el-input-number v-model="form.amount" :min="0" :step="100" :controls="false" :disabled="!!form.id && !isBoss"/><div v-if="!!form.id && !isBoss" class="amount-hint">改报价请在项目详情申请</div></el-form-item>
+      <el-form-item class="field-channel" label="来源渠道" prop="channel"><el-select v-model="form.channel"><el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value"/></el-select></el-form-item>
+      <el-form-item class="field-priority" label="优先级"><el-select v-model="form.priority"><el-option v-for="p in PRIORITY" :key="p.value" :label="p.label" :value="p.value"/></el-select></el-form-item>
+      <el-form-item class="field-status" label="状态"><el-select v-model="form.status"><el-option v-for="s in statusOpts" :key="s.value" :label="s.label" :value="s.value"/></el-select></el-form-item>
+      <el-form-item class="field-deadline" label="截止日期"><div class="deadline-box"><el-date-picker v-model="form.deadline" type="date" value-format="YYYY-MM-DD" placeholder="请选择截止日期"/><DeadlineChips v-model="form.deadline" :clearable="false"/></div></el-form-item>
+      <el-form-item class="field-requirement" label="需求描述"><el-input v-model="form.requirement" data-paste-text type="textarea" :rows="3" placeholder="把客户需求贴进来，避免来回翻聊天记录"/></el-form-item>
+      <el-form-item class="field-attachments" label="附件（可选）"><AttachmentUploader v-model="form.attachments"/></el-form-item>
     </el-form>
 
     <template #footer>
-      <el-button @click="emit('update:visible', false)">取消</el-button>
-      <el-button type="primary" @click="submit">保存</el-button>
+      <el-button class="secondary-form-cancel" @click="emit('update:visible', false)">取消</el-button>
+      <el-button type="primary" aria-label="保存" @click="submit">保存项目</el-button>
     </template>
 
     <!-- 快捷新建客户账号 -->
@@ -152,6 +56,7 @@ import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
 import { CHANNEL, PRIORITY, STATUS, MEMBERS } from '@/constants/options'
 import { listCustomers, createCustomer, currentMember, isBoss } from '@/mock/store'
+import { offerLoginInfo } from '@/utils/loginInfo'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -205,6 +110,7 @@ function submitQuickCreate() {
     try {
       await createCustomer({ ...quickForm })
       ElMessage.success('账号已创建并绑定到本项目')
+      offerLoginInfo({ name: quickForm.nickName, userName: quickForm.userName, password: quickForm.password, who: 'customer' })
       await loadCustomers()
       form.customerAccount = quickForm.userName
       quickVisible.value = false
@@ -250,6 +156,8 @@ function submit() {
 </script>
 
 <style scoped>
+.deadline-box { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+
 .amount-hint {
   font-size: 12px;
   color: #909399;

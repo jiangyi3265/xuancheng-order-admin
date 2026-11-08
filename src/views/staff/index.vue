@@ -1,13 +1,16 @@
 <template>
   <div class="staff">
-    <div class="head">
+    <div class="head"><button class="mobile-only icon-button entity-back" aria-label="返回我的" @click="$router.push('/mine')"><el-icon><ArrowLeft/></el-icon></button>
       <div class="title">
         <h2>成员管理</h2>
-        <span>下属管理员用自己的账号登录，只能看到负责人是自己的项目；你（总管理员）能看到全部项目，他们看不到你的项目</span>
+        <span>使用各自的账号登录，按账号权限协作处理项目。</span>
       </div>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建下属管理员</el-button>
+      <el-button type="primary" :icon="Plus" @click="openCreate">新增成员</el-button>
     </div>
 
+    <section class="staff-summary mobile-only"><div><el-icon><User/></el-icon><span><b>{{ MEMBERS.length }}</b> 位成员</span></div><div><el-icon><Folder/></el-icon><span><b>{{ MEMBERS.reduce((n,m)=>n+Number(m.unfinishedCount||0),0) }}</b> 个未完成项目</span></div></section>
+    <div class="entity-cards" v-loading="loading"><article v-for="row in MEMBERS" :key="row.id" class="entity-card"><div class="entity-card-head"><el-avatar :size="48">{{ row.name.slice(-1) }}</el-avatar><div><h3>{{ row.name }}</h3><p>{{ row.userName }}</p><p>负责 {{ row.orderCount || 0 }} 项 · 未完成 {{ row.unfinishedCount || 0 }} 项</p></div><el-tag :type="row.status==='0'?'success':'warning'">{{ row.status==='0'?'正常':'已停用' }}</el-tag></div><div v-if="row.role!=='boss'" class="entity-actions"><el-button @click="selectedMember=row">管理</el-button></div><p v-else>此账号受保护</p></article></div>
+    <el-dialog :model-value="!!selectedMember" title="成员设置与权限" @close="selectedMember=null"><template v-if="selectedMember"><div class="board-account-profile"><el-avatar :size="58">{{ selectedMember.name.slice(-1) }}</el-avatar><h2>{{ selectedMember.name }}</h2></div><el-form label-position="top"><el-form-item label="登录账号"><el-input :model-value="selectedMember.userName" readonly/></el-form-item></el-form><div class="board-account-actions"><el-button @click="doToggle(selectedMember)">{{ selectedMember.status==='0'?'停用账号':'启用账号' }}</el-button><el-button @click="doReset(selectedMember)">重置密码</el-button></div><table class="permission-table"><thead><tr><th>功能权限</th><th>{{ selectedMember.name }}</th></tr></thead><tbody><tr><td>管理自己的项目 / 客户</td><td>允许</td></tr><tr><td>提交验收 / 报价申请</td><td>允许</td></tr><tr><td>审批 / 完成 / 删除项目</td><td>需审批</td></tr><tr><td>成员管理 / 全局统计</td><td>不可访问</td></tr></tbody></table><p class="muted">权限按账号配置。停用账号后，该成员将无法登录。</p></template><template #footer><el-button type="danger" plain @click="doDelete(selectedMember)">删除成员</el-button><el-button type="primary" @click="selectedMember=null">完成</el-button></template></el-dialog>
     <el-table :data="MEMBERS" v-loading="loading" border stripe>
       <el-table-column label="姓名" min-width="130">
         <template #default="{ row }">
@@ -18,11 +21,7 @@
         </template>
       </el-table-column>
       <el-table-column label="登录账号" prop="userName" min-width="120" />
-      <el-table-column label="角色" width="120" align="center">
-        <template #default="{ row }">
-          <el-tag :type="row.role === 'boss' ? 'primary' : 'info'" size="small">{{ row.roleLabel }}</el-tag>
-        </template>
-      </el-table-column>
+      
       <el-table-column label="名下项目" width="150" align="center">
         <template #default="{ row }">
           <span>{{ row.orderCount || 0 }} 个</span>
@@ -38,7 +37,7 @@
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" prop="createTime" min-width="160" />
+      <el-table-column label="创建时间" min-width="150"><template #default="{ row }">{{ fmtTime(row.createTime) }}</template></el-table-column>
       <el-table-column label="操作" width="230" align="center" fixed="right">
         <template #default="{ row }">
           <template v-if="row.role !== 'boss'">
@@ -56,12 +55,13 @@
       </template>
     </el-table>
 
+    
     <el-alert type="info" :closable="false" class="tip">
-      停用或重置密码后，对方已登录的设备会立即下线。要换负责人：在「接单管理」里编辑项目，改“负责人”即可；
-      要把客户转交给下属：在「客户账号」里点“转交”。名下还有项目或客户的成员不能删除，请先转派，或直接停用。
+      停用或重置密码后，对方已登录的设备会立即下线。要换负责人：在项目卡片或详情里点负责人的名字，直接改派；
+      要把客户转交给其他成员：在「客户账号」里点“转交”。名下还有项目或客户的成员不能删除，请先转派，或直接停用。
     </el-alert>
 
-    <el-dialog v-model="createVisible" title="新建下属管理员" width="440px">
+    <el-dialog v-model="createVisible" title="新增成员" width="440px">
       <el-form ref="formRef" :model="createForm" :rules="rules" label-width="82px">
         <el-form-item label="登录账号" prop="userName">
           <el-input v-model="createForm.userName" placeholder="登录用，字母/数字/下划线" />
@@ -82,11 +82,15 @@
 </template>
 
 <script setup>
+const selectedMember = ref(null)
+
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import { MEMBERS } from '@/constants/options'
 import { loadStaff, createStaff, resetStaffPwd, setStaffStatus, deleteStaff } from '@/mock/store'
+import { offerLoginInfo } from '@/utils/loginInfo'
+import { fmtTime } from '@/utils/time'
 
 const loading = ref(false)
 const saving = ref(false)
@@ -130,10 +134,12 @@ function submitCreate() {
     if (!ok) return
     saving.value = true
     try {
+      const info = { name: createForm.nickName.trim(), userName: createForm.userName.trim(), password: createForm.password }
       await createStaff({ ...createForm })
-      ElMessage.success('下属管理员创建成功')
       createVisible.value = false
       load()
+      // 顺手把登录信息整理好发给同事；企业微信账号要到「通知设置」里填，这里提醒一句
+      offerLoginInfo({ ...info, who: 'staff', hint: '记得到「通知设置」里填上 TA 的企业微信账号，TA 才能在微信里收到提醒。' })
     } catch (e) {
       ElMessage.error(e.message || '创建失败')
     } finally {
@@ -155,7 +161,7 @@ async function doReset(row) {
       }
     )
     await resetStaffPwd(row.id, value)
-    ElMessage.success('密码已重置')
+    offerLoginInfo({ name: row.name, userName: row.userName, password: value, who: 'staff', reset: true })
   } catch (e) {
     if (e !== 'cancel') ElMessage.error(e.message || '操作失败')
   }
@@ -172,6 +178,7 @@ async function doToggle(row) {
       { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' }
     )
     await setStaffStatus(row.id, stopping ? '1' : '0')
+    row.status=stopping ? '1' : '0'
     ElMessage.success(stopping ? '已停用' : '已启用')
     load()
   } catch (e) {
@@ -187,6 +194,7 @@ async function doDelete(row) {
       cancelButtonText: '取消'
     })
     await deleteStaff(row.id)
+    selectedMember.value=null
     ElMessage.success('已删除')
     load()
   } catch (e) {

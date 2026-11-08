@@ -1,24 +1,26 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="isBoss ? '记收款' : '申请收款'"
+    :title="tab==='history' ? '收款流水' : isBoss ? '登记收款' : '申请收款'"
     width="480px"
+    class="design-payment-dialog"
     append-to-body
     @update:model-value="(v) => emit('update:visible', v)"
     @open="onOpen"
   >
     <div v-if="cur" v-loading="loading">
-      <div class="pay-title">{{ cur.title }}<span v-if="cur.customer" class="pay-customer"> · {{ cur.customer }}</span></div>
+      <div class="payment-project"><ProjectCover :order="cur" compact/><div class="pay-title">{{ cur.title }}<span v-if="cur.customer" class="pay-customer">{{ cur.customer }}</span></div></div>
 
       <div class="pay-sum">
         <div class="cell"><span>报价</span><b>{{ money(cur.amount) }}</b></div>
         <div class="cell"><span>已收</span><b class="green">{{ money(cur.receivedAmount) }}</b></div>
         <div class="cell"><span>还欠</span><b :class="{ red: owedNow > 0 }">{{ money(owedNow) }}</b></div>
       </div>
-      <div v-if="!isBoss" class="pay-tip">你提交后要老板确认，确认了才会计入“已收”。</div>
+      <div v-if="!isBoss" class="pay-tip">提交后需要确认，确认后才会计入“已收”。</div>
       <div v-if="!Number(cur.amount)" class="pay-tip">这单还没填报价。收款照样可以记，填上报价后会自动算出还欠多少。</div>
 
-      <el-form label-width="52px" class="pay-form" @submit.prevent>
+      <el-tabs v-model="tab"><el-tab-pane label="收款流水" name="history"/><el-tab-pane :label="isBoss ? '登记收款' : '申请收款'" name="entry"/></el-tabs>
+      <el-form v-show="tab==='entry'" label-width="52px" class="pay-form" @submit.prevent>
         <el-form-item label="收到">
           <el-input-number v-model="form.amount" :min="0" :precision="2" :step="100" controls-position="right" style="width: 170px" />
           <el-button v-if="owedNow > 0" link type="primary" class="fill-btn" @click="form.amount = owedNow">
@@ -37,7 +39,7 @@
         </el-form-item>
         <el-form-item label="备注">
           <div class="note-box">
-            <el-input v-model="form.note" maxlength="200" placeholder="选填，如 定金 / 尾款 / 微信转账" />
+            <el-input v-model="form.note" type="textarea" :rows="3" maxlength="200" placeholder="选填，如 定金 / 尾款 / 微信转账" />
             <div class="note-chips">
               <span v-for="t in NOTE_TAGS" :key="t" class="chip" @click="form.note = t">{{ t }}</span>
             </div>
@@ -45,8 +47,8 @@
         </el-form-item>
       </el-form>
 
-      <div v-if="waiting.length" class="history">
-        <div class="history-title">等老板确认的收款（{{ waiting.length }} 笔）</div>
+      <div v-if="tab==='history' && waiting.length" class="history">
+        <div class="history-title">等待确认的收款（{{ waiting.length }} 笔）</div>
         <div v-for="w in waiting" :key="w.id" class="history-row">
           <span class="h-date">{{ w.payload.payDate }}</span>
           <b class="h-amount wait">{{ money(w.payload.amount) }}</b>
@@ -55,7 +57,8 @@
         </div>
       </div>
 
-      <div v-if="payments.length" class="history">
+      <el-empty v-if="tab==='history' && !payments.length && !waiting.length" description="暂无收款记录" :image-size="90" />
+      <div v-if="tab==='history' && payments.length" class="history">
         <div class="history-title">已记录的收款（{{ payments.length }} 笔）</div>
         <div v-for="p in payments" :key="p.id" class="history-row">
           <span class="h-date">{{ p.payDate }}</span>
@@ -68,12 +71,14 @@
 
     <template #footer>
       <el-button @click="emit('update:visible', false)">关闭</el-button>
-      <el-button type="primary" :loading="saving" @click="submit">{{ isBoss ? '记这一笔' : '提交收款申请' }}</el-button>
+      <el-button v-if="tab==='history'" type="primary" @click="tab='entry'">{{ isBoss ? '登记收款' : '申请收款' }}</el-button>
+      <el-button v-else type="primary" :loading="saving" @click="submit">{{ isBoss ? '记这一笔' : '提交收款申请' }}</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
+import ProjectCover from '@/components/ProjectCover.vue'
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOrder, addPayment, removePayment, requestApproval, approvals, isBoss } from '@/mock/store'
@@ -89,6 +94,7 @@ const emit = defineEmits(['update:visible'])
 const NOTE_TAGS = ['定金', '尾款', '全款']
 const cur = ref(null)
 const loading = ref(false)
+const tab=ref('history')
 const saving = ref(false)
 const deletingId = ref(null)
 const form = reactive({ amount: 0, payDate: todayStr(), note: '' })
@@ -102,6 +108,7 @@ const waiting = computed(() =>
 const afterToday = (d) => d.getTime() > Date.now() + 24 * 3600 * 1000
 
 async function onOpen() {
+  tab.value='history'
   cur.value = props.order
   form.payDate = todayStr()
   form.note = ''
@@ -145,10 +152,10 @@ async function submit() {
       await requestApproval({
         orderId: cur.value.id,
         type: 'payment',
-        reason: form.note.trim() || '已收到款项，请老板确认',
+        reason: form.note.trim() || '已收到款项，请确认',
         payload: { amount, payDate: form.payDate, note: form.note.trim() }
       })
-      ElMessage.success(`已提交 ${money(amount)} 的收款申请，等老板确认`)
+      ElMessage.success(`已提交 ${money(amount)} 的收款申请，等待确认`)
       emit('update:visible', false)
       return
     }

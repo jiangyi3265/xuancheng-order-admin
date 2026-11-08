@@ -18,3 +18,12 @@ for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
 app.use(ElementPlus, { locale: zhCn })
 app.use(router)
 app.mount('#app')
+
+import "./styles/design.scss"
+
+import "./styles/faithful.scss"
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.addEventListener('message', ({ data }) => {
+  if (data?.type !== 'open-notification' || typeof data.path !== 'string') return
+  if (['/messages', '/workbench', '/order', '/quotes', '/approvals'].includes(data.path.split('?')[0])) router.push(data.path)
+})

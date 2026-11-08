@@ -1,0 +1,120 @@
+const {test, expect}=require('@playwright/test')
+const {fixture, order}=require('./fixtures.cjs')
+const ok=(route,data)=>route.fulfill({json:{code:200,data}})
+const nav=(page,path)=>page.evaluate(hash=>{location.hash=hash},path)
+async function setup(page,role='boss') {
+  await fixture(page,role)
+  await page.addInitScript(role=>{
+    localStorage.setItem(role==='customer'?'customerToken':'token','fixture-'+role)
+    localStorage.setItem('xc.orderView','kanban')
+  },role)
+}
+for(const width of [390,1366])test('看板处理入口直接定位，返回保留原列，多个问题优先显示 · '+width,async({page})=>{
+  await setup(page)
+  await page.setViewportSize({width,height:760})
+  const bugs=[{...order.bugs[0],id:4},{...order.bugs[0],id:7,status:'action',content:'等我处理'}]
+  const row={...order,actionBugCount:1,bugs}
+  await page.route('**/jiedan/order/list',r=>ok(r,[row]))
+  await page.route('**/jiedan/order/1',r=>ok(r,row))
+  await page.route('**/jiedan/order/read',r=>ok(r,{id:1,version:1}))
+  await page.goto('/#/order')
+  const card=page.locator('.kanban .card').first()
+  await expect(card.locator('.new-badge')).toHaveText('新提醒')
+  await card.getByRole('button',{name:'处理问题（1）'}).click()
+  const panel=page.locator('.bug-panel')
+  await expect(panel.locator('.notice-target')).toContainText('等我处理')
+  await expect(panel.locator('.notice-target')).toBeInViewport()
+  const close=width===390?page.getByRole('button',{name:'关闭项目详情'}):page.locator('.workspace-head .close-btn')
+  await close.click()
+  await expect(page).not.toHaveURL(/todo=1/)
+  await page.getByRole('button',{name:'展开进行中',exact:true}).click()
+  const focus=page.getByRole('dialog',{name:'全屏看板'})
+  // A second issue was assigned after the last list snapshot.
+  bugs.push({...bugs[1],id:8,content:'第二件待办'});row.actionBugCount=2
+  await focus.locator('.issue-shortcut').click()
+  await expect(panel.locator('.bug-item').nth(1)).toContainText('第二件待办')
+  await expect(panel.locator('.notice-target')).toHaveCount(0)
+  await close.click()
+  await expect(focus.locator('.issue-shortcut')).toHaveText('处理问题（2）')
+  await expect(focus.locator('h2')).toHaveText('进行中')
+})
+
+test('切换项目保留当前人的回复草稿和已上传附件',async({page})=>{
+  await setup(page)
+  await page.route('**/jiedan/order/2',r=>ok(r,{...order,id:2,title:'另一个项目'}))
+  await page.route('**/jiedan/media/upload',r=>ok(r,{url:'/app-icon-192.png',type:'image',ext:'png'}))
+  await page.goto('/#/order?id=1&tab=chat')
+  const field=page.getByRole('textbox',{name:'回复客户'})
+  await field.fill('第一单的文字')
+  await page.getByRole('button',{name:'选择表情或表情包'}).click()
+  await page.getByRole('button',{name:'添加表情包收到'}).click()
+  const thumb=page.locator('.chat-panel .media-thumb')
+  await expect(thumb).toBeVisible()
+  await nav(page,'/order?id=2&tab=chat')
+  await expect(page.locator('.workspace-head h2')).toHaveText('另一个项目')
+  await expect(field).toHaveValue('')
+  await expect(thumb).toHaveCount(0)
+  await field.fill('另一份回复')
+  await nav(page,'/order?id=1&tab=chat')
+  await expect(page.locator('.workspace-head h2')).toHaveText(order.title)
+  await expect(field).toHaveValue('第一单的文字')
+  await expect(thumb).toBeVisible()
+})
+
+test('客户切换栏目或项目时保留草稿，发出后不再恢复',async({page})=>{
+  await setup(page,'customer')
+  await page.route('**/jiedan/portal/orders/2',r=>ok(r,{...order,id:2,title:'另一个项目'}))
+  const sent=[]
+  await page.route('**/jiedan/portal/message',r=>{sent.push(r.request().postDataJSON());return ok(r,order)})
+  await page.goto('/#/projects/1?tab=chat')
+  const field=page.getByRole('textbox',{name:'项目沟通消息'})
+  await field.fill('客户留给一期的回复')
+  await page.getByRole('button',{name:'需求',exact:true}).click()
+  await page.getByRole('button',{name:'沟通',exact:true}).click()
+  await expect(field).toHaveValue('客户留给一期的回复')
+  await nav(page,'/projects/2?tab=chat')
+  await expect(page.locator('.tt strong')).toHaveText('另一个项目')
+  await expect(field).toHaveValue('')
+  await nav(page,'/projects/1?tab=chat')
+  await expect(field).toHaveValue('客户留给一期的回复')
+  await field.press('Enter')
+  await expect(field).toHaveValue('')
+  expect(sent.map(s=>[String(s.orderId),s.content])).toEqual([['1','客户留给一期的回复']])
+})
+
+test('报价草稿隔离，失败重试沿用同一标识，离开发送中的报价不会重发',async({page})=>{
+  await setup(page)
+  const q=id=>({id,title:'报价'+id,creatorId:1,employeeId:2,status:'pending',version:1,conversationVersion:0})
+  const attempts=[]
+  let pending
+  await page.route('**/jiedan/quote/**',async r=>{
+    const path=new URL(r.request().url()).pathname
+    if(path.endsWith('/conversation')&&r.request().method()==='POST') {
+      attempts.push(r.request().postDataJSON())
+      if(attempts.length===1)return r.fulfill({json:{code:500,msg:'暂未发送'}})
+      pending=r
+      return
+    }
+    return ok(r,path.endsWith('/list')?[q(10),q(12)]:path.endsWith('/conversation')?{items:[],hasMore:false}:q(Number(path.split('/').pop())))
+  })
+  await page.goto('/#/quotes?id=10&tab=chat')
+  const field=page.getByRole('textbox',{name:'回复内容'})
+  await field.fill('先确认交付范围')
+  await field.press('Enter')
+  await expect(page.getByText('暂未发送')).toBeVisible()
+  await nav(page,'/quotes?id=12&tab=chat')
+  await expect(field).toHaveValue('')
+  await field.fill('这是另一份报价')
+  await nav(page,'/quotes?id=10&tab=chat')
+  await expect(field).toHaveValue('先确认交付范围')
+  await field.press('Enter')
+  await expect.poll(()=>!!pending).toBe(true)
+  await nav(page,'/quotes?id=12&tab=chat')
+  await expect(field).toHaveValue('这是另一份报价')
+  await nav(page,'/quotes?id=10&tab=chat')
+  await expect(field).toHaveAttribute('readonly','')
+  await ok(pending,{id:8})
+  await expect(field).toHaveValue('')
+  expect(attempts.length).toBe(2)
+  expect(attempts[0].clientKey).toBe(attempts[1].clientKey)
+})

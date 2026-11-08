@@ -1,17 +1,18 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="`📒 项目记事本 · ${order?.title || ''}`"
+    title="项目记事本"
     width="720px"
     top="6vh"
     :close-on-click-modal="false"
     @update:model-value="onClose"
     @open="onOpen"
   >
-    <div v-loading="loading" class="notebook">
+    <div v-if="order" class="notebook-project"><h3>{{ order.title }}</h3><p>{{ order.customer || '未填写客户' }}</p></div>
+    <div v-loading="loading" class="notebook" data-paste-zone="项目记事本">
       <div class="tip">
         <el-icon><InfoFilled /></el-icon>
-        随时记录客户说的话、需求、注意事项——仅后台管理员可见（下属管理员只能看到自己名下项目的记事本），客户端不可见。图片可直接 <b>Ctrl+V</b> 粘贴，文档点 + 上传。
+        随时记录客户说的话、需求、注意事项——仅有项目访问权限的协作成员可见，客户端不可见。图片可直接 <b>Ctrl+V</b> 粘贴，文档点 + 上传。
       </div>
 
       <el-input
@@ -29,7 +30,7 @@
 
       <div class="att-block">
         <div class="att-label"><el-icon><Paperclip /></el-icon> 参考图 / 文档</div>
-        <AttachmentUploader v-model="noteAttachments" :limit="30" @update:modelValue="dirty = true" />
+        <AttachmentUploader v-model="noteAttachments" @update:modelValue="dirty = true" />
       </div>
     </div>
 

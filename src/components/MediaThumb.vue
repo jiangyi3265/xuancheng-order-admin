@@ -4,36 +4,38 @@
       <video :src="item.url" class="m-el" muted preload="metadata"></video>
       <span class="play-badge"><el-icon :size="Math.round(size / 3)"><VideoPlay /></el-icon></span>
     </div>
-    <el-image
-      v-else
-      :src="item.url"
-      :preview-src-list="[item.url]"
-      fit="cover"
-      class="m-el"
-      preview-teleported
-    />
+    <button v-else type="button" class="thumb-open" :aria-label="'放大' + (item.name || '图片')"
+      @click.stop="openImage(item.url,item.name,item)" @keydown.enter.stop @keydown.space.stop>
+      <el-image :src="item.url" alt="" fit="cover" class="m-el">
+        <template #placeholder><span class="thumb-status">加载中</span></template>
+        <template #error><span class="thumb-status">加载失败</span></template>
+      </el-image>
+    </button>
 
     <span v-if="removable" class="m-del" @click.stop="$emit('remove')">
       <el-icon><Close /></el-icon>
     </span>
 
     <el-dialog
-      v-if="isVideo"
       v-model="playing"
-      :title="item.name || '视频'"
+      :title="item.name || '附件预览'"
       width="640px"
       align-center
       append-to-body
       destroy-on-close
     >
-      <video :src="item.url" controls autoplay style="width: 100%; max-height: 70vh; border-radius: 6px; background: #000"></video>
+      <video :src="item.url" controls autoplay class="attachment-preview"></video>
+      <div class="attachment-meta"><el-icon><Document /></el-icon><div><strong>{{ item.name || '项目附件' }}</strong><p>{{ isVideo ? '视频' : '图片' }} · {{ fmtSize(item.size) }}</p></div></div>
+      <template #footer><el-button @click="playing=false">返回项目</el-button><el-button type="primary" @click="downloadAttachment(item)">下载文件</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <script setup>
+import { openImage } from '@/utils/imagePreview'
 import { ref, computed } from 'vue'
-import { VideoPlay, Close } from '@element-plus/icons-vue'
+import { fmtSize, downloadAttachment } from '@/utils/file'
+import { VideoPlay, Close, Document } from '@element-plus/icons-vue'
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -63,6 +65,29 @@ const isVideo = computed(
   width: 100%;
   height: 100%;
   cursor: pointer;
+}
+.thumb-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: #edf1f7;
+  cursor: zoom-in;
+}
+.thumb-open:focus-visible { outline: 2px solid #326abd; outline-offset: -2px }
+.thumb-open .m-el { background: transparent }
+.thumb-open :deep(.el-image__wrapper) { pointer-events: none }
+.thumb-open :deep(.el-image__inner.is-loading) { opacity: 1 }
+.thumb-status {
+  position: absolute;
+  inset: auto 0 0;
+  padding: 3px 1px;
+  background: #203145d6;
+  color: white;
+  font-size: 11px;
+  line-height: 1.25;
+  text-align: center;
 }
 .m-el {
   width: 100%;

@@ -1,16 +1,17 @@
 <template>
   <div class="trash">
-    <div class="head">
+    <div class="head"><button class="mobile-only icon-button entity-back" aria-label="返回我的" @click="$router.push('/mine')"><el-icon><ArrowLeft/></el-icon></button>
       <div class="title">
         <h2>回收站</h2>
         <span>
-          删除的项目会先放在这里，聊天记录、Bug、记事本都还在，可以随时恢复。
+          删除的项目会先放在这里，聊天记录、问题、记事本都还在，可以随时恢复。
           {{ isBoss ? '你可以恢复，也可以彻底删除（彻底删除后无法找回）。' : '只显示负责人是你的项目。' }}
         </span>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
     </div>
 
+    <div class="entity-cards" v-loading="loading"><article v-for="row in rows" :key="row.id" class="entity-card"><div class="entity-card-head"><ProjectCover :order="row" compact/><div><h3>{{ row.title }}</h3><p>删除时间：{{ fmtTime(row.deleteTime) }}</p><p>负责人：{{ memberMap[row.ownerId]?.name || '账号已删除' }}</p></div><el-tag :type="statusMap[row.status]?.type">{{ statusMap[row.status]?.label }}</el-tag></div><div class="entity-actions"><el-button type="primary" plain @click="doRestore(row)">恢复</el-button><el-button v-if="isBoss" type="danger" plain @click="doPurge(row)">彻底删除</el-button></div></article><el-empty v-if="!rows.length&&!loading" description="回收站是空的"/></div>
     <el-table :data="rows" v-loading="loading" border stripe>
       <el-table-column prop="orderNo" label="编号" width="130" />
       <el-table-column label="项目名" min-width="200" show-overflow-tooltip>
@@ -38,7 +39,7 @@
           <span v-else>{{ row.deleteBy || '—' }}</span>
         </template>
       </el-table-column>
-      <el-table-column prop="deleteTime" label="删除时间" width="160" />
+      <el-table-column label="删除时间" width="150"><template #default="{ row }">{{ fmtTime(row.deleteTime) }}</template></el-table-column>
       <el-table-column label="操作" width="170" align="center" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="doRestore(row)">恢复</el-button>
@@ -53,10 +54,12 @@
 </template>
 
 <script setup>
+import ProjectCover from '@/components/ProjectCover.vue'
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Refresh } from '@element-plus/icons-vue'
 import { isBoss, listTrash, restoreOrder, purgeOrder } from '@/mock/store'
+import { fmtTime } from '@/utils/time'
 import { memberMap, statusMap } from '@/constants/options'
 
 const rows = ref([])
@@ -78,7 +81,7 @@ async function load() {
 
 async function doRestore(row) {
   try {
-    await ElMessageBox.confirm(`恢复「${row.title}」？恢复后它会回到接单管理里。`, '恢复项目', {
+    await ElMessageBox.confirm(`恢复「${row.title}」？恢复后它会回到「项目管理」里。`, '恢复项目', {
       confirmButtonText: '恢复',
       cancelButtonText: '取消'
     })
@@ -93,7 +96,7 @@ async function doRestore(row) {
 async function doPurge(row) {
   try {
     await ElMessageBox.confirm(
-      `彻底删除「${row.title}」？它的聊天记录、Bug、记事本会一起永久删除，无法恢复。`,
+      `彻底删除「${row.title}」？它的聊天记录、问题、记事本会一起永久删除，无法恢复。`,
       '彻底删除',
       { type: 'warning', confirmButtonText: '彻底删除', cancelButtonText: '取消', confirmButtonClass: 'el-button--danger' }
     )

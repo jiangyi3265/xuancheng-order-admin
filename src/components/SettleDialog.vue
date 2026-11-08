@@ -13,7 +13,7 @@
         <div class="cell"><span>已收</span><b class="green">{{ money(order.receivedAmount) }}</b></div>
         <div class="cell"><span>还欠</span><b class="red">{{ money(owed(order)) }}</b></div>
       </div>
-      <div class="s-tip">没收的先挂着，会出现在「接单管理」的「还欠款」和数据站的“待收款”里，收到了随时记。</div>
+      <div class="s-tip">没收的先挂着，会出现在「项目管理」的「还欠款」和「数据统计」的“待收款”里，收到了随时记。</div>
     </div>
     <template #footer>
       <el-button @click="settlePrompt.visible = false">还没收，先挂着</el-button>

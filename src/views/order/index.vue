@@ -1,9 +1,10 @@
 <template>
-  <div ref="pageEl" class="order-page">
+  <div ref="pageEl" class="order-page" :class="{'is-kanban':viewMode==='kanban'}">
+    <BoardHeader v-if="isMobile" :brand="viewMode==='list'" :title="viewMode==='list'?'玄成接单':'项目看板'" :subtitle="viewMode==='list'?'项目管理 · 交付协同 · 高效落地':''" :bell="viewMode==='list'" @bell="$router.push('/messages')"/>
     <!-- 工具栏（电脑） -->
     <div v-if="!isMobile" class="toolbar">
       <div class="left">
-        <el-button type="primary" :icon="Plus" @click="openDialog()">快速接单</el-button>
+        <el-button type="primary" :icon="Plus" @click="openDialog()">新建项目</el-button>
         <el-radio-group v-model="viewMode" style="margin-left: 12px">
           <el-radio-button value="kanban">
             <el-icon><Grid /></el-icon> 看板
@@ -38,113 +39,86 @@
       </div>
     </div>
 
-    <!-- 工具栏（手机）：第一行 接单 + 看板/列表 + 筛选；第二行 搜索；渠道 / 日期 / 导出 收在「筛选」里 -->
-    <div v-else class="m-toolbar">
-      <div class="m-row">
-        <el-button type="primary" size="large" :icon="Plus" class="m-new" @click="openDialog()">快速接单</el-button>
-        <el-radio-group v-model="viewMode" size="large" class="m-view">
-          <el-radio-button value="kanban">看板</el-radio-button>
-          <el-radio-button value="list">列表</el-radio-button>
-        </el-radio-group>
-        <el-button
-          size="large"
-          plain
-          :type="filterOpen || moreFilterCount ? 'primary' : 'default'"
-          class="m-filter-btn"
-          @click="filterOpen = !filterOpen"
-        >筛选<i v-if="moreFilterCount" class="m-dot"></i></el-button>
-      </div>
-      <el-input
-        v-model="filter.keyword"
-        size="large"
-        placeholder="搜项目名 / 客户 / 联系方式 / 需求"
-        :prefix-icon="Search"
-        clearable
-      />
-      <div v-show="filterOpen" class="m-filters">
-        <div>
-          <span class="m-f-label">渠道</span>
-          <el-select v-model="filter.channel" placeholder="全部渠道" clearable size="large" style="width: 100%">
-            <el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value" />
-          </el-select>
-        </div>
-        <div>
-          <span class="m-f-label">创建日期（选一天就是只看那一天）</span>
-          <div class="m-dates">
-            <el-date-picker
-              v-model="rangeStart"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="开始日期"
-              :editable="false"
-              size="large"
-              style="flex: 1; min-width: 0; width: auto"
-            />
-            <span class="m-sep">至</span>
-            <el-date-picker
-              v-model="rangeEnd"
-              type="date"
-              value-format="YYYY-MM-DD"
-              placeholder="结束日期"
-              :editable="false"
-              size="large"
-              style="flex: 1; min-width: 0; width: auto"
-            />
-          </div>
-        </div>
-        <div class="m-f-btns">
-          <el-button size="large" :icon="Download" :loading="exporting" @click="doExport">导出 Excel</el-button>
-          <el-button v-if="hasFilter" size="large" link type="primary" @click="resetFilter">清空筛选</el-button>
-        </div>
-      </div>
+    <div v-else class="board-project-tools">
+      <div v-if="viewMode==='kanban'" class="board-kanban-counts"><button type="button" @click="chooseGroup('all')"><b>{{ quickCounts.all }}</b><span>全部项目</span></button><button v-for="st in ['pending','doing','review']" :key="st" type="button" @click="chooseGroup(st,true)"><b>{{ quickCounts[st] }}</b><span>{{ statusMap[st].label }}</span></button></div>
+      <el-input v-model="filter.keyword" placeholder="项目/客户/联系方式" :prefix-icon="Search" clearable/>
+      <div class="board-filter-row"><el-select v-model="filter.channel" placeholder="渠道" clearable><el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value"/></el-select><el-button @click="filterOpen=!filterOpen">日期 <el-icon><ArrowDown/></el-icon></el-button><el-button v-if="!selectionMode" :disabled="batchBusy" @click="toggleSelection">多选</el-button></div>
+      <div v-if="filterOpen" class="m-dates"><el-date-picker v-model="rangeStart" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" style="width:48%"/><el-date-picker v-model="rangeEnd" type="date" value-format="YYYY-MM-DD" placeholder="结束日期" style="width:48%"/></div>
+      <div class="board-view-row"><el-radio-group v-model="viewMode"><el-radio-button value="list"><el-icon><List/></el-icon> 列表</el-radio-button><el-radio-button value="kanban"><el-icon><Grid/></el-icon> 看板</el-radio-button></el-radio-group><el-button text @click="quickCapture?.show()">极速建单</el-button><el-button text :icon="Download" :loading="exporting" @click="doExport">导出</el-button></div>
+      <el-button v-if="hasFilter" link @click="resetFilter">清空筛选</el-button>
     </div>
+    <button v-if="isMobile" class="board-create-fab" aria-label="新建项目" @click="openDialog()"><el-icon><Plus/></el-icon></button>
 
     <!-- 一键筛选：点一下就切，数字是现在有几单 -->
     <div class="quick-bar">
       <div class="chip-row">
-        <span class="chip-label">看什么</span>
-        <span
+        <span v-if="!isMobile" class="chip-label">看什么</span>
+        <button
+          type="button"
           v-for="q in QUICK"
           :key="q.key"
           class="qchip"
           :class="{ on: quick === q.key, warn: q.warn && quickCounts[q.key] > 0 }"
-          @click="setQuick(q.key)"
-        >{{ q.label }}<b>{{ quickCounts[q.key] }}</b></span>
+          @click="chooseGroup(q.key)"
+        >{{ q.label }}<b>{{ quickCounts[q.key] }}</b></button>
+        <el-button v-if="!isMobile && !selectionMode" class="chip-row-end" size="small" :disabled="batchBusy" @click="toggleSelection">多选项目</el-button>
       </div>
-      <div v-if="showPeople" class="chip-row">
+      <div v-if="showPeople && !isMobile" class="chip-row">
         <span class="chip-label">看谁的</span>
-        <span class="qchip" :class="{ on: !filter.ownerId }" @click="filter.ownerId = ''">所有人</span>
-        <span
-          v-for="p in people"
+        <button type="button" class="qchip" :class="{ on: !filter.ownerId }" @click="chooseOwner('')">所有人</button>
+        <button
+          type="button"
+          v-for="p in visiblePeople"
           :key="p.m.id"
           class="qchip"
           :class="{ on: filter.ownerId === p.m.id }"
-          @click="filter.ownerId = p.m.id"
+          @click="chooseOwner(p.m.id)"
         >
           <el-avatar :size="18" :style="{ background: p.m.color, fontSize: '10px' }">{{ p.m.name.slice(-1) }}</el-avatar>
-          {{ p.m.id === currentMember.id ? '我自己' : p.m.name }}<b>{{ p.active }}</b>
-        </span>
+          {{ p.m.id === currentMember.id ? '我自己' : p.m.name }}<b>{{ p.count }}</b>
+        </button>
+        <!-- 人多时只摆手上单子最多的几位，其余收进可搜索的下拉，不再铺满半屏 -->
+        <el-select
+          v-if="hiddenPeople.length"
+          :model-value="null"
+          filterable
+          size="small"
+          class="people-more"
+          :placeholder="'其他 ' + hiddenPeople.length + ' 人'"
+          @update:model-value="chooseOwner"
+        >
+          <el-option v-for="p in hiddenPeople" :key="p.m.id" :value="p.m.id" :label="p.m.name + '（' + p.count + '）'" />
+        </el-select>
       </div>
     </div>
 
-    <!-- 谁能看到什么，直接说人话 -->
-    <div v-if="scopeHint" class="scope-hint">
-      <el-icon><View /></el-icon>
-      <span>{{ scopeHint }}</span>
+    <PendingProjects v-if="!selectionMode" :orders="boardRows" />
+
+    <div v-if="selectionMode || batchErrors.length" class="project-batch-bar">
+      <el-button v-if="selectionMode" :disabled="batchBusy" @click="toggleSelection">退出多选</el-button>
+      <template v-if="selectionMode">
+        <el-checkbox :model-value="allVisibleSelected" :indeterminate="selectedIds.length > 0 && !allVisibleSelected" :disabled="batchBusy || !visibleSelectionOrders.length" @change="selectVisible">全选当前展示</el-checkbox>
+        <span role="status">已选 {{ selectedIds.length }} 项</span>
+        <el-select v-model="batchStatus" placeholder="选择目标状态" :disabled="batchBusy" aria-label="批量目标状态" style="width:140px"><el-option v-for="st in batchStatuses" :key="st.value" :value="st.value" :label="st.label"/></el-select>
+        <el-button type="primary" :disabled="!selectedIds.length || !batchStatus" :loading="batchBusy" @click="applyBatchStatus">批量修改状态</el-button>
+        <el-button v-if="isBoss" type="danger" plain :disabled="!selectedIds.length || batchBusy" @click="applyBatchDelete">批量删除</el-button>
+      </template>
+      <p v-if="batchErrors.length" class="batch-errors" role="alert">{{ batchErrors.join('；') }}</p>
     </div>
 
     <!-- 看板视图 -->
-    <div v-show="viewMode === 'kanban'" class="kanban thin-scroll">
+    <!-- 看板只在看板模式下渲染：以前用 v-show，列表模式下也把一两百张卡片（每张带改派菜单）全画一遍，打开项目管理要卡好几秒 -->
+    <div v-if="viewMode === 'kanban'" class="kanban thin-scroll">
       <div class="kanban-col" v-for="st in KANBAN_STATUS" :key="st">
-        <div class="col-header" :style="{ borderTopColor: statusMap[st].color }">
+        <button type="button" class="col-header" :aria-label="'展开'+statusMap[st].label" :style="{ borderTopColor: statusMap[st].color }" @click="chooseGroup(st, true)">
           <span class="col-title">
             <span class="dot" :style="{ background: statusMap[st].color }"></span>
             {{ statusMap[st].label }}
           </span>
           <span class="col-count">{{ columnTotals[st] }}</span>
-        </div>
+        </button>
         <div v-if="columnTotals[st] > columns[st].length" class="col-more">
-          只显示最近 {{ columns[st].length }} 个，更早的请切到「列表」查看
+          展开此列可查看全部 {{ columnTotals[st] }} 个项目
         </div>
         <draggable
           v-model="columns[st]"
@@ -154,24 +128,42 @@
           :animation="180"
           ghost-class="ghost"
           v-bind="dragOpts"
+          :disabled="selectionMode || batchBusy"
+          filter=".card-controls, .issue-shortcut, .urgency-actions"
+          :prevent-on-filter="false"
           @change="(e) => onDragChange(e, st)"
         >
           <template #item="{ element }">
-            <div class="card" :class="{ overdue: isOverdue(element), unread: isUnread(element) }" @click="openDetail(element)">
-              <span v-if="isUnread(element)" class="new-badge">NEW</span>
+            <div class="card" :class="{ overdue: isOverdue(element), unread: isUnread(element), selecting: selectionMode, 'batch-selected': selectionMode && selectedIds.includes(element.id) }" @click="selectionMode ? toggleSelected(element.id) : openDetail(element)">
+              <span v-if="hasReminder(element)" class="new-badge">新提醒</span>
+              <span v-else-if="actionLabel(element) && !hasActionBugs(element)" class="new-badge action-badge">{{ actionLabel(element) }}</span>
+              <div class="card-controls" @click.stop>
+                <el-checkbox v-if="selectionMode" :model-value="selectedIds.includes(element.id)" :disabled="batchBusy" :aria-label="'选择项目 '+element.title" @change="toggleSelected(element.id)"/>
+                <el-button v-else link type="primary" @click="openDialog(element)">编辑</el-button>
+              </div>
+              <div v-if="isMobile" class="board-kanban-project"><div class="board-kanban-main"><ProjectCover :order="element" :inert="selectionMode" compact/><div><h3><button v-if="!selectionMode" type="button" class="project-title-button" :aria-label="'打开项目：' + element.title" @click.stop="openDetail(element)">{{ element.title }}</button><template v-else>{{ element.title }}</template></h3><p v-if="Number(element.amount)">报价：<b>¥{{ element.amount }}</b></p><p v-else class="unpriced">未报价</p><p v-if="element.deadline" :class="{ 'red-text': isOverdue(element) }">截止：{{ shortDate(element.deadline) }}</p></div></div><div class="board-kanban-owner"><el-avatar :size="22" :style="{background:memberMap[element.ownerId]?.color}">{{ memberMap[element.ownerId]?.name?.slice(-1) }}</el-avatar><span>{{ memberMap[element.ownerId]?.name }}</span></div></div>
+              <template v-else>
               <div class="card-top">
                 <el-tag size="small" :style="channelStyle(element.channel)" effect="plain">
                   {{ channelMap[element.channel]?.label }}
                 </el-tag>
                 <span class="order-no">{{ element.orderNo }}</span>
-                <span class="prio" :style="{ background: priorityMap[element.priority]?.color }">
+                <span v-if="element.priority && element.priority !== 'medium'" class="prio" :style="{ background: priorityMap[element.priority]?.color }">
                   {{ priorityMap[element.priority]?.label }}
                 </span>
               </div>
-              <div class="card-title">{{ element.title }}</div>
-              <div v-if="element.assignState === 'pending' || Number(element.pendingApprovals) > 0" class="card-flags">
+              <div class="card-title">
+                <button v-if="!selectionMode" type="button" class="project-title-button" :aria-label="'打开项目：' + element.title" @click.stop="openDetail(element)">{{ element.title }}</button>
+                <template v-else>{{ element.title }}</template>
+              </div>
+              <div v-if="element.assignState === 'pending' || Number(element.pendingApprovals) > 0 || stalledOf(element)" class="card-flags">
                 <span v-if="element.assignState === 'pending'" class="flag amber">{{ isBoss ? '等 ' + (memberMap[element.ownerId]?.name || '负责人') + ' 接收' : '待接收' }}</span>
                 <span v-if="Number(element.pendingApprovals) > 0" class="flag red">{{ element.pendingApprovals }} 条申请待批</span>
+                <span v-if="stalledOf(element)" class="flag amber">{{ stalledOf(element) }} 天没动静</span>
+              </div>
+              <!-- 下一步：谁做什么、哪天前 -->
+              <div v-if="element.nextStep" class="card-next" :class="nextDueState(element)" :title="element.nextStep">
+                <el-icon><Flag /></el-icon><span>{{ element.nextStep }}</span><em>{{ nextWho(element) }}{{ element.nextDue ? ' · ' + shortDue(element.nextDue) : '' }}</em>
               </div>
               <div class="card-customer">
                 <el-icon><User /></el-icon> {{ element.customer || '未填客户' }}
@@ -180,7 +172,7 @@
                 </span>
                 <span v-if="element.revisions > 0" class="rev-flag">改{{ element.revisions }}</span>
               </div>
-              <div class="card-foot">
+              <div class="card-foot" :inert="selectionMode">
                 <AssignMenu :order="element" plain>
                   <span class="who" title="点一下改派给别人">
                     <el-avatar :size="22" :style="{ background: memberMap[element.ownerId]?.color, fontSize: '12px' }">
@@ -189,14 +181,18 @@
                     <span v-if="MEMBERS.length > 1" class="owner-name">{{ memberMap[element.ownerId]?.name }}</span>
                   </span>
                 </AssignMenu>
-                <span class="deadline" :class="{ red: isOverdue(element) }">
+                <span v-if="element.deadline" class="deadline" :class="{ red: isOverdue(element) }">
                   <el-icon><Clock /></el-icon> <span :title="element.deadline || ''">{{ shortDate(element.deadline) }}</span>
                 </span>
                 <span class="amount" title="点击记收款" @click.stop="openPay(element)">
-                  ¥{{ element.amount || 0 }}
+                  <template v-if="Number(element.amount)">¥{{ element.amount }}</template><em v-else class="unpriced">未报价</em>
                   <i v-if="payText(element)" class="pay-flag" :class="payState(element)">{{ payText(element) }}</i>
                 </span>
               </div>
+              </template>
+              <ProjectUrgency :order="element" :selecting="selectionMode" />
+              <button v-if="!selectionMode && hasActionBugs(element)" type="button" class="issue-shortcut"
+                @click.stop="openActionBugs(element)">处理问题（{{ element.actionBugCount }}）</button>
             </div>
           </template>
         </draggable>
@@ -205,60 +201,57 @@
 
     <!-- 列表视图 -->
     <el-card v-show="viewMode === 'list'" shadow="never" class="list-card">
-      <el-table v-if="!isMobile" :data="pagedOrders" stripe @row-click="openDetail" style="cursor: pointer">
-        <el-table-column prop="orderNo" label="编号" width="130" />
-        <el-table-column label="项目名" min-width="190" show-overflow-tooltip>
+      <el-table v-if="!isMobile" :data="pagedOrders" stripe @row-click="row => selectionMode ? toggleSelected(row.id) : openDetail(row)" style="cursor: pointer">
+        <el-table-column v-if="selectionMode" label="选择" width="65"><template #default="{ row }"><span @click.stop><el-checkbox :model-value="selectedIds.includes(row.id)" :disabled="batchBusy" :aria-label="'选择项目 '+row.title" @change="toggleSelected(row.id)"/></span></template></el-table-column>
+        <el-table-column prop="orderNo" label="编号" width="134" class-name="nowrap-col" />
+        <el-table-column label="项目名" min-width="240" show-overflow-tooltip>
           <template #default="{ row }">
             <span v-if="isUnread(row)" class="dot-unread"></span>
             {{ row.title }}
+            <ProjectUrgency :order="row" :selecting="selectionMode" />
             <el-icon v-if="row.attachmentCount || (row.attachments && row.attachments.length)" class="inline-pic"><Paperclip /></el-icon>
           </template>
         </el-table-column>
-        <el-table-column label="渠道" width="90">
+        <!-- 渠道列去掉了：列表放不下时会把「截止」挤到看不见；渠道在看板和详情里都有，也能用上面的渠道筛选 -->
+        <el-table-column prop="customer" label="客户" width="110" show-overflow-tooltip />
+        <el-table-column label="负责人" width="100" class-name="owner-col">
           <template #default="{ row }">
-            <el-tag size="small" :style="channelStyle(row.channel)" effect="plain">
-              {{ channelMap[row.channel]?.label }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="customer" label="客户" width="120" show-overflow-tooltip />
-        <el-table-column label="负责人" width="90">
-          <template #default="{ row }">
-            <AssignMenu :order="row" plain>
+            <span v-if="selectionMode">{{ memberMap[row.ownerId]?.name }}</span>
+            <AssignMenu v-else :order="row" plain>
               <span class="who" title="点一下改派给别人">{{ memberMap[row.ownerId]?.name }}</span>
             </AssignMenu>
           </template>
         </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="状态" width="80">
           <template #default="{ row }">
             <el-tag size="small" :type="statusMap[row.status]?.type" effect="light">
               {{ statusMap[row.status]?.label }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="报价" width="90">
-          <template #default="{ row }">¥{{ row.amount || 0 }}</template>
+        <el-table-column label="报价" width="86">
+          <template #default="{ row }"><span v-if="Number(row.amount)">¥{{ row.amount }}</span><span v-else class="unpriced">未报价</span></template>
         </el-table-column>
-        <el-table-column label="收款" width="120">
+        <el-table-column label="收款" width="96">
           <template #default="{ row }">
             <el-tag
               size="small"
               :type="PAY_STATE[payState(row)].type"
               effect="light"
-              class="pay-tag"
-              title="点击记收款"
-              @click.stop="openPay(row)"
+              :class="{'pay-tag': !selectionMode}"
+              :title="selectionMode ? undefined : '点击记收款'"
+              @click.stop="selectionMode ? toggleSelected(row.id) : openPay(row)"
             >{{ payText(row) || PAY_STATE[payState(row)].label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="截止" width="120">
+        <el-table-column label="截止" width="96">
           <template #default="{ row }">
-            <span :class="{ 'red-text': isOverdue(row) }">{{ row.deadline || '-' }}</span>
+            <span v-if="row.deadline" :class="{ 'red-text': isOverdue(row) }" :title="row.deadline">{{ isOverdue(row) ? '逾期 · ' : '' }}{{ shortDate(row.deadline) }}</span>
+            <span v-else class="unpriced">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right">
+        <el-table-column v-if="!selectionMode" label="操作" width="160" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click.stop="openDetail(row)">详情</el-button>
             <el-button link type="success" @click.stop="openPay(row)">收款</el-button>
             <el-button
               v-if="canFinish(row)"
@@ -303,21 +296,23 @@
       </el-table>
       <!-- 手机：一单一张卡片，不用表格 -->
       <div v-else class="m-list">
+        <div v-for="row in pagedOrders" :key="row.id" class="mobile-project-entry" :class="{ 'batch-selected': selectionMode && selectedIds.includes(row.id) }">
         <OrderMobileCard
-          v-for="row in pagedOrders"
-          :key="row.id"
+          :selecting="selectionMode"
           :order="row"
           :overdue="!!isOverdue(row)"
           :unread="!!isUnread(row)"
-          :pay="payTagOf(row)"
-          :deadline-text="shortDate(row.deadline)"
-          :can-finish="canFinish(row)"
-          :more-statuses="moreStatuses(row)"
-          @open="openDetail(row)"
-          @pay="openPay(row)"
-          @finish="changeStatus(row, isBoss ? 'done' : 'review')"
-          @more="(c) => onMore(c, row)"
-        />
+          :action="selectionMode ? null : cardAction(row)"
+          :busy="actingId === row.id"
+          @open="selectionMode ? toggleSelected(row.id) : openDetail(row)"
+          @action="runCardAction(row)"
+        >
+          <template #tools>
+            <el-checkbox v-if="selectionMode" :model-value="selectedIds.includes(row.id)" :disabled="batchBusy" :aria-label="'选择项目 '+row.title" @change="toggleSelected(row.id)"/>
+            <el-button v-else link type="primary" @click="openDialog(row)">编辑</el-button>
+          </template>
+        </OrderMobileCard>
+        </div>
         <el-empty v-if="!pagedOrders.length" :description="hasFilter ? '没有符合筛选条件的项目' : '还没有项目'" />
       </div>
       <div class="list-pager">
@@ -346,11 +341,46 @@
       </div>
     </el-card>
 
+    <el-dialog :model-value="!!focusScope" fullscreen class="board-focus-dialog" title="全屏看板"
+      :show-close="false" @update:model-value="v => { if (!v) focusScope = null }">
+      <template #header>
+        <div class="focus-header"><el-button @click="focusScope=null">返回看板</el-button>
+          <h2>{{ focusScope?.title }}</h2><span role="status">{{ focusedRows.length }} 个项目</span></div>
+        <div v-if="focusScope" class="focus-tools">
+          <el-input v-model="focusScope.keyword" clearable :prefix-icon="Search" aria-label="搜索本组项目" placeholder="搜本组项目、编号、客户"/>
+          <button type="button" class="attention-filter" :aria-pressed="focusScope.onlyAttention" title="只看有新提醒或待处理事项的项目"
+            @click="focusScope.onlyAttention = !focusScope.onlyAttention">待跟进 {{ focusAttentionCount }}</button>
+        </div>
+      </template>
+      <div v-if="focusScope" ref="focusResults" class="focus-results">
+        <div v-if="focusedRows.length" class="focus-grid">
+          <article v-for="row in focusedRows" :key="row.id" class="focus-card">
+            <button class="focus-open" type="button" @click="openDetail(row)">
+              <strong>{{ row.title }}</strong>
+              <span>{{ row.orderNo }} · {{ statusMap[row.status]?.label }} · {{ memberMap[row.ownerId]?.name || '未指派' }}</span>
+              <span v-if="hasReminder(row) || (!hasActionBugs(row) && actionLabel(row))" class="priority-label">{{ [hasReminder(row) && '新提醒',!hasActionBugs(row) && actionLabel(row)].filter(Boolean).join(' · ') }}</span>
+            </button>
+            <ProjectUrgency :order="row" />
+            <ProjectHandling :order="row" />
+            <div class="focus-actions"><span>{{ money(row.amount) }}</span>
+              <button v-if="hasActionBugs(row)" type="button" class="issue-shortcut"
+                @click="openActionBugs(row)">处理问题（{{ row.actionBugCount }}）</button>
+              <el-button link type="primary" @click="openDialog(row)">编辑</el-button>
+            </div>
+          </article>
+        </div>
+        <el-empty v-else :description="focusScope.onlyAttention ? '当前没有需要跟进的项目' : '当前没有符合条件的项目'">
+          <el-button v-if="focusScope.keyword || focusScope.onlyAttention" @click="clearFocusFilters">清除本组筛选</el-button>
+        </el-empty>
+      </div>
+    </el-dialog>
+
+    <QuickCapture v-if="isMobile" ref="quickCapture" :show-fab="false" :shortcut="false"/>
     <!-- 新增/编辑弹窗 -->
     <OrderDialog v-model:visible="dialogVisible" :data="editing" @save="handleSave" />
 
     <!-- 详情抽屉 -->
-    <OrderDetail v-model:visible="detailVisible" :order="active" :loading="detailLoading" @edit="openDialog" @delete="handleDelete" @notebook="openNotebook" />
+    <OrderDetail :key="active?.id" v-model:visible="detailVisible" :order="active" :loading="detailLoading" :notice-tab="noticeTab" :notice-item="noticeItem" :show-handling="route.query.followup === 'manual'" @edit="openDialog" @delete="handleDelete" @notebook="openNotebook" />
 
     <!-- 项目记事本 -->
     <NotebookDialog v-model:visible="notebookVisible" :order="notebookOrder" />
@@ -358,28 +388,40 @@
     <!-- 记收款 -->
     <PaymentDialog v-model:visible="payVisible" :order="payOrder" />
 
+    <!-- 手机列表上点「提交验收 / 验收通过」：走和详情里一样的交付确认 -->
+    <DeliveryDialog v-model:visible="deliveryVisible" :order="deliveryOrder" :target="deliveryTarget" />
+
     <!-- 员工申请改报价 / 取消 / 删除 -->
     <ApprovalRequestDialog v-model:visible="reqVisible" :order="reqOrder" :type="reqType" />
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch } from 'vue'
+import { ref, reactive, computed, watch, onMounted } from 'vue'
 import draggable from 'vuedraggable'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Grid, List, Download, ArrowDown, View } from '@element-plus/icons-vue'
-import { useRoute } from 'vue-router'
+import { Plus, Search, Grid, List, Download, ArrowDown } from '@element-plus/icons-vue'
+import { useRoute, useRouter } from 'vue-router'
+import ProjectCover from '@/components/ProjectCover.vue'
+import QuickCapture from '@/components/QuickCapture.vue'
+const quickCapture=ref(null)
+import BoardHeader from '@/components/board/BoardHeader.vue'
 import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import OrderMobileCard from './components/OrderMobileCard.vue'
+import DeliveryDialog from '@/components/DeliveryDialog.vue'
+import { isMyTodo, nextAction, nextDueState, shortDue, stalledDays } from '@/utils/workbench'
 import NotebookDialog from '@/components/NotebookDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
 import AssignMenu from '@/components/AssignMenu.vue'
 import { changeOrderStatus } from '@/utils/settle'
 import {
-  orders, getOrder, createOrder, editOrder, removeOrder, currentMember, isBoss, exportOrders
+  orders, getOrder, createOrder, editOrder, removeOrder, currentMember, isBoss, exportOrders, setStatus, acceptOrder, collab
 } from '@/mock/store'
+import PendingProjects from './components/PendingProjects.vue'
+import ProjectHandling from './components/ProjectHandling.vue'
+import ProjectUrgency from './components/ProjectUrgency.vue'
 import { isMobile } from '@/utils/useMobile'
 import { todayStr as todayLocal } from '@/utils/date'
 import { PAY_STATE, payState, payFilterOk, owed, money } from '@/utils/payment'
@@ -392,7 +434,7 @@ import {
 const VIEW_KEY = 'xc.orderView'
 const readView = () => {
   try {
-    return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'kanban'
+    return localStorage.getItem(VIEW_KEY) || (window.innerWidth <= 768 ? 'list' : 'kanban')
   } catch (e) {
     return 'kanban'
   }
@@ -410,6 +452,7 @@ const createRange = ref(null)
 
 // 从工作台「我的团队」点进来：地址里带着 ?owner=某个人，直接只看这个人的单子
 const route = useRoute()
+const router = useRouter()
 watch(
   () => route.query.owner,
   (v) => {
@@ -428,11 +471,13 @@ function setQuick(key) {
   else if (key === 'owing') filter.paid = '0'
   else if (key !== 'all') filter.status = key
 }
-const scopedOrders = computed(() => orders.filter((o) => !filter.ownerId || o.ownerId === filter.ownerId))
+const scopedOrders = computed(() => matchingOrders.value.filter((o) => !filter.ownerId || o.ownerId === filter.ownerId))
 const quickCounts = computed(() => {
-  const c = { all: scopedOrders.value.length, overdue: 0, owing: 0, pending: 0, doing: 0, review: 0, done: 0, cancelled: 0 }
+  const c = { all: 0, urgent: 0, overdue: 0, owing: 0, pending: 0, doing: 0, review: 0, done: 0, cancelled: 0 }
   for (const o of scopedOrders.value) {
+    if (matchesGroup(o, 'all')) c.all++
     if (c[o.status] !== undefined) c[o.status]++
+    if (o.urgentUntil) c.urgent++
     if (isOverdue(o)) c.overdue++
     if (payFilterOk(o, '0')) c.owing++
   }
@@ -441,6 +486,7 @@ const quickCounts = computed(() => {
 const QUICK = computed(() => {
   const list = [
     { key: 'all', label: '全部' },
+    { key: 'urgent', label: '加急', warn: true },
     { key: 'pending', label: '待确认' },
     { key: 'doing', label: '进行中' }
   ]
@@ -454,22 +500,22 @@ const QUICK = computed(() => {
   return list
 })
 const showPeople = computed(() => isBoss.value && MEMBERS.length > 1)
-const people = computed(() =>
-  MEMBERS.map((m) => ({
-    m,
-    active: orders.filter((o) => o.ownerId === m.id && !['done', 'cancelled'].includes(o.status)).length
-  }))
-)
-
-const scopeHint = computed(() => {
-  if (!isBoss.value) return '这里只有你自己的单子：老板能看到你的进度，别人的单子你看不到。'
-  if (MEMBERS.length <= 1) return ''
-  const who = filter.ownerId ? memberMap[filter.ownerId]?.name : ''
-  if (who) {
-    return filter.ownerId === currentMember.value.id ? '现在只看你自己的单子。' : `现在只看 ${who} 手上的单子。`
+const people = computed(() => {
+  const counts = new Map()
+  for (const row of matchingOrders.value) {
+    if (matchesGroup(row, quick.value)) counts.set(row.ownerId, (counts.get(row.ownerId) || 0) + 1)
   }
-  return '你能看到全公司所有人的单子，每个人只能看到自己的。'
+  return MEMBERS.map(m => ({m, count: counts.get(m.id) || 0}))
 })
+// 「看谁的」最多直接摆 8 个：自己、正在看的那位、手上单子最多的人优先；其余放进下拉
+const PEOPLE_CHIPS = 8
+const visiblePeople = computed(() => {
+  if (people.value.length <= PEOPLE_CHIPS) return people.value
+  const rank = (p) => (p.m.id === filter.ownerId ? 2e6 : 0) + (p.m.id === currentMember.value.id ? 1e6 : 0) + p.count
+  const keep = new Set([...people.value].sort((a, b) => rank(b) - rank(a)).slice(0, PEOPLE_CHIPS).map((p) => p.m.id))
+  return people.value.filter((p) => keep.has(p.m.id))
+})
+const hiddenPeople = computed(() => people.value.filter((p) => !visiblePeople.value.includes(p)))
 
 const todayStr = todayLocal()
 const isOverdue = (o) =>
@@ -486,26 +532,99 @@ const channelStyle = (val) => {
 // 当前角色是否对该单有未读新动态
 const isUnread = (o) => o.unread?.includes(currentMember.value.id)
 
-// 筛选条件与服务端导出的条件保持一致（见 exportParams）
-const filteredOrders = computed(() =>
+function hasActionBugs(row) {
+  return !['done','cancelled'].includes(row.status) && Number(row.actionBugCount) > 0
+}
+function openActionBugs(row) {
+  const { bug, entry, create, ...filters } = route.query
+  router.replace({ query: { ...filters, id: String(row.id), tab: 'bugs', todo: '1' } })
+}
+function actionLabel(order) {
+  if (['done','cancelled'].includes(order.status)) return ''
+  if (Number(order.actionBugCount) > 0) return order.actionBugCount + ' 条需处理'
+  if (isBoss.value && Number(order.pendingApprovals) > 0) return '待审批'
+  if (!isMyTodo(order,currentMember.value.id)) return ''
+  if (order.nextStep && order.nextOwnerId === currentMember.value.id) return '待办下一步'
+  return order.assignState === 'pending' ? '待接收' : '待验收'
+}
+const hasReminder = row => !!(isUnread(row) || row.myMention)
+function prioritizeRows(rows) {
+  const attention = [], remaining = []
+  for (const row of rows) {
+    if (hasReminder(row) || actionLabel(row)) attention.push(row)
+    else remaining.push(row)
+  }
+  const activity = row => String(row.updateTime || row.createTime || '')
+  attention.sort((a,b) => activity(b).localeCompare(activity(a)))
+  // Reserve the second slot for the other kind when both kinds are waiting.
+  if (attention.length > 2) {
+    const [first] = attention
+    const otherKind = hasReminder(first) ? actionLabel : hasReminder
+    if (!otherKind(first)) {
+      const index = attention.findIndex(otherKind)
+      if (index > 1) attention.splice(1,0,attention.splice(index,1)[0])
+    }
+  }
+  return attention.concat(remaining)
+}
+const matchingOrders = computed(() =>
   orders.filter((o) => {
     if (filter.channel && o.channel !== filter.channel) return false
-    if (filter.ownerId && o.ownerId !== filter.ownerId) return false
-    if (filter.status && o.status !== filter.status) return false
-    if (!payFilterOk(o, filter.paid)) return false
-    if (filter.overdueOnly && !isOverdue(o)) return false
     if (createRange.value) {
       const day = String(o.createTime || '').slice(0, 10)
       if (day < createRange.value[0] || day > createRange.value[1]) return false
     }
-    if (filter.keyword) {
-      const kw = filter.keyword.trim().toLowerCase()
-      const hay = `${o.title} ${o.customer || ''} ${o.orderNo || ''} ${o.contact || ''} ${o.requirement || ''}`
-      if (!hay.toLowerCase().includes(kw)) return false
-    }
-    return true
+    return matchesKeyword(o, filter.keyword.trim().toLowerCase())
   })
 )
+
+function matchesKeyword(order, term) {
+  if (!term) return true
+  return [order.title, order.customer, order.orderNo, order.contact, order.requirement]
+    .join(' ').toLowerCase().includes(term)
+}
+
+function matchesGroup(order, key) {
+  if (key === 'all') return order.status !== 'pending'
+  if (key === 'overdue') return isOverdue(order)
+  if (key === 'urgent') return !!order.urgentUntil
+  if (key === 'owing') return payFilterOk(order, '0')
+  return order.status === key
+}
+function groupRows(key, ownerId) {
+  return matchingOrders.value.filter(row => (!ownerId || row.ownerId === ownerId) && matchesGroup(row,key))
+}
+const filteredOrders = computed(() => prioritizeRows(groupRows(quick.value,filter.ownerId)))
+const focusScope = ref(null)
+const focusResults = ref(null)
+const focusMatches = computed(() => {
+  const scope = focusScope.value
+  if (!scope) return []
+  const term = scope.keyword.trim().toLowerCase()
+  return groupRows(scope.key, scope.ownerId)
+    .filter(row => (!scope.extra || matchesGroup(row, scope.extra)) && matchesKeyword(row, term))
+})
+const needsAttention = row => hasReminder(row) || !!actionLabel(row)
+const focusAttentionCount = computed(() => focusMatches.value.filter(needsAttention).length)
+const focusedRows = computed(() => prioritizeRows(
+  focusScope.value?.onlyAttention ? focusMatches.value.filter(needsAttention) : focusMatches.value
+))
+function clearFocusFilters() {
+  focusScope.value.keyword = ''
+  focusScope.value.onlyAttention = false
+}
+watch([() => focusScope.value?.keyword, () => focusScope.value?.onlyAttention], () => {
+  if (focusResults.value) focusResults.value.scrollTop = 0
+}, { flush:'post' })
+function chooseGroup(key, fromColumn=false) {
+  if (viewMode.value !== 'kanban' || selectionMode.value) { setQuick(key); return }
+  focusScope.value = { key, keyword:'', onlyAttention:false, ownerId:filter.ownerId, extra:fromColumn && quick.value !== 'all' ? quick.value : null,
+    title:QUICK.value.find(group=>group.key===key)?.label || statusMap[key]?.label }
+}
+function chooseOwner(id) {
+  if (viewMode.value !== 'kanban' || selectionMode.value) { filter.ownerId=id; return }
+  focusScope.value = { key:quick.value, keyword:'', onlyAttention:false, ownerId:id, title:id ? memberMap[id]?.name : '所有人' }
+}
 
 const hasFilter = computed(
   () =>
@@ -515,6 +634,10 @@ const hasFilter = computed(
 function resetFilter() {
   Object.assign(filter, { keyword: '', channel: '', ownerId: '', status: '', paid: '', overdueOnly: false })
   createRange.value = null
+  if (route.query.owner || route.query.status) {
+    const { owner, status, ...rest } = route.query
+    router.replace({query:rest})
+  }
 }
 
 // ---- 手机端工具栏 ----
@@ -572,17 +695,99 @@ watch(
 )
 
 // 看板分列：已完成越积越多，只显示最近的一部分，完整的在列表里看
-const KANBAN_LIMIT = { done: 30 }
+// 每列最多先画 50 张（已完成 30 张），再多点列头看全部：单子多了打开看板也不卡
+const KANBAN_LIMIT = { pending: 50, doing: 50, review: 50, done: 30 }
 const columns = reactive({ pending: [], doing: [], review: [], done: [] })
 const columnTotals = reactive({ pending: 0, doing: 0, review: 0, done: 0 })
+const selectionMode = ref(false)
+// 总览的待确认列也支持多选；项目总数和「全部」明细由 matchesGroup 单独计算。
+const boardRows = computed(() => quick.value === 'all'
+  ? scopedOrders.value
+  : groupRows(quick.value, filter.ownerId))
 function rebuild() {
   KANBAN_STATUS.forEach((s) => {
-    const all = filteredOrders.value.filter((o) => o.status === s)
+    const all = prioritizeRows(boardRows.value.filter(o => o.status === s))
     columnTotals[s] = all.length
     columns[s] = KANBAN_LIMIT[s] ? all.slice(0, KANBAN_LIMIT[s]) : all
   })
 }
-watch(filteredOrders, rebuild, { immediate: true, deep: true })
+// 只在“哪些单、在哪一列、什么顺序”变了时才重新分列。
+// 以前是 deep watch：打开详情 / 后台同步把时间线、Bug 合并进项目，也会把整个看板重画一遍，点开详情明显发卡。
+// 卡片上的金额、标题等字段本身是响应式的，不需要重新分列也会更新。
+const columnKey = computed(() => boardRows.value
+  .map(o => [o.id,o.status,hasReminder(o),actionLabel(o),(hasReminder(o) || actionLabel(o)) && o.updateTime].join(':')).join(','))
+watch(columnKey, rebuild, { immediate: true })
+
+// Selection is scoped to displayed cards/page; filters never leave hidden selections.
+const selectedIds = ref([])
+const batchStatus = ref('')
+const batchBusy = ref(false)
+const batchErrors = ref([])
+const batchStatuses = computed(() => STATUS.filter(s => isBoss.value || ['pending','doing','review'].includes(s.value)))
+const visibleSelectionOrders = computed(() => viewMode.value === 'kanban' ? KANBAN_STATUS.flatMap(st => columns[st]) : pagedOrders.value)
+const allVisibleSelected = computed(() => visibleSelectionOrders.value.length > 0 && visibleSelectionOrders.value.every(o => selectedIds.value.includes(o.id)))
+function toggleSelection() {
+  if (batchBusy.value) return
+  selectionMode.value = !selectionMode.value
+  batchStatus.value = ''
+  selectedIds.value = []
+  batchErrors.value = []
+}
+function toggleSelected(id) {
+  if (batchBusy.value) return
+  selectedIds.value = selectedIds.value.includes(id) ? selectedIds.value.filter(x => x !== id) : [...selectedIds.value,id]
+}
+function selectVisible(checked) { if (!batchBusy.value) selectedIds.value = checked ? visibleSelectionOrders.value.map(o => o.id) : [] }
+watch([filter,createRange,page,pageSize,viewMode], () => { selectedIds.value = [] }, {deep:true})
+// Membership can also change on a background refresh while selecting.
+watch([visibleSelectionOrders, batchBusy], ([visible, busy]) => {
+  if (busy || !selectedIds.value.length) return
+  const ids = new Set(visible.map(row => row.id))
+  selectedIds.value = selectedIds.value.filter(id => ids.has(id))
+})
+watch(() => currentMember.value.id, () => { selectedIds.value = []; selectionMode.value = false })
+async function applyBatchStatus() {
+  if (batchBusy.value || !selectedIds.value.length || !batchStatus.value) return
+  const target = batchStatus.value
+  const rows = visibleSelectionOrders.value.filter(o => selectedIds.value.includes(o.id)).map(o => ({...o}))
+  if (!rows.length) return
+  batchBusy.value = true
+  try {
+    await ElMessageBox.confirm(`将选中的 ${rows.length} 个项目设为「${statusMap[target].label}」。${target === 'done' ? '收款记录不会自动变动，未收款请另行登记。' : ''}`, '批量修改状态', {confirmButtonText:'确认修改',cancelButtonText:'取消',type:'warning'})
+    let success = 0
+    const failures = []
+    batchErrors.value = []
+    for (const row of rows) {
+      try { if (row.status !== target) await setStatus(row.id,target); success++ }
+      catch(e) { failures.push(row.id); batchErrors.value.push(`${row.title}：${e.message || '修改失败'}`) }
+    }
+    selectedIds.value = failures
+    if (failures.length) ElMessage.warning(`已处理 ${success} 项，${failures.length} 项未成功，请查看原因`)
+    else ElMessage.success(`已将 ${success} 个项目设为「${statusMap[target].label}」`)
+  } catch(e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '操作失败') }
+  finally { batchBusy.value = false }
+}
+
+async function applyBatchDelete() {
+  if (!isBoss.value || batchBusy.value || !selectedIds.value.length) return
+  const rows = visibleSelectionOrders.value.filter(o => selectedIds.value.includes(o.id)).map(o => ({...o}))
+  if (!rows.length) return
+  batchBusy.value = true
+  try {
+    await ElMessageBox.confirm(`确定删除选中的 ${rows.length} 个项目吗？删除后将移入回收站，可以恢复。`, '批量删除项目', {confirmButtonText:'确认删除',cancelButtonText:'取消',type:'warning'})
+    let success = 0
+    const failures = []
+    batchErrors.value = []
+    for (const row of rows) {
+      try { await removeOrder(row.id); success++ }
+      catch(e) { failures.push(row.id); batchErrors.value.push(`${row.title}：${e.message || '删除失败'}`) }
+    }
+    selectedIds.value = failures
+    if (failures.length) ElMessage.warning(`已删除 ${success} 项，${failures.length} 项未成功，请查看原因`)
+    else ElMessage.success(`已将 ${success} 个项目移入回收站`)
+  } catch(e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '删除失败') }
+  finally { batchBusy.value = false }
+}
 
 // 导出 Excel：把当前的筛选条件交给服务端，导出结果和屏幕上看到的一致（服务端只会导出你有权看的项目）
 const exporting = ref(false)
@@ -591,7 +796,9 @@ function exportParams() {
     keyword: filter.keyword.trim(),
     channel: filter.channel,
     ownerId: filter.ownerId,
-    status: filter.status,
+    status: quick.value === 'urgent' ? '' : filter.status,
+    urgentOnly: quick.value === 'urgent' ? '1' : '',
+    confirmedOnly: quick.value === 'all' ? '1' : '',
     paid: filter.paid,
     overdue: filter.overdueOnly ? '1' : '',
     createFrom: createRange.value?.[0] || '',
@@ -631,6 +838,43 @@ async function changeStatus(row, status) {
     ElMessage.success(`「${row.title}」→ ${statusMap[status].label}`)
   } catch (e) {
     ElMessage.error(e.message || '修改状态失败')
+  }
+}
+
+// 卡片上的协作信息：下一步交给谁、停滞了几天
+const nextWho = (o) => (o.nextOwnerId === currentMember.value.id ? '我' : o.nextOwnerName || memberMap[o.nextOwnerId]?.name || '负责人')
+const stalledOf = (o) => stalledDays(o, collab.stallDays)
+
+// ---- 手机卡片上的“下一步”按钮：接收 / 开始做 / 完成 / 提交验收 / 验收通过 ----
+const actingId = ref(null)
+const deliveryVisible = ref(false)
+const deliveryOrder = ref(null)
+const deliveryTarget = ref('')
+function cardAction(row) {
+  if (!isBoss.value && row.assignState === 'pending' && row.ownerId === currentMember.value.id) return { kind: 'accept', label: '接收' }
+  const na = nextAction(row, currentMember.value.id)
+  return na ? { kind: 'status', to: na.to, label: na.label } : null
+}
+async function runCardAction(row) {
+  const act = cardAction(row)
+  if (!act || actingId.value) return
+  actingId.value = row.id
+  try {
+    if (act.kind === 'accept') {
+      await acceptOrder(row.id)
+      ElMessage.success(`已接收「${row.title}」，可以开工了`)
+    } else if (['review', 'done'].includes(act.to)) {
+      // 交付 / 验收要看一眼问题数、可附交付说明：拉完整详情后弹出和详情页同一个确认框
+      deliveryOrder.value = await getOrder(row.id)
+      deliveryTarget.value = act.to
+      deliveryVisible.value = true
+    } else {
+      await changeStatus(row, act.to)
+    }
+  } catch (e) {
+    ElMessage.error(e.message || '操作失败')
+  } finally {
+    actingId.value = null
   }
 }
 
@@ -707,18 +951,61 @@ async function openDialog(row) {
     ElMessage.error('加载项目失败：' + e.message)
   }
 }
+const noticeTab = computed(() => ['bugs', 'chat', 'internal'].includes(route.query.tab) ? route.query.tab : '')
+const noticeItem = computed(() => {
+  if (noticeTab.value === 'bugs' && route.query.todo === '1' && !route.query.bug) {
+    const marked = (active.value?.bugs || []).filter(bug => bug.status === 'action')
+    return marked.length === 1 ? String(marked[0].id) : ''
+  }
+  const id = noticeTab.value === 'bugs' ? route.query.bug : route.query.entry
+  return typeof id === 'string' && /^\d+$/.test(id) ? id : ''
+})
+
+let detailRequest = 0
 async function openDetail(row) {
+  const request = ++detailRequest
   active.value = row
   detailVisible.value = true
   detailLoading.value = true
   try {
-    active.value = await getOrder(row.id)
+    const project = await getOrder(row.id)
+    if (request !== detailRequest) return
+    if (!project) throw new Error('项目已删除或当前账号无法查看')
+    active.value = project
   } catch (e) {
+    if (request !== detailRequest) return
     ElMessage.error('加载项目失败：' + e.message)
+    detailVisible.value = false
   } finally {
-    detailLoading.value = false
+    if (request === detailRequest) detailLoading.value = false
   }
 }
+function openFromRoute() {
+  if (route.path !== '/order') return
+  if (route.query.create === '1') openDialog()
+  if (/^\d+$/.test(route.query.id || '') && (!detailVisible.value || String(active.value?.id) !== route.query.id)) {
+    openDetail({ id: Number(route.query.id) })
+  }
+}
+watch(() => route.query.status, status => {
+  if (route.path === '/order') setQuick(status ? String(status) : 'all')
+}, { immediate:true })
+onMounted(openFromRoute)
+watch(() => route.query.id, (id, previous) => {
+  if (previous && !id && route.path === '/order') detailVisible.value = false
+})
+watch(() => route.query, openFromRoute)
+watch(detailVisible, visible => {
+  if (visible) return
+  detailRequest++
+  if (route.path === '/order' && route.query.id && localStorage.getItem('token')) {
+    const { id, t, tab, bug, entry, todo, followup, ...rest } = route.query
+    const list = { path: '/order', query: rest }
+    if (history.state?.back === router.resolve(list).fullPath) router.back()
+    else router.replace(list)
+  }
+})
+
 async function handleSave(data) {
   try {
     if (data.id) {
@@ -726,7 +1013,7 @@ async function handleSave(data) {
       ElMessage.success('已更新')
     } else {
       await createOrder(data)
-      ElMessage.success('接单成功')
+      ElMessage.success('已建单')
     }
     dialogVisible.value = false
   } catch (e) {
@@ -734,7 +1021,7 @@ async function handleSave(data) {
   }
 }
 function handleDelete(row) {
-  ElMessageBox.confirm(`确定删除「${row.title}」吗？删除后会放进「回收站」，可以随时恢复。`, '提示', { type: 'warning' })
+  ElMessageBox.confirm(`确定删除「${row.title}」吗？删除后会放进「回收站」，可以随时恢复。`, '删除项目', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
     .then(async () => {
       try {
         await removeOrder(row.id)
@@ -781,6 +1068,7 @@ function handleDelete(row) {
   max-height: calc(100vh - 170px);
 }
 .col-header {
+  border:0;width:100%;cursor:pointer;color:inherit;font:inherit;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -991,6 +1279,8 @@ function handleDelete(row) {
   color: #909399;
 }
 .qchip {
+  font: inherit;
+  line-height: 1.5;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -1048,7 +1338,17 @@ function handleDelete(row) {
   align-items: center;
   gap: 4px;
   cursor: pointer;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+/* 负责人一行放下，名字长就省略，不再把行撑成两行 */
+:deep(.nowrap-col .cell) { white-space: nowrap; }
+:deep(.owner-col .el-dropdown),
+:deep(.owner-col .assign-trigger) { font-size: inherit; line-height: inherit; vertical-align: middle; max-width: 100%; }
+:deep(.owner-col .cell) { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.unpriced { color: #a8b3c4; font-style: normal; font-weight: 400; }
 .who:hover {
   color: #409eff;
 }
@@ -1226,4 +1526,46 @@ function handleDelete(row) {
     margin-top: 12px;
   }
 }
+.issue-shortcut{display:inline-flex;align-items:center;min-height:30px;padding:3px 10px;border:1px solid #f1cfab;border-radius:8px;background:#fff8ee;color:#904308;cursor:pointer;font:inherit;font-size:13px;font-weight:600}
+.focus-tools {display:flex;align-items:center;gap:8px;margin-top:10px}
+.focus-tools .el-input {max-width:420px;min-width:0}
+.attention-filter {flex:none;min-height:34px;padding:0 12px;border:1px solid #d8e2ee;border-radius:8px;background:white;color:#445773;font:inherit;font-size:13px;cursor:pointer}
+.attention-filter[aria-pressed="true"] {border-color:#165dff;background:#eaf1ff;color:#164ec2}
+.focus-results {min-height:0;overflow:auto;overscroll-behavior:contain;flex:1;padding:2px}
+.project-title-button {border:0;background:none;padding:0;text-align:inherit;font:inherit;color:inherit;cursor:pointer;overflow-wrap:anywhere}
+.project-title-button:focus-visible, .attention-filter:focus-visible {outline:2px solid #165dff;outline-offset:2px}
+.card.batch-selected,.mobile-project-entry.batch-selected :deep(.board-project-row) {box-shadow:inset 0 0 0 2px #477dff;background:#f3f7ff}
+.issue-shortcut:hover,.issue-shortcut:focus-visible{background:#ffecd6}
+.card>.issue-shortcut{margin-top:7px}
+.focus-actions:has(.issue-shortcut){flex-wrap:wrap;gap:6px}
+.action-badge{background:#b55410}.focus-header,.focus-actions{display:flex;align-items:center;gap:12px}.focus-header h2{margin:0;font-size:21px}.focus-header>span,.focus-open>span{font-size:13px;color:#64758a}.focus-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,235px),1fr));gap:12px;align-content:start}.focus-card{display:grid;align-content:space-between;background:white;border:1px solid #dfe7f3;border-radius:12px;min-width:0;padding:12px 14px}.focus-open{border:0;background:none;text-align:left;cursor:pointer;color:inherit;padding:0;display:grid;gap:7px;width:100%;overflow-wrap:anywhere}.focus-open strong{font-size:16px}.focus-open .priority-label{color:#b34c0d}.focus-actions{justify-content:space-between;margin-top:8px;color:#385477}.order-page .board-kanban-counts>button{border:0;cursor:pointer;font:inherit}
+
+</style>
+<style>
+.el-dialog.board-focus-dialog.is-fullscreen{width:100%!important;max-width:none!important;height:100vh;height:100dvh;min-height:0;margin:0!important;padding:clamp(10px,2vw,24px);display:flex;flex-direction:column;border-radius:0;background:#f4f7fc;overflow:hidden}
+.el-dialog.board-focus-dialog>.el-dialog__header{padding:0 0 12px;background:transparent;flex:none}
+.el-dialog.board-focus-dialog>.el-dialog__body{display:flex;flex-direction:column;min-height:0;overflow:hidden;flex:1}
+</style>
+
+<style scoped>
+.project-batch-bar {display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 16px;background:#fff;border:1px solid #e5edff;border-radius:12px;margin:12px 0;flex-shrink:0;}
+.batch-errors {flex-basis:100%;color:#c0392b;margin:0;font-size:13px;overflow-wrap:anywhere;}
+.card-controls {display:flex;justify-content:flex-end;min-height:26px;margin-bottom:6px;}
+/* 电脑看板：「编辑」不再单独占一行，鼠标移到卡片上才浮出来；多选时勾选框一直显示 */
+@media (min-width:769px){
+  .card-controls {position:absolute;top:6px;right:8px;z-index:2;min-height:0;margin:0;padding:0 6px;background:#fff;border-radius:6px;box-shadow:0 0 0 4px #fff;opacity:0;transition:opacity .15s;}
+  .card:hover .card-controls,.card:focus-within .card-controls,.card.selecting .card-controls {opacity:1;}
+}
+.mobile-project-entry {position:relative;}
+.chip-row-end {margin-left:auto;}
+.card-next {display:flex;align-items:center;gap:4px;margin:0 0 8px;padding:4px 8px;border-radius:6px;background:#f4f8ff;color:#2f4a7a;font-size:12px;min-width:0;}
+.card-next span {flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;}
+.card-next em {flex:none;font-style:normal;color:#7a8aa6;}
+.card-next.today {background:#fff8eb;color:#9a6200;}
+.card-next.overdue {background:#fff1f0;color:#c0392b;}
+.card-next.today em,.card-next.overdue em {color:inherit;}
+.people-more {width:130px;}
+.quick-bar .chip-row:first-child {align-items:center;}
+.mobile-project-entry .board-project-row {width:100%;}
+@media(max-width:768px){.project-batch-bar{gap:8px;padding:10px;font-size:12px;}.quick-bar{margin:10px 0 4px;}.quick-bar .qchip{background:#fff;border-color:#e3eaf5;}.quick-bar .qchip.on{background:#165dff;border-color:#165dff;color:#fff;}.quick-bar .qchip.on b{color:#fff;}}
 </style>

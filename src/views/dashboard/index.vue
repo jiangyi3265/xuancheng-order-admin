@@ -1,5 +1,12 @@
 <template>
   <div class="dashboard">
+    <BoardHeader v-if="isMobile" title="数据统计" back @back="$router.push('/mine')"/>
+    <header class="income-hero"><div><p>本月实收</p><h1>{{ income ? money(income.thisMonth) : '—' }}</h1><span>按真实收款流水统计</span></div><el-icon><TrendCharts /></el-icon></header>
+    <section v-if="isMobile" class="board-stats"><div><strong>{{ countedOrders.length }}</strong><small>项目总数</small></div><div><strong>{{ orders.filter(o=>o.status==='doing').length }}</strong><small>进行中</small></div><div><strong>{{ orders.filter(o=>o.status==='done').length }}</strong><small>已完成</small></div></section>
+    <section v-if="isMobile" class="board-chart"><h3>近 6 个月实收</h3><ChartCard :option="incomeBar" :height="170"/></section>
+    <section v-if="isMobile" class="board-chart"><h3>项目状态分布</h3><ChartCard :option="statusPie" :height="175"/></section>
+    <details v-if="isMobile" class="board-extra-stats"><summary>查看更多统计与预警</summary><div v-for="s in moneyCards" :key="s.label"><span>{{ s.label }}</span><b>{{ s.value }}</b></div><p v-for="o in unpaidDone" :key="o.id" class="m-unpaid" role="button" tabindex="0" @click="openProject(o)" @keydown.enter="openProject(o)">{{ o.title }} · 待收 {{ money(owed(o)) }} ›</p><ChartCard :option="trendBar" :height="200"/><ChartCard :option="channelPie" :height="200"/><ChartCard :option="memberBar" :height="200"/></details>
+    <div v-if="!isMobile">
     <!-- 干活的指标 -->
     <div class="stat-grid">
       <div class="stat-card" v-for="s in workCards" :key="s.label" :style="{ borderTopColor: s.color }">
@@ -41,15 +48,17 @@
           <el-tag
             v-for="o in unpaidDone.slice(0, 8)"
             :key="o.id"
-            class="alert-tag"
+            class="alert-tag clickable"
             type="warning"
             size="small"
             effect="plain"
+            title="点开这个项目"
+            @click="openProject(o)"
           >
             {{ o.title }}{{ o.customer ? '·' + o.customer : '' }} 欠 {{ money(owed(o)) }}
           </el-tag>
         </span>
-        <span v-if="unpaidDone.length > 8" class="more">…等共 {{ unpaidDone.length }} 个，在「接单管理」选「还欠款」查看</span>
+        <button v-if="unpaidDone.length > 8" type="button" class="more more-link" @click="$router.push('/order?status=owing')">…等共 {{ unpaidDone.length }} 个，查看全部欠款项目</button>
       </template>
     </el-alert>
 
@@ -65,16 +74,19 @@
         <span>有 {{ overdueList.length }} 个项目已逾期未交付：</span>
         <span class="alert-tags">
           <el-tag
-            v-for="o in overdueList"
+            v-for="o in overdueList.slice(0, 8)"
             :key="o.id"
-            class="alert-tag"
+            class="alert-tag clickable"
             type="danger"
             size="small"
             effect="plain"
+            title="点开这个项目"
+            @click="openProject(o)"
           >
             {{ o.title }}（截止 {{ o.deadline }}）
           </el-tag>
         </span>
+        <button v-if="overdueList.length > 8" type="button" class="more more-link" @click="$router.push('/order?status=overdue')">…等共 {{ overdueList.length }} 个，查看全部逾期项目</button>
       </template>
     </el-alert>
 
@@ -97,7 +109,7 @@
     <el-row :gutter="16" class="chart-row">
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="chart-card">
-          <template #header><span class="chart-title">订单状态分布</span></template>
+          <template #header><span class="chart-title">项目状态分布</span></template>
           <div class="chart-box"><ChartCard :option="statusPie" :height="chartH" /></div>
         </el-card>
       </el-col>
@@ -118,10 +130,12 @@
         </el-card>
       </el-col>
     </el-row>
+    </div>
   </div>
 </template>
 
 <script setup>
+import BoardHeader from '@/components/board/BoardHeader.vue'
 import { computed, ref, watch, onMounted } from 'vue'
 import ChartCard from '@/components/ChartCard.vue'
 import { orders, getIncome } from '@/mock/store'
@@ -129,6 +143,10 @@ import { todayStr as todayLocal } from '@/utils/date'
 import { owed, money } from '@/utils/payment'
 import { STATUS, CHANNEL, MEMBERS } from '@/constants/options'
 import { isMobile } from '@/utils/useMobile'
+import { useRouter } from 'vue-router'
+const router = useRouter()
+// 预警里的项目点一下直接打开
+const openProject = (o) => router.push('/order?id=' + o.id)
 
 // 图表高度：手机上矮一点，一屏能多看一张
 const chartH = computed(() => (isMobile.value ? 260 : 300))
@@ -137,6 +155,7 @@ const todayStr = todayLocal()
 const isOverdue = (o) =>
   ['pending', 'doing', 'review'].includes(o.status) && o.deadline && o.deadline < todayStr
 
+const countedOrders = computed(() => orders.filter(o => o.status !== 'pending'))
 const count = (fn) => orders.filter(fn).length
 const sumBy = (list, fn) => list.reduce((s, o) => s + fn(o), 0)
 const num = (v) => Number(v) || 0
@@ -217,7 +236,7 @@ const incomeBar = computed(() => {
         type: 'bar',
         data: months.map((m) => num(m.amount)),
         barWidth: '45%',
-        itemStyle: { color: '#67c23a', borderRadius: [4, 4, 0, 0] },
+        itemStyle: { color: '#3976ef', borderRadius: [4, 4, 0, 0] },
         label: { show: true, position: 'top', formatter: (p) => (p.value ? p.value.toLocaleString() : '') }
       }
     ]
@@ -236,7 +255,7 @@ const statusPie = computed(() => ({
       center: ['50%', isMobile.value ? '42%' : '45%'],
       avoidLabelOverlap: true,
       label: { formatter: '{b}\n{c}' },
-      data: STATUS.map((s) => ({
+      data: STATUS.filter(s => s.value !== 'pending').map((s) => ({
         name: s.label,
         value: count((o) => o.status === s.value),
         itemStyle: { color: s.color }
@@ -255,7 +274,7 @@ const trendBar = computed(() => {
     d.setMonth(d.getMonth() - i)
     months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
   }
-  const data = months.map((m) => count((o) => (o.createTime || '').slice(0, 7) === m))
+  const data = months.map((m) => countedOrders.value.filter(o => (o.createTime || '').slice(0, 7) === m).length)
   return {
     tooltip: { trigger: 'axis' },
     grid: { left: 40, right: 20, top: 20, bottom: 30 },
@@ -286,7 +305,7 @@ const channelPie = computed(() => ({
       labelLine: { show: !isMobile.value },
       data: CHANNEL.map((c) => ({
         name: c.label,
-        value: count((o) => o.channel === c.value),
+        value: countedOrders.value.filter(o => o.channel === c.value).length,
         itemStyle: { color: c.color }
       })).filter((d) => d.value > 0)
     }
@@ -370,6 +389,11 @@ const memberBar = computed(() => {
   color: #909399;
   font-size: 12px;
 }
+.more-link { border: 0; background: none; padding: 0; cursor: pointer; color: #409eff; font: inherit; font-size: 12px; }
+.more-link:hover { text-decoration: underline; }
+.alert-tag.clickable { cursor: pointer; }
+.m-unpaid { cursor: pointer; }
+.alert-tag.clickable:hover { filter: brightness(0.95); text-decoration: underline; }
 .chart-row {
   margin-bottom: 16px;
 }

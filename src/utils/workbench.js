@@ -7,14 +7,9 @@ import { isBossId } from '@/constants/options'
 // 这个单子是否“需要我现在处理”
 export function isMyTodo(order, memberId) {
   if (!order || ['done', 'cancelled'].includes(order.status)) return false
-  // 对方留了新动态没看 —— 永远算待办（解决“微信顶没了/忘了说”）
-  if (order.unread?.includes(memberId)) return true
-  // 总管理员验收「待验收」的项目
+  if (order.nextStep && order.nextOwnerId === memberId) return true
   if (isBossId(memberId) && order.status === 'review') return true
-  if (order.ownerId === memberId) {
-    return ['pending', 'doing'].includes(order.status)
-  }
-  return false
+  return order.ownerId === memberId && (order.assignState === 'pending' || Number(order.actionBugCount) > 0)
 }
 
 // 这个单子是否“我已交待，等对方”
@@ -44,4 +39,34 @@ export function nextAction(order, memberId) {
     }
   }
   return null
+}
+
+// ---- 协作：下一步与停滞 ----
+const pad = (n) => String(n).padStart(2, '0')
+const dayStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+// 下一步的截止状态：overdue 已过期 / today 今天到期 / null
+export function nextDueState(order) {
+  if (!order?.nextStep || !order.nextDue || ['done', 'cancelled'].includes(order.status)) return null
+  const today = dayStr(new Date())
+  if (order.nextDue < today) return 'overdue'
+  if (order.nextDue === today) return 'today'
+  return null
+}
+// 截止日期的短写法：今天 / 明天 / 11月8日
+export function shortDue(d) {
+  if (!d) return ''
+  const now = new Date()
+  if (d === dayStr(now)) return '今天'
+  const t = new Date(now); t.setDate(t.getDate() + 1)
+  if (d === dayStr(t)) return '明天'
+  return Number(d.slice(5, 7)) + '月' + Number(d.slice(8, 10)) + '日'
+}
+// 待确认 / 进行中的项目多少天没有任何动静（没到停滞天数返回 0）
+export function stalledDays(order, limit) {
+  if (!order || !['pending', 'doing'].includes(order.status) || !order.updateTime) return 0
+  const t = new Date(String(order.updateTime).replace(' ', 'T'))
+  if (Number.isNaN(t.getTime())) return 0
+  const days = Math.floor((Date.now() - t.getTime()) / 86400000)
+  return days >= limit ? days : 0
 }

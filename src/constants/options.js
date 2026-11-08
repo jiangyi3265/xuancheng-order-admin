@@ -31,6 +31,13 @@ export const PRIORITY = [
 
 // 操作日志的操作类型（与后端 JiedanAuditService 记录的 action 一一对应）
 export const AUDIT_ACTIONS = [
+  { value:'quote.create',label:'发起报价',type:'primary' },
+  { value:'quote.rename',label:'修改报价单名称',type:'info' },
+  { value:'quote.edit',label:'编辑报价单',type:'info' },
+  { value:'quote.price',label:'提交报价',type:'success' },
+  { value:'quote.assign',label:'重新指派报价',type:'warning' },
+  { value:'quote.convert',label:'报价转项目',type:'success' },
+  { value:'quote.delete',label:'删除报价单',type:'danger' },
   { value: 'order.create', label: '新建项目', type: 'success' },
   { value: 'order.update', label: '修改项目', type: 'primary' },
   { value: 'order.status', label: '改状态', type: 'primary' },
@@ -42,13 +49,15 @@ export const AUDIT_ACTIONS = [
   { value: 'order.reject', label: '拒绝项目', type: 'warning' },
   { value: 'order.handback', label: '交回项目', type: 'warning' },
   { value: 'order.return', label: '退回返工', type: 'warning' },
+  { value: 'order.next', label: '安排下一步', type: 'primary' },
+  { value: 'order.next.done', label: '完成下一步', type: 'success' },
   { value: 'approval.request', label: '提交申请', type: 'primary' },
   { value: 'approval.approve', label: '批准申请', type: 'success' },
   { value: 'approval.reject', label: '驳回申请', type: 'danger' },
   { value: 'approval.withdraw', label: '撤回申请', type: 'info' },
   { value: 'payment.add', label: '记收款', type: 'success' },
   { value: 'payment.delete', label: '删除收款', type: 'danger' },
-  { value: 'bug.delete', label: '删除 Bug', type: 'danger' },
+  { value: 'bug.delete', label: '删除问题', type: 'danger' },
   { value: 'staff.create', label: '新建成员', type: 'success' },
   { value: 'staff.reset', label: '重置成员密码', type: 'warning' },
   { value: 'staff.status', label: '停用/启用成员', type: 'warning' },
@@ -80,6 +89,7 @@ export function setStaff(list) {
     id: s.id,
     name: s.nickName || s.userName,
     userName: s.userName,
+    defaultQuoteEmployee: s.defaultQuoteEmployee === true,
     role: s.role,
     roleLabel: s.roleLabel,
     status: s.status,
@@ -94,9 +104,6 @@ export function setStaff(list) {
 }
 
 export const isBossId = (id) => memberMap[id]?.role === 'boss'
-
-// 日常页面里的称呼（比“总管理员 / 下属管理员”口语；成员管理、日志这类正式页面仍用正式叫法）
-export const roleName = (role) => (role === 'boss' ? '老板' : '员工')
 
 const toMap = (arr, key = 'value') =>
   Object.fromEntries(arr.map((item) => [item[key], item]))

@@ -1,3 +1,5 @@
+import {inWeChat,rememberWechatSession,restoreWechatSession,forgetWechatSession} from '@/utils/wechatSession'
+import { disableNotify } from '@/utils/notify'
 import { reactive, ref, computed } from 'vue'
 import { setStaff, memberMap } from '@/constants/options'
 import { hasPendingUploads } from '@/utils/upload'
@@ -35,24 +37,57 @@ async function postLogin(username, password, captcha = {}) {
   return j.token
 }
 
-export async function login(username, password, captcha) {
+let deviceRestore
+export async function recoverWechatLogin() {
+  if (!inWeChat || token.value || customerToken.value) return
+  if (!deviceRestore) deviceRestore = restoreWechatSession().then(value=>{
+    if (value && !token.value && !customerToken.value) {
+      token.value=value
+      localStorage.setItem('token',value)
+    }
+  }).catch(()=>{deviceRestore=null})
+  await deviceRestore
+}
+
+export async function signOutDevice() {
+  if(inWeChat) {
+    await forgetWechatSession(token.value || customerToken.value)
+    deviceRestore = Promise.resolve()
+  }
+  logout()
+  customerLogout()
+}
+
+export async function login(username, password, captcha, rememberDevice=inWeChat) {
   const nextToken = await postLogin(username, password, captcha)
+  // Determine the role from the server, using the same successful login once.
+  const response = await fetch('/getInfo', { headers: { Authorization: 'Bearer ' + nextToken } })
+  const identity = await response.json()
+  if (identity.code !== 200) throw new Error(identity.msg || '无法确认账号身份')
+  const roles = identity.roles || []
+  const customer = roles.includes('customer')
+  if (inWeChat) {
+    if (rememberDevice && !customer) await rememberWechatSession(nextToken)
+    else await forgetWechatSession()
+    deviceRestore = Promise.resolve()
+  }
+  logout()
+  customerLogout()
+  if (customer) {
+    customerToken.value = nextToken
+    customerName.value = identity.user?.nickName || username
+    localStorage.setItem('customerToken', nextToken)
+    localStorage.setItem('customerName', customerName.value)
+    return 'customer'
+  }
   token.value = nextToken
   localStorage.setItem('token', nextToken)
-  try {
-    await loadMe()
-  } catch (e) {
-    logout()
-    // 客户账号能登录成功，但没有后台权限
-    if (String(e.message || '').includes('没有权限')) {
-      throw new Error('该账号不是后台账号，客户请从客户端登录')
-    }
-    throw e
-  }
-  return true
+  try { await loadMe() } catch (e) { logout(); throw e }
+  return 'staff'
 }
 
 export function logout() {
+  if (token.value || localStorage.getItem('xc.notify.binding')) disableNotify()
   token.value = ''
   localStorage.removeItem('token')
   // 清掉内存里的身份和项目，避免同一浏览器换账号登录后看到上一个人的数据
@@ -80,7 +115,8 @@ export function customerLogout() {
 }
 
 async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, redirectHash = '#/login') {
-  const { headers: h, retry = true, ...rest } = opts
+  const { headers: h, retry = true, redirectOnExpiry = true, timeoutMs = REQUEST_TIMEOUT, ...rest } = opts
+  const requestToken = tokenRef.value
   const method = String(rest.method || 'GET').toUpperCase()
   if (!['GET', 'HEAD'].includes(method) && hasPendingUploads()) {
     throw new Error('附件正在上传，请稍候')
@@ -91,12 +127,12 @@ async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, 
   const attempts = retry && method === 'GET' ? 2 : 1
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT)
+    const timeout = setTimeout(() => controller.abort(), timeoutMs)
     try {
       const res = await fetch(url, {
         headers: {
           'Content-Type': 'application/json',
-          ...(tokenRef.value ? { Authorization: 'Bearer ' + tokenRef.value } : {}),
+          ...(requestToken ? { Authorization: 'Bearer ' + requestToken } : {}),
           ...(h || {})
         },
         signal: controller.signal,
@@ -119,12 +155,27 @@ async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, 
     throw new Error(lastError?.message || '网络连接失败，请稍后重试')
   }
   if (json.code === 401) {
-    onExpired()
-    if (location.hash !== redirectHash) location.hash = redirectHash
+    if (requestToken && requestToken === tokenRef.value) {
+      onExpired()
+      const current = location.hash.slice(1)
+      if (redirectOnExpiry && !/^\/(?:customer-)?login(?:\?|$)/.test(current)) {
+        location.hash = redirectHash + (current ? '?redirect=' + encodeURIComponent(current) : '')
+      }
+    }
     throw new Error('登录已过期，请重新登录')
   }
-  if (json.code !== 200) throw new Error(json.msg || '请求失败')
+  if (json.code !== 200) throw new Error(friendlyMessage(json.msg))
   return json.data
+}
+
+// 服务器内部出错时 msg 里可能是一大段数据库 / 程序报错，用户看不懂也不该看到：换成一句人话
+export function friendlyMessage(msg) {
+  const text = String(msg || '').trim()
+  if (!text) return '请求失败，请稍后重试'
+  if (/###|SQL|Exception|java\.|org\.|nested exception|Cause:|\bat [a-z]+\.[a-z]/i.test(text) || text.length > 200) {
+    return '服务器出了点问题，请稍后重试；一直不行请联系管理员'
+  }
+  return text
 }
 
 async function http(url, opts = {}) {
@@ -163,7 +214,7 @@ export async function loadStaff() {
 }
 
 export async function loadMe() {
-  me.value = await http('/jiedan/staff/me')
+  me.value = await http('/jiedan/staff/me', { redirectOnExpiry: false })
   await loadStaff().catch(() => {})
 }
 
@@ -209,11 +260,42 @@ export const orders = reactive([])
 export const approvals = reactive([])
 export const pendingApprovals = computed(() => approvals.filter((a) => a.status === 'pending'))
 
+// Lists omit these fields. When a newer list arrives first, an older full
+// response can still fill the drawer without rolling back the card or its counts.
+const detailFields = new Set(['attachments', 'payments', 'collaborators', 'nextOwnerName', 'bugs', 'timeline'])
+const orderVersions = new WeakMap()
+const reminderVersions = new WeakMap()
+function mergeOrder(current, incoming, summary = false) {
+  const { unread, myMention, version: rawVersion, ...fields } = incoming
+  const version = Number(rawVersion || 0)
+  const currentVersion = Number(current.version || 0)
+  const newestOrder = orderVersions.get(current) ?? currentVersion
+  const newestReminder = reminderVersions.get(current) ?? currentVersion
+  const hasDetail = Array.isArray(current.timeline)
+  const acceptDetail = !summary && (!hasDetail || version >= currentVersion)
+  const acceptOrder = version >= newestOrder
+  orderVersions.set(current, Math.max(newestOrder, version))
+  for (const [key, value] of Object.entries(fields)) {
+    if (detailFields.has(key) ? acceptDetail : acceptOrder) current[key] = value
+  }
+  if (summary && acceptOrder) {
+    // The summary omits these keys when the last message or single action target disappears.
+    current.lastMessage = incoming.lastMessage ?? null
+    current.actionBugId = incoming.actionBugId ?? null
+  }
+  // The drawer polls against the last complete detail version.
+  if (acceptDetail || (!hasDetail && acceptOrder)) current.version = version
+  reminderVersions.set(current, Math.max(newestReminder, version))
+  if (version < newestReminder) return
+  if (Array.isArray(unread)) current.unread = unread
+  if (summary || myMention !== undefined) current.myMention = myMention || null
+}
+
 function upsert(vo) {
   if (!vo) return null
   const i = orders.findIndex((o) => o.id === vo.id)
   if (i > -1) {
-    Object.assign(orders[i], vo)
+    mergeOrder(orders[i], vo)
     return orders[i]
   }
   orders.unshift(vo)
@@ -226,12 +308,7 @@ export async function loadOrders() {
   const next = (data || []).map((vo) => {
     const current = existing.get(vo.id)
     if (!current) return vo
-    const loadedVersion = current.version
-    const hasLoadedDetail = Array.isArray(current.timeline)
-    Object.assign(current, vo)
-    // The detail poll compares its loaded version with the server version.
-    // Do not let a lightweight list refresh acknowledge unseen detail changes.
-    if (hasLoadedDetail) current.version = loadedVersion
+    mergeOrder(current, vo, true)
     return current
   })
   orders.splice(0, orders.length, ...next)
@@ -460,16 +537,60 @@ export async function updateBugStatus(id, status) {
   return vo
 }
 
-export async function addProgress(id, content, type = 'note', attachments = []) {
+export async function addProgress(id, content, type = 'note', attachments = [], mentions = []) {
   const payload = {
     orderId: id,
     content,
     type,
     attachments: attachments || []
   }
+  // 内部记录 @ 的同事（成员 id），没 @ 人时不带这个字段
+  if (mentions?.length) payload.mentions = mentions
   const vo = await http(`${BASE}/progress`, { method: 'POST', body: JSON.stringify(payload) })
   upsert(vo)
   return vo
+}
+
+// ---- 项目「下一步」：做什么 / 谁来做 / 哪天前（content 为空表示清除）----
+export async function setNextStep(id, { content = '', ownerId = null, due = '' } = {}) {
+  const vo = await http(`${BASE}/${id}/next`, { method: 'PUT', body: JSON.stringify({ content, ownerId, due }) })
+  upsert(vo)
+  return vo
+}
+// 完成当前下一步；带 content 时接着安排新的
+export async function completeNextStep(id, next = {}) {
+  const vo = await http(`${BASE}/${id}/next/done`, { method: 'POST', body: JSON.stringify(next) })
+  upsert(vo)
+  return vo
+}
+
+// 协作设置：待确认 / 进行中的项目多少天没动静算「快被忘了」（通知设置里改，默认 3 天）
+export const collab = reactive({ stallDays: 3 })
+export async function loadCollabConfig() {
+  try {
+    const cfg = await http('/jiedan/push/config')
+    const n = Number(cfg['push.stallDays'])
+    if (Number.isInteger(n) && n >= 1 && n <= 60) collab.stallDays = n
+  } catch (e) {
+    // 读不到就用默认 3 天
+  }
+}
+
+export async function setProjectUrgency(id, urgentUntil, previousUntil) {
+  const updated = await http(`${BASE}/${id}/urgency`, {
+    method: 'PUT',
+    body: JSON.stringify({ urgentUntil, previousUntil })
+  })
+  return upsert(updated)
+}
+
+export async function setOrderHandled(order, handled) {
+  const version = orderVersions.get(order) ?? order.version
+  const updated = await http(`${BASE}/${order.id}/handling`, {
+    method: 'PUT',
+    body: JSON.stringify({ handled, version })
+  })
+  return upsert(updated)
 }
 
 export async function setStatus(id, status) {
@@ -486,8 +607,26 @@ export async function markRead(id, memberId) {
     method: 'PUT',
     body: JSON.stringify({ id, memberId })
   })
-  upsert(vo)
+  const order = orders.find(row => row.id === id)
+  const version = Number(vo?.version || 0)
+  if (order && currentMember.value.id === memberId && (reminderVersions.get(order) ?? Number(order.version || 0)) <= version) {
+    reminderVersions.set(order, version)
+    order.unread = (order.unread || []).filter(userId => userId !== memberId)
+    order.myMention = null
+  }
+  // This endpoint returns only a version. The detail poll still needs to fetch that version.
   return vo
+}
+
+// 把我所有“有新动态”的项目一次标为已读：每批 5 个并发，几十条也不会一下子打满请求
+export async function markAllRead(memberId) {
+  const ids = orders.filter((o) => o.unread?.includes(memberId)).map((o) => o.id)
+  let failed = 0
+  for (let i = 0; i < ids.length; i += 5) {
+    const rs = await Promise.allSettled(ids.slice(i, i + 5).map((id) => markRead(id, memberId)))
+    failed += rs.filter((r) => r.status === 'rejected').length
+  }
+  return { total: ids.length, failed }
 }
 
 export async function addRevision(id) {
@@ -499,10 +638,18 @@ export async function addRevision(id) {
   return vo
 }
 
-export async function nudge(id) {
+export function remindPendingItem(order, kind, bugId) {
+  return http(`${BASE}/${order.id}/pending-reminder`, {
+    method: 'POST',
+    timeoutMs: 40000,
+    body: JSON.stringify({ kind, bugId, version: orderVersions.get(order) ?? order.version })
+  })
+}
+
+export async function nudge(id, urgency = null) {
   const vo = await http(`${BASE}/nudge`, {
     method: 'POST',
-    body: JSON.stringify({ id })
+    body: JSON.stringify(urgency ? { id, kind: 'urgent', version: orderVersions.get(urgency) ?? urgency.version } : { id })
   })
   upsert(vo)
   return vo

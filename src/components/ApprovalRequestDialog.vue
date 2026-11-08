@@ -25,7 +25,7 @@
       maxlength="500"
       show-word-limit
       resize="none"
-      placeholder="写一下原因，老板会看到"
+      placeholder="请填写原因，供审批时查看"
     />
     <div v-if="error" class="ar-error">{{ error }}</div>
 
@@ -37,7 +37,7 @@
 </template>
 
 <script setup>
-// 员工申请改报价 / 取消 / 删除：提交后要老板批准才生效。
+// 员工申请改报价 / 取消 / 删除：提交后需要审批才生效。
 import { ref, computed, nextTick } from 'vue'
 import { ElMessage } from 'element-plus'
 import { requestApproval } from '@/mock/store'
@@ -51,9 +51,9 @@ const props = defineProps({
 const emit = defineEmits(['update:visible'])
 
 const META = {
-  amount: { title: '申请改报价', tip: '提交后要老板批准，批准了报价才会改。', danger: false },
-  cancel: { title: '申请取消项目', tip: '提交后要老板批准，批准了项目才会被取消。', danger: true },
-  delete: { title: '申请删除项目', tip: '提交后要老板批准，批准后项目会放进回收站。', danger: true }
+  amount: { title: '申请改报价', tip: '提交后需要审批，批准了报价才会改。', danger: false },
+  cancel: { title: '申请取消项目', tip: '提交后需要审批，批准了项目才会被取消。', danger: true },
+  delete: { title: '申请删除项目', tip: '提交后需要审批，批准后项目会放进回收站。', danger: true }
 }
 const meta = computed(() => META[props.type] || META.amount)
 
@@ -88,7 +88,7 @@ async function confirm() {
       reason: reason.value.trim(),
       payload: props.type === 'amount' ? { amount: Number(newAmount.value) } : {}
     })
-    ElMessage.success('已提交，等老板批准')
+    ElMessage.success('已提交，等待审批')
     emit('update:visible', false)
   } catch (e) {
     error.value = e.message || '提交失败，请重试'

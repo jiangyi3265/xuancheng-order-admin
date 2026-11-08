@@ -1,6 +1,7 @@
 <template>
   <div class="ai" :class="a.status">
-    <div class="ai-main">
+    <button v-if="isMobile" class="board-approval-card" @click="detailVisible=true"><span class="approval-symbol"><el-icon><DocumentChecked/></el-icon></span><div><h3>{{ a.typeLabel }}<el-tag :type="a.status==='pending'?'warning':'info'">{{ a.statusLabel }}</el-tag></h3><p>{{ a.orderTitle }}</p><strong>{{ a.summary }}</strong><small>{{ a.requesterName }} · {{ a.createTime }}</small><p v-if="a.reason">{{ a.reason }}</p></div><el-icon><ArrowRight/></el-icon></button>
+    <div v-if="!isMobile" class="ai-main">
       <div class="ai-head">
         <el-tag size="small" :type="typeTag" effect="light">{{ a.typeLabel }}</el-tag>
         <span v-if="showOrder" class="ai-order">{{ a.orderTitle }}</span>
@@ -13,18 +14,24 @@
         <template v-if="a.handleNote">：{{ a.handleNote }}</template>
       </div>
     </div>
-    <div v-if="a.status === 'pending'" class="ai-actions">
+    <div v-if="!isMobile && a.status === 'pending'" class="ai-actions">
+      <!-- 申请内容卡片上已经写清楚了，直接「通过」；要看全部信息再点「详情」 -->
       <template v-if="isBoss">
-        <el-button size="small" type="primary" :loading="busy" @click.stop="approve">批准</el-button>
+        <el-button size="small" type="primary" :loading="busy" @click.stop="approve">通过</el-button>
         <el-button size="small" :disabled="busy" @click.stop="rejectVisible = true">驳回…</el-button>
+        <el-button size="small" link type="primary" :disabled="busy" @click.stop="detailVisible = true">详情</el-button>
       </template>
       <el-button v-else-if="mine" size="small" :loading="busy" @click.stop="withdraw">撤回</el-button>
-      <el-tag v-else size="small" type="warning" effect="plain">等老板批准</el-tag>
+      <el-tag v-else size="small" type="warning" effect="plain">等待审批</el-tag>
     </div>
-    <el-tag v-else-if="!compact" size="small" :type="a.status === 'approved' ? 'success' : 'info'" effect="plain">
+    <el-tag v-else-if="!isMobile && !compact" size="small" :type="a.status === 'approved' ? 'success' : 'info'" effect="plain">
       {{ a.statusLabel }}
     </el-tag>
 
+    <el-dialog v-model="detailVisible" title="审批详情" class="design-approval-dialog" width="520px" append-to-body>
+      <div class="approval-detail"><el-tag :type="typeTag">{{ a.typeLabel }}</el-tag><h2>{{ a.orderTitle }}</h2><div class="approval-summary">{{ a.summary }}</div><dl><dt>申请人</dt><dd>{{ a.requesterName }}</dd><dt>申请原因</dt><dd>{{ a.reason || '未填写' }}</dd><dt>提交时间</dt><dd>{{ a.createTime }}</dd></dl></div><section class="approval-flow"><h3>审批流程</h3><div><i>✓</i><b>已提交</b><span>{{ a.createTime }}</span></div><div><i>○</i><b>{{ a.statusLabel }}</b><span>{{ a.status==='pending'?'等待处理':a.handlerName || a.requesterName }}</span></div></section><div class="approval-detail"><el-alert title="审批通过后，项目数据将同步更新。" :closable="false" type="info" show-icon /></div>
+      <template #footer><template v-if="isBoss && a.status==='pending'"><el-button :disabled="busy" @click="detailVisible=false; rejectVisible=true">驳回</el-button><el-button type="primary" :loading="busy" @click="approve">通过审批</el-button></template><el-button v-else-if="mine && a.status==='pending'" :loading="busy" @click="withdraw">撤回申请</el-button></template>
+    </el-dialog>
     <ReasonDialog
       v-model:visible="rejectVisible"
       title="驳回申请"
@@ -39,18 +46,24 @@
 
 <script setup>
 // 一条申请：老板看到“批准 / 驳回…”，申请人看到“撤回”。
-import { ref, computed } from 'vue'
+import { isMobile } from '@/utils/useMobile'
+import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import ReasonDialog from '@/components/ReasonDialog.vue'
 import { isBoss, currentMember, approveApproval, rejectApproval, withdrawApproval } from '@/mock/store'
 
 const props = defineProps({
   a: { type: Object, required: true },
+  openDetail: { type: Boolean, default: false },
   showOrder: { type: Boolean, default: true },
   compact: { type: Boolean, default: false }
 })
 
 const busy = ref(false)
+const emit = defineEmits(['dismiss-target'])
+const detailVisible = ref(false)
+watch(() => props.openDetail, value => { detailVisible.value = value }, { immediate: true })
+watch(detailVisible, value => { if (!value && props.openDetail) emit('dismiss-target') })
 const rejectVisible = ref(false)
 const mine = computed(() => props.a.requesterId === currentMember.value.id)
 const typeTag = computed(() => ({ amount: 'warning', cancel: 'danger', delete: 'danger', payment: 'success' }[props.a.type] || 'info'))
@@ -60,6 +73,7 @@ async function approve() {
   try {
     await approveApproval(props.a.id)
     ElMessage.success('已批准，已生效')
+    detailVisible.value=false
   } catch (e) {
     ElMessage.error(e.message || '批准失败')
   } finally {

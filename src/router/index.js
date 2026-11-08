@@ -1,8 +1,14 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 import Layout from '@/layout/index.vue'
-import { ensureMe, isBoss } from '@/mock/store'
+import { ensureMe, isBoss, recoverWechatLogin } from '@/mock/store'
+import { prepareChatDraftSession } from '@/utils/chatDraft'
 
 export const menuRoutes = [
+  {path:'quotes',component:()=>import('@/views/quotes/index.vue'),meta:{title:'报价中心',icon:'PriceTag'}},
+  { path: 'messages', component: () => import('@/views/messages/index.vue'), meta: { title: '消息中心', icon: 'ChatDotRound' } },
+  { path: 'mine', component: () => import('@/views/mine/index.vue'), meta: { title: '我的', icon: 'User' } },
+  { path: 'approvals', component: () => import('@/views/approvals/index.vue'), meta: { title: '审批中心', icon: 'Finished' } },
+  { path: 'security', component: () => import('@/views/security/index.vue'), meta: { title: '账号安全', hidden: true } },
   {
     path: 'workbench',
     name: 'Workbench',
@@ -13,7 +19,7 @@ export const menuRoutes = [
     path: 'order',
     name: 'Order',
     component: () => import('@/views/order/index.vue'),
-    meta: { title: '接单管理', icon: 'Tickets' }
+    meta: { title: '项目管理', icon: 'Tickets' }
   },
   {
     path: 'trash',
@@ -43,13 +49,13 @@ export const menuRoutes = [
     path: 'dashboard',
     name: 'Dashboard',
     component: () => import('@/views/dashboard/index.vue'),
-    meta: { title: '数据站', icon: 'DataLine', bossMenuOnly: true }
+    meta: { title: '数据统计', icon: 'DataLine', bossMenuOnly: true }
   },
   {
     path: 'settings',
     name: 'Settings',
     component: () => import('@/views/settings/index.vue'),
-    meta: { title: '设置', icon: 'Setting' }
+    meta: { title: '通知设置', icon: 'Setting' }
   }
 ]
 
@@ -59,22 +65,20 @@ const routes = [
     name: 'Login',
     component: () => import('@/views/login/index.vue')
   },
-  {
-    path: '/customer-login',
-    name: 'CustomerLogin',
-    component: () => import('@/views/customer-login/index.vue')
-  },
-  {
-    path: '/intake',
-    name: 'Intake',
-    component: () => import('@/views/intake/index.vue')
-  },
+  { path: '/customer-login', redirect: to => ({ path: '/login', query: to.query }) },
+  { path: '/projects', component: () => import('@/customer/views/projects/index.vue'), meta: { customer: true } },
+  { path: '/projects/:id', component: () => import('@/customer/views/projects/detail.vue'), meta: { customer: true } },
+  { path: '/intake', component: () => import('@/customer/views/intake/index.vue'), meta: { customer: true } },
+  { path: '/customer/messages', component: () => import('@/customer/views/messages/index.vue'), meta: { customer: true } },
+  { path: '/customer/mine', component: () => import('@/views/mine/index.vue'), meta: { customer: true } },
+  { path: '/customer/security', component: () => import('@/views/security/index.vue'), meta: { customer: true } },
   {
     path: '/',
     component: Layout,
     redirect: '/workbench',
     children: menuRoutes
-  }
+  },
+  { path: '/:pathMatch(.*)*', redirect: '/' }
 ]
 
 const router = createRouter({
@@ -83,22 +87,20 @@ const router = createRouter({
 })
 
 router.beforeEach(async (to) => {
-  if (to.path === '/login') {
-    return localStorage.getItem('token') ? '/' : true
+  await recoverWechatLogin()
+  await prepareChatDraftSession()
+  const customer = !!localStorage.getItem('customerToken')
+  const staff = !!localStorage.getItem('token')
+  if (to.path === '/login') return customer ? '/projects' : staff ? '/workbench' : true
+  if (to.meta.customer) {
+    if (customer) return true
+    if (staff) return '/workbench'
+    return { path: '/login', query: { redirect: to.fullPath } }
   }
-  if (to.path === '/customer-login') {
-    return localStorage.getItem('customerToken') ? (to.query.redirect || '/intake') : true
-  }
-  if (to.path === '/intake') {
-    if (!localStorage.getItem('customerToken')) {
-      return { path: '/customer-login', query: { redirect: to.fullPath } }
-    }
-    return true
-  }
-  if (!localStorage.getItem('token')) return '/login'
-  // 先确认“我是谁”（总管理员 / 下属管理员），取不到就回登录页
-  if (!(await ensureMe())) return '/login'
-  if (to.meta.bossOnly && !isBoss.value) return '/workbench'
+  // 没登录时记住要去的页面（比如微信推送里的项目链接），登录后直接打开
+  if (!staff) return customer ? '/projects' : { path: '/login', query: { redirect: to.fullPath } }
+  if (!(await ensureMe())) return { path: '/login', query: { redirect: to.fullPath } }
+  if ((to.meta.bossOnly || to.meta.bossMenuOnly) && !isBoss.value) return '/workbench'
   return true
 })
 

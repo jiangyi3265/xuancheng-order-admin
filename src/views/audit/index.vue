@@ -1,9 +1,9 @@
 <template>
   <div class="audit">
-    <div class="head">
+    <div class="head"><button class="mobile-only icon-button entity-back" aria-label="返回我的" @click="$router.push('/mine')"><el-icon><ArrowLeft/></el-icon></button>
       <div class="title">
         <h2>操作日志</h2>
-        <span>谁在什么时候做了什么：删除、改金额、转派、账号管理、导出等重要操作都会留痕，仅总管理员可见，记录不可修改。</span>
+        <span>谁在什么时候做了什么：删除、改金额、转派、账号管理、导出等重要操作都会留痕，记录不可修改。</span>
       </div>
       <el-button :icon="Refresh" :loading="loading" @click="load">刷新</el-button>
     </div>
@@ -37,14 +37,13 @@
       <el-button type="primary" @click="search">查询</el-button>
     </div>
 
+    <div class="entity-cards audit-cards" v-loading="loading"><article v-for="row in rows" :key="row.id" class="entity-card"><div class="entity-card-head"><div><h3>{{ row.actorName }} · {{ auditActionMap[row.action]?.label || row.action }}</h3><p>{{ fmtTime(row.createTime) }}</p></div><el-icon color="#165dff"><Document /></el-icon></div><p>{{ row.targetName }}</p><p class="audit-detail">{{ row.detail }}</p><p>IP：{{ row.ip || '—' }}</p></article><el-empty v-if="!rows.length&&!loading" description="没有符合条件的记录"/></div>
     <el-table :data="rows" v-loading="loading" border stripe>
-      <el-table-column prop="createTime" label="时间" width="165" />
+      <el-table-column label="时间" width="150"><template #default="{ row }">{{ fmtTime(row.createTime) }}</template></el-table-column>
       <el-table-column label="操作人" width="150">
         <template #default="{ row }">
           <span class="who">{{ row.actorName || '—' }}</span>
-          <el-tag size="small" effect="plain" :type="row.actorRole === 'customer' ? 'warning' : 'info'" class="role">
-            {{ AUDIT_ROLE_LABEL[row.actorRole] || row.actorRole }}
-          </el-tag>
+          
         </template>
       </el-table-column>
       <el-table-column label="操作" width="130">
@@ -86,7 +85,8 @@ import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { listAudit } from '@/mock/store'
-import { MEMBERS, AUDIT_ACTIONS, AUDIT_ROLE_LABEL, auditActionMap } from '@/constants/options'
+import { fmtTime } from '@/utils/time'
+import { MEMBERS, AUDIT_ACTIONS, auditActionMap } from '@/constants/options'
 
 const rows = ref([])
 const total = ref(0)

@@ -73,3 +73,40 @@ a {
 .thin-scroll::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* 项目详情是整屏抽屉，背后的页面本来就被盖住：去掉遮罩模糊，打开/关闭更跟手 */
+.el-overlay.order-workspace-overlay {
+  backdrop-filter: none;
+  background: rgba(16, 36, 73, 0.18);
+}
+
+@media (min-width: 769px) {
+  .work-search-popper .el-autocomplete-suggestion { min-width: 420px; }
+}
+.work-search-popper { max-width: calc(100vw - 24px); }
+
+.header .header-search {
+  flex: 0 1 320px;
+  width: 320px;
+  min-width: 200px;
+  margin: 0 auto 0 32px;
+}
+
+/* 侧栏「更多」分组：标题和普通菜单项一样高、一样圆角 */
+.design-app .el-sub-menu__title {
+  height: 48px;
+  line-height: 48px;
+  border-radius: 12px;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.design-app .el-sub-menu__title:hover {
+  background: #f5f8ff;
+}
+.design-app .el-sub-menu .el-menu {
+  background: transparent;
+}
+.design-app .el-sub-menu .el-menu-item {
+  height: 42px;
+  font-size: 13px;
+}

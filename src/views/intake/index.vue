@@ -22,7 +22,7 @@
             <p>提交后会自动进入接单系统，我们会在后台分配负责人并跟进。</p>
           </div>
 
-          <el-form label-position="top" class="form">
+          <el-form label-position="top" class="form" data-paste-zone="提交需求">
             <el-form-item label="项目 / 需求标题" required>
               <el-input v-model="form.title" placeholder="例如：餐饮门店点餐小程序" />
             </el-form-item>

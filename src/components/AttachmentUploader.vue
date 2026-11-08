@@ -1,11 +1,12 @@
 <template>
-  <div class="att-uploader">
+  <div ref="uploaderEl" class="att-uploader" :class="{ compact }">
+    <UploadFeedback v-if="reliable || draft" :queue="queue" />
     <div class="thumbs">
       <MediaThumb
         v-for="(m, i) in mediaItems"
         :key="'m' + i"
         :item="m"
-        :size="84"
+        :size="compact ? 56 : 84"
         removable
         @remove="removeItem(m)"
       />
@@ -18,12 +19,14 @@
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
         title="图片可直接 Ctrl+V 粘贴；视频/文件/压缩包点击或拖拽上传"
+        :aria-label="compact ? '添加附件' : undefined"
+        role="button"
       >
         <el-icon :size="20" :class="{ spin: uploadingCount > 0 }">
           <Loading v-if="uploadingCount > 0" />
           <Plus v-else />
         </el-icon>
-        <span class="az-text">{{ uploadingCount > 0 ? '上传中' : '粘贴 / 点击' }}</span>
+        <span class="az-text">{{ uploadingCount > 0 ? '上传中' : compact ? '附件' : '粘贴 / 点击' }}</span>
       </div>
     </div>
 
@@ -36,7 +39,7 @@
       </div>
     </div>
 
-    <div class="hint">
+    <div v-if="!compact" class="hint">
       <el-icon><InfoFilled /></el-icon>
       图片：截图后直接 <b>Ctrl+V</b> 粘贴；视频 / 文件 / 压缩包：点 + 或拖拽进来
     </div>
@@ -53,23 +56,42 @@ import MediaThumb from './MediaThumb.vue'
 import { attType, extOf, fmtSize, fileIcon } from '@/utils/file'
 import { uploadAttachment } from '@/utils/upload'
 
-const instances = []
-let bound = false
-function globalPaste(e) {
-  const inst = instances[instances.length - 1]
-  if (inst) inst.handlePaste(e)
-}
+import { attachmentQueue, chatAttachmentQueue } from '@/utils/attachmentQueue'
+import UploadFeedback from './UploadFeedback.vue'
+import { registerPasteTarget } from '@/utils/paste'
+const uploaderEl = ref(null)
+let unregisterPaste = () => {}
 
 const props = defineProps({
   modelValue: { type: Array, default: () => [] },
-  limit: { type: Number, default: 12 }
+  // 默认不限张数；个别地方真需要上限时再传
+  limit: { type: Number, default: Infinity },
+  // 紧凑模式：聊天 / 记录输入框下用，只留一个小「+ 附件」按钮，提示放到鼠标悬停里
+  compact: Boolean,
+  reliable: Boolean,
+  draft: Object
 })
 const emit = defineEmits(['update:modelValue'])
 
 const list = ref([])
 const fileInput = ref(null)
 const dragOver = ref(false)
-const uploadingCount = ref(0)
+const queue = props.draft ? chatAttachmentQueue(props.draft) : attachmentQueue({
+  keepFailures: props.reliable,
+  session: () => localStorage.getItem('token') || localStorage.getItem('customerToken'),
+  upload: async file => {
+    const result = await uploadAttachment(file)
+    return {...result, type: attType(file.type, file.name), ext: extOf(file.name) || result.ext}
+  },
+  getFiles: () => list.value,
+  setFiles: items => {
+    list.value = items
+    emitValue()
+  },
+  reportError: message => ElMessage.error(message)
+})
+const uploadingCount = computed(() => queue.uploadingCount)
+const failedCount = computed(() => queue.failedCount)
 
 const mediaItems = computed(() => list.value.filter((x) => x.type === 'image' || x.type === 'video'))
 const fileItems = computed(() => list.value.filter((x) => x.type === 'file'))
@@ -77,9 +99,7 @@ const fileItems = computed(() => list.value.filter((x) => x.type === 'file'))
 watch(
   () => props.modelValue,
   (v) => {
-    if ((v?.length || 0) !== list.value.length) {
-      list.value = (v || []).map((x) => ({ ...x }))
-    }
+    list.value = (v || []).map((x) => ({ ...x }))
   },
   { immediate: true }
 )
@@ -88,42 +108,10 @@ function emitValue() {
   emit('update:modelValue', list.value.map((x) => ({ ...x })))
 }
 
-async function addFiles(files) {
-  for (const f of files) {
-    if (list.value.length >= props.limit) {
-      ElMessage.warning(`最多 ${props.limit} 个附件`)
-      break
-    }
-    if (f.size > 50 * 1024 * 1024) {
-      ElMessage.warning(`「${f.name}」不能超过 50MB`)
-      continue
-    }
-    uploadingCount.value += 1
-    try {
-      const stored = await uploadAttachment(f)
-      list.value.push({ ...stored, type: attType(f.type, f.name), ext: extOf(f.name) || stored.ext })
-      emitValue()
-    } catch (e) {
-      ElMessage.error(e.message || '附件上传失败')
-    } finally {
-      uploadingCount.value -= 1
-    }
-  }
-}
-
-function handlePaste(e) {
-  const items = (e.clipboardData && e.clipboardData.items) || []
-  const imgs = []
-  for (const it of items) {
-    if (it.kind === 'file' && it.type && it.type.startsWith('image/')) {
-      const f = it.getAsFile()
-      if (f) imgs.push(f)
-    }
-  }
-  if (imgs.length) {
-    e.preventDefault()
-    addFiles(imgs)
-  }
+function addFiles(files) {
+  const available = Math.max(0, props.limit - list.value.length - queue.tasks.length)
+  if (files.length > available) ElMessage.warning(`最多 ${props.limit} 个附件`)
+  return queue.add(Array.from(files).slice(0, available))
 }
 
 function onDrop(e) {
@@ -147,24 +135,14 @@ function removeItem(item) {
   }
 }
 
-const self = { handlePaste }
-onMounted(() => {
-  instances.push(self)
-  if (!bound) {
-    window.addEventListener('paste', globalPaste)
-    bound = true
-  }
-})
+// 粘贴由 utils/paste.js 统一分发：鼠标所在区域 / 光标所在区域的图片、文件会交给这里
+onMounted(() => { unregisterPaste = registerPasteTarget(() => uploaderEl.value, addFiles) })
 onBeforeUnmount(() => {
-  const idx = instances.indexOf(self)
-  if (idx > -1) instances.splice(idx, 1)
-  if (!instances.length && bound) {
-    window.removeEventListener('paste', globalPaste)
-    bound = false
-  }
+  unregisterPaste()
+  if (!props.draft) queue.dispose()
 })
 
-defineExpose({ handlePaste })
+defineExpose({ addFiles, uploadingCount, failedCount })
 </script>
 
 <style scoped>
@@ -255,6 +233,20 @@ defineExpose({ handlePaste })
 }
 .hint b {
   color: #409eff;
+}
+.compact .add-zone {
+  width: auto;
+  height: 28px;
+  flex-direction: row;
+  padding: 0 10px;
+  gap: 4px;
+  border-radius: 14px;
+}
+.compact .add-zone .el-icon {
+  font-size: 14px !important;
+}
+.compact .file-list {
+  margin-top: 6px;
 }
 .hidden-input {
   display: none;

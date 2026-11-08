@@ -1,5 +1,6 @@
 <template>
-  <el-dropdown v-if="enabled" trigger="click" max-height="320" @command="assign">
+  <!-- persistent=false：菜单点开才渲染。以前每张卡片都预先画好整份成员名单，单子和成员一多，看板要卡好几秒 -->
+  <el-dropdown v-if="enabled" trigger="click" max-height="320" :persistent="false" @command="assign">
     <span class="assign-trigger" @click.stop>
       <slot><el-button size="small" :icon="User">派给</el-button></slot>
     </span>

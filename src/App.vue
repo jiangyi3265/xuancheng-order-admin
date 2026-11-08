@@ -1,5 +1,8 @@
 <template>
-  <router-view />
+  <router-view :key="$route.params.id" />
+  <FullscreenImage />
 </template>
 
-<script setup></script>
+<script setup>
+import FullscreenImage from '@/components/FullscreenImage.vue'
+</script>
