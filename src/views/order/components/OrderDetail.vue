@@ -199,9 +199,14 @@
                   <button v-if="!processingBugs && filteredBugs.length > 1" type="button" class="bug-fold-all"
                     @click="setAllIssuesExpanded(!anyIssueExpanded)">{{ anyIssueExpanded ? '全部收起' : '全部展开' }}</button>
                 </div>
+                <div class="issue-tools">
+                  <span v-if="mayExportIssues" :title="copyCount ? '复制待处理的问题和附件' : '没有待处理的问题'">
+                    <el-button size="small" :disabled="!copyCount" @click="copyIssueSheet">复制给 AI</el-button>
+                  </span>
                 <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
                   {{ bugOpen ? '收起' : '记一条问题' }}
                 </el-button>
+                </div>
               </div>
 
               <div v-if="bugItems.length && !processingBugs" class="issue-filters">
@@ -519,7 +524,8 @@ import { toast as ElMessage } from '@/utils/toast'
 import { chatDraft, sendDraft } from '@/utils/chatDraft'
 import ChatInput from '@/components/ChatInput.vue'
 import QuickPhrases from '@/components/QuickPhrases.vue'
-import { awaitingCustomer, nudgedToday, nudgeCustomerAccept, copyAcceptNudge, copyDunning } from '@/utils/customerNudge'
+import { sheetIssues, issueSheet } from "@/utils/issueSheet"
+import { copyText, awaitingCustomer, nudgedToday, nudgeCustomerAccept, copyAcceptNudge, copyDunning } from '@/utils/customerNudge'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import NextStepBar from '@/components/NextStepBar.vue'
 import InlineEdit from '@/components/InlineEdit.vue'
@@ -690,6 +696,11 @@ const currentMinute = ref(Math.floor(Date.now() / 60000))
 const hasIssueFilters = computed(() => issueDays.value !== 0 || issueState.value !== 'all')
 
 const bugItems = computed(() => [...(props.order?.bugs || [])].sort(newestIssueFirst))
+const mayExportIssues = computed(() => isBoss.value || (currentMember.value?.id != null && String(currentMember.value.id) === String(props.order?.ownerId)))
+const copyCount = computed(() => sheetIssues(bugItems.value).length)
+function copyIssueSheet() {
+  if (mayExportIssues.value && copyCount.value) copyText(issueSheet(props.order), '已复制 ' + copyCount.value + ' 条问题，粘给 Codex / Claude 就行')
+}
 const filteredBugs = computed(() => hasIssueFilters.value
   ? bugItems.value.filter(bug => matchesIssueFilters(bug, issueDays.value, issueState.value, currentMinute.value))
   : bugItems.value)
@@ -1957,5 +1968,7 @@ function dotColor(type) {
   .workspace-body[data-desktop-tab="bugs"] .overview-panel,.workspace-body[data-desktop-tab="bugs"] .record-panel{display:none}
   .workspace-body:not([data-desktop-tab="all"]):not([data-desktop-tab="overview"]) .left-grid{display:block}
 }
+.issue-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
+.issue-tools .el-button { margin-left: 0; }
 </style>
 <style>.el-drawer.order-workspace-drawer>.el-drawer__body{padding:0;overflow:hidden}</style>
