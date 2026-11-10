@@ -1,6 +1,6 @@
 <template>
   <div ref="pageEl" class="order-page" :class="{'is-kanban':viewMode==='kanban'}">
-    <BoardHeader v-if="isMobile" :brand="viewMode==='list'" :title="viewMode==='list'?'玄成接单':'项目看板'" :subtitle="viewMode==='list'?'项目管理 · 交付协同 · 高效落地':''"><PendingBell /></BoardHeader>
+    <BoardHeader v-if="isMobile" :brand="viewMode==='list'" :title="viewMode==='list'?'玄成接单':'项目看板'"><PendingBell /></BoardHeader>
     <!-- 工具栏（电脑） -->
     <div v-if="!isMobile" class="toolbar">
       <div class="left">
@@ -28,7 +28,7 @@
           <el-icon class="el-icon--right"><component :is="filterOpen ? 'ArrowUp' : 'ArrowDown'" /></el-icon>
         </el-button>
         <el-button v-if="hasFilter" link type="primary" @click="resetFilter">清空筛选</el-button>
-        <el-button :icon="Download" :loading="exporting" @click="doExport">导出 Excel</el-button>
+        <el-button :icon="Download" title="按筛选条件导出，不含列表排序" :loading="exporting" @click="doExport">导出 Excel</el-button>
       </div>
       <div v-if="filterOpen" class="toolbar-extra">
         <span class="extra-label">渠道</span>
@@ -49,11 +49,11 @@
     </div>
 
     <div v-else class="board-project-tools">
-      <div v-if="viewMode==='kanban'" class="board-kanban-counts"><button type="button" @click="chooseGroup('all')"><b>{{ quickCounts.all }}</b><span>全部项目</span></button><button v-for="st in ['pending','doing','review']" :key="st" type="button" @click="chooseGroup(st,true)"><b>{{ quickCounts[st] }}</b><span>{{ statusMap[st].label }}</span></button></div>
-      <el-input v-model="filter.keyword" placeholder="项目/客户/联系方式" :prefix-icon="Search" clearable/>
-      <div class="board-filter-row"><el-button @click="filterOpen=!filterOpen">筛选{{ moreFilterCount ? '（' + moreFilterCount + '）' : '' }} <el-icon><component :is="filterOpen ? 'ArrowUp' : 'ArrowDown'"/></el-icon></el-button><el-button v-if="!selectionMode" :disabled="batchBusy" @click="toggleSelection">多选</el-button></div>
-      <div v-if="filterOpen" class="m-filters"><el-select v-model="filter.channel" placeholder="全部渠道" clearable><el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value"/></el-select><div class="m-dates"><el-date-picker v-model="rangeStart" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" style="width:48%"/><el-date-picker v-model="rangeEnd" type="date" value-format="YYYY-MM-DD" placeholder="结束日期" style="width:48%"/></div></div>
-      <div class="board-view-row"><el-radio-group v-model="viewMode"><el-radio-button value="list"><el-icon><List/></el-icon> 列表</el-radio-button><el-radio-button value="kanban"><el-icon><Grid/></el-icon> 看板</el-radio-button></el-radio-group><el-button text @click="quickCapture?.show()">极速建单</el-button><el-button text :icon="Download" :loading="exporting" @click="doExport">导出</el-button></div>
+      <div v-if="viewMode==='kanban'" class="board-kanban-counts"><button type="button" @click="chooseGroup('all')"><b>{{ ordersReady ? quickCounts.all : '–' }}</b><span>全部项目</span></button><button v-for="st in ['pending','doing','review']" :key="st" type="button" @click="chooseGroup(st,true)"><b>{{ ordersReady ? quickCounts[st] : '–' }}</b><span>{{ statusMap[st].label }}</span></button></div>
+      <div class="compact-search"><el-input v-model="filter.keyword" placeholder="项目/客户/联系方式" :prefix-icon="Search" clearable/>
+      <div class="board-filter-row"><el-button @click="filterOpen=!filterOpen">筛选{{ moreFilterCount ? '（' + moreFilterCount + '）' : '' }} <el-icon><component :is="filterOpen ? 'ArrowUp' : 'ArrowDown'"/></el-icon></el-button><el-button v-if="!selectionMode" :disabled="batchBusy" @click="toggleSelection">多选</el-button></div></div>
+      <div v-if="filterOpen" class="m-filters"><el-select v-if="viewMode === 'list'" v-model="sortKey" aria-label="项目排序"><el-option v-for="choice in sortChoices" :key="choice.value" :label="choice.label" :value="choice.value"/></el-select><el-select v-model="filter.channel" placeholder="全部渠道" clearable><el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value"/></el-select><div class="m-dates"><el-date-picker v-model="rangeStart" type="date" value-format="YYYY-MM-DD" placeholder="开始日期" style="width:48%"/><el-date-picker v-model="rangeEnd" type="date" value-format="YYYY-MM-DD" placeholder="结束日期" style="width:48%"/></div></div>
+      <div class="board-view-row"><el-radio-group v-model="viewMode"><el-radio-button value="list"><el-icon><List/></el-icon> 列表</el-radio-button><el-radio-button value="kanban"><el-icon><Grid/></el-icon> 看板</el-radio-button></el-radio-group><el-button text @click="router.push({ path: route.path, query: { ...route.query, open: 'quick' } })">极速建单</el-button><el-button text :icon="Download" title="按筛选条件导出，不含列表排序" :loading="exporting" @click="doExport">导出</el-button></div>
       <el-button v-if="hasFilter" link @click="resetFilter">清空筛选</el-button>
     </div>
     <button v-if="isMobile" class="board-create-fab" aria-label="新建项目" @click="openDialog()"><el-icon><Plus/></el-icon></button>
@@ -69,7 +69,7 @@
           class="qchip"
           :class="{ on: quick === q.key, warn: q.warn && quickCounts[q.key] > 0 }"
           @click="chooseGroup(q.key)"
-        >{{ q.label }}<b>{{ quickCounts[q.key] }}</b></button>
+        >{{ q.label }}<b>{{ ordersReady ? quickCounts[q.key] : '–' }}</b></button>
         <el-button v-if="!isMobile && !selectionMode" class="chip-row-end" size="small" :disabled="batchBusy" @click="toggleSelection">多选项目</el-button>
       </div>
       <div v-if="showPeople && !isMobile" class="chip-row">
@@ -84,7 +84,7 @@
           @click="chooseOwner(p.m.id)"
         >
           <el-avatar :size="18" :style="{ background: p.m.color, fontSize: '10px' }">{{ p.m.name.slice(-1) }}</el-avatar>
-          {{ p.m.id === currentMember.id ? '我自己' : p.m.name }}<b>{{ p.count }}</b>
+          {{ p.m.id === currentMember.id ? '我自己' : p.m.name }}<b>{{ ordersReady ? p.count : '–' }}</b>
         </button>
         <!-- 人多时只摆手上单子最多的几位，其余收进可搜索的下拉，不再铺满半屏 -->
         <el-select
@@ -101,7 +101,7 @@
       </div>
     </div>
 
-    <PendingProjects v-if="!selectionMode" :orders="boardRows" />
+    <PendingProjects v-if="ordersReady && !selectionMode" :orders="boardRows" />
 
     <div v-if="selectionMode || batchErrors.length" class="project-batch-bar">
       <el-button v-if="selectionMode" :disabled="batchBusy" @click="toggleSelection">退出多选</el-button>
@@ -126,20 +126,34 @@
 
     <!-- 看板视图 -->
     <!-- 看板只在看板模式下渲染：以前用 v-show，列表模式下也把一两百张卡片（每张带改派菜单）全画一遍，打开项目管理要卡好几秒 -->
-    <div v-if="viewMode === 'kanban'" class="kanban thin-scroll">
-      <div class="kanban-col" v-for="st in KANBAN_STATUS" :key="st">
+    <div v-if="!ordersReady" class="order-load-state" :aria-busy="!ordersError">
+      <div v-if="ordersError" role="alert">项目没加载出来：{{ ordersError }} <el-button size="small" @click="loadOrders().catch(() => {})">重试</el-button></div>
+      <div v-else role="status" aria-label="项目加载中"><el-skeleton animated :rows="4" /></div>
+    </div>
+    <div v-else-if="viewMode === 'kanban' && hasFilter && !boardRows.length" class="order-load-state">
+      <el-empty description="没有符合筛选条件的项目"><el-button @click="resetFilter">清空筛选</el-button></el-empty>
+    </div>
+    <div v-else-if="viewMode === 'kanban'" class="kanban thin-scroll">
+      <div class="kanban-col" v-for="st in visibleColumns" :key="st" :data-column-status="st" :class="{
+        'drop-allowed': draggingOrder && draggingOrder.status !== st && !dropBlocked(draggingOrder, st),
+        'drop-blocked': draggingOrder && !!dropBlocked(draggingOrder, st)
+      }">
         <button type="button" class="col-header" :aria-label="'展开'+statusMap[st].label" :style="{ borderTopColor: statusMap[st].color }" @click="chooseGroup(st, true)">
           <span class="col-title">
             <span class="dot" :style="{ background: statusMap[st].color }"></span>
             {{ statusMap[st].label }}
           </span>
-          <span class="col-count">{{ columnTotals[st] }}</span>
+          <span v-if="draggingOrder && dropBlocked(draggingOrder, st)" class="drop-reason">{{ dropBlocked(draggingOrder, st) }}</span><span class="col-count">{{ columnTotals[st] }}</span>
         </button>
         <div v-if="columnTotals[st] > columns[st].length" class="col-more">
           展开此列可查看全部 {{ columnTotals[st] }} 个项目
         </div>
         <draggable
           v-model="columns[st]"
+          :data-status="st"
+          :move="canDrop"
+          @start="e => beginDrag(columns[st][e.oldDraggableIndex ?? e.oldIndex])"
+          @end="draggingOrder = null"
           group="orders"
           item-key="id"
           class="col-body thin-scroll"
@@ -159,7 +173,7 @@
                 <el-checkbox v-if="selectionMode" :model-value="selectedIds.includes(element.id)" :disabled="batchBusy" :aria-label="'选择项目 '+element.title" @change="toggleSelected(element.id)"/>
                 <el-button v-else link type="primary" @click="openDialog(element)">编辑</el-button>
               </div>
-              <div v-if="isMobile" class="board-kanban-project"><div class="board-kanban-main"><ProjectCover :order="element" :inert="selectionMode" compact/><div><h3><button v-if="!selectionMode" type="button" class="project-title-button" :aria-label="'打开项目：' + element.title" @click.stop="openDetail(element)">{{ element.title }}</button><template v-else>{{ element.title }}</template></h3><p v-if="Number(element.amount)">报价：<b>¥{{ element.amount }}</b></p><p v-else class="unpriced">未报价</p><p v-if="element.deadline" :class="{ 'red-text': isOverdue(element) }">截止：{{ shortDate(element.deadline) }}</p></div></div><div class="board-kanban-owner"><el-avatar :size="22" :style="{background:memberMap[element.ownerId]?.color}">{{ memberMap[element.ownerId]?.name?.slice(-1) }}</el-avatar><span>{{ memberMap[element.ownerId]?.name }}</span></div></div>
+              <div v-if="isMobile" class="board-kanban-project"><div class="board-kanban-main"><ProjectCover :order="element" :inert="selectionMode" compact/><div><h3><button v-if="!selectionMode" type="button" class="project-title-button" :aria-label="'打开项目：' + element.title" @click.stop="openDetail(element)">{{ element.title }}</button><template v-else>{{ element.title }}</template></h3><p v-if="Number(element.amount)">报价：<b>{{ money(element.amount) }}</b></p><p v-else class="unpriced">未报价</p><p v-if="element.deadline" :class="{ 'red-text': isOverdue(element) }">截止：{{ shortDate(element.deadline) }}</p></div></div><div class="board-kanban-owner"><el-avatar :size="22" :style="{background:memberMap[element.ownerId]?.color}">{{ memberMap[element.ownerId]?.name?.slice(-1) }}</el-avatar><span>{{ memberMap[element.ownerId]?.name }}</span></div></div>
               <template v-else>
               <div class="card-top">
                 <el-tag size="small" :style="channelStyle(element.channel)" effect="plain">
@@ -203,7 +217,7 @@
                   <el-icon><Clock /></el-icon> <span :title="element.deadline || ''">{{ shortDate(element.deadline) }}</span>
                 </span>
                 <span class="amount" title="点击记收款" @click.stop="openPay(element)">
-                  <template v-if="Number(element.amount)">¥{{ element.amount }}</template><em v-else class="unpriced">未报价</em>
+                  <template v-if="Number(element.amount)">{{ money(element.amount) }}</template><em v-else class="unpriced">未报价</em>
                   <i v-if="payText(element)" class="pay-flag" :class="payState(element)">{{ payText(element) }}</i>
                 </span>
               </div>
@@ -218,8 +232,8 @@
     </div>
 
     <!-- 列表视图 -->
-    <el-card v-show="viewMode === 'list'" shadow="never" class="list-card">
-      <el-table v-if="!isMobile" :data="pagedOrders" stripe @row-click="row => selectionMode ? toggleSelected(row.id) : openDetail(row)" style="cursor: pointer">
+    <el-card v-if="ordersReady && viewMode === 'list'" shadow="never" class="list-card">
+      <el-table ref="listTable" v-if="!isMobile" :data="pagedOrders" :default-sort="tableSort" @sort-change="setTableSort" stripe @row-click="row => selectionMode ? toggleSelected(row.id) : openDetail(row)" style="cursor: pointer">
         <el-table-column v-if="selectionMode" label="选择" width="65"><template #default="{ row }"><span @click.stop><el-checkbox :model-value="selectedIds.includes(row.id)" :disabled="batchBusy" :aria-label="'选择项目 '+row.title" @change="toggleSelected(row.id)"/></span></template></el-table-column>
         <el-table-column prop="orderNo" label="编号" width="134" class-name="nowrap-col" />
         <el-table-column label="项目名" min-width="240" show-overflow-tooltip>
@@ -247,10 +261,10 @@
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="报价" width="86">
-          <template #default="{ row }"><span v-if="Number(row.amount)">¥{{ row.amount }}</span><span v-else class="unpriced">未报价</span></template>
+        <el-table-column prop="amount" sortable="custom" label="报价" width="86">
+          <template #default="{ row }"><span v-if="Number(row.amount)">{{ money(row.amount) }}</span><span v-else class="unpriced">未报价</span></template>
         </el-table-column>
-        <el-table-column label="收款" width="96">
+        <el-table-column prop="owed" sortable="custom" label="收款" width="96">
           <template #default="{ row }">
             <el-tag
               size="small"
@@ -262,7 +276,7 @@
             >{{ payText(row) || PAY_STATE[payState(row)].label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="截止" width="96">
+        <el-table-column prop="deadline" sortable="custom" label="截止" width="96">
           <template #default="{ row }">
             <span v-if="row.deadline" :class="{ 'red-text': isOverdue(row) }" :title="row.deadline">{{ isOverdue(row) ? '逾期 · ' : '' }}{{ shortDate(row.deadline) }}</span>
             <span v-else class="unpriced">-</span>
@@ -311,7 +325,7 @@
           </template>
         </el-table-column>
         <template #empty>
-          <el-empty :description="hasFilter ? '没有符合筛选条件的项目' : '还没有项目'" />
+          <el-empty :description="hasFilter ? '没有符合筛选条件的项目' : '还没有项目'"><el-button v-if="hasFilter" @click="resetFilter">清空筛选</el-button></el-empty>
         </template>
       </el-table>
       <!-- 手机：一单一张卡片，不用表格 -->
@@ -333,7 +347,7 @@
           </template>
         </OrderMobileCard>
         </div>
-        <el-empty v-if="!pagedOrders.length" :description="hasFilter ? '没有符合筛选条件的项目' : '还没有项目'" />
+        <el-empty v-if="!pagedOrders.length" :description="hasFilter ? '没有符合筛选条件的项目' : '还没有项目'"><el-button v-if="hasFilter" @click="resetFilter">清空筛选</el-button></el-empty>
       </div>
       <div class="list-pager">
         <el-pagination
@@ -345,19 +359,9 @@
           layout="total, sizes, prev, pager, next"
           background
         />
-        <template v-else>
-          <span class="m-total">共 {{ filteredOrders.length }} 单</span>
-          <el-pagination
-            v-model:current-page="page"
-            v-model:page-size="pageSize"
-            :total="filteredOrders.length"
-            :pager-count="5"
-            layout="prev, pager, next"
-            small
-            background
-            @current-change="scrollToTop"
-          />
-        </template>
+        <div v-else-if="filteredOrders.length" ref="listEnd" class="m-total">
+          已显示 {{ pagedOrders.length }} / 共 {{ filteredOrders.length }} 单
+        </div>
       </div>
     </el-card>
 
@@ -395,12 +399,11 @@
       </div>
     </el-dialog>
 
-    <QuickCapture v-if="isMobile" ref="quickCapture" :show-fab="false" :shortcut="false"/>
     <!-- 新增/编辑弹窗 -->
-    <OrderDialog v-model:visible="dialogVisible" :data="editing" @save="handleSave" />
+    <OrderDialog v-model:visible="dialogVisible" :data="editing" :save="handleSave" />
 
     <!-- 详情抽屉 -->
-    <OrderDetail :key="active?.id" v-model:visible="detailVisible" :order="active" :loading="detailLoading" :notice-tab="noticeTab" :notice-item="noticeItem" :show-handling="route.query.followup === 'manual'" @edit="openDialog" @delete="handleDelete" @notebook="openNotebook" />
+    <OrderDetail :key="active?.id" v-model:visible="detailVisible" :order="active" :loading="detailLoading" :has-previous="hasPrevious" :has-next="hasNext" @navigate="moveDetail" :notice-tab="noticeTab" :notice-item="noticeItem" :show-handling="route.query.followup === 'manual'" @edit="openDialog" @delete="handleDelete" @notebook="openNotebook" />
 
     <!-- 项目记事本 -->
     <NotebookDialog v-model:visible="notebookVisible" :order="notebookOrder" />
@@ -417,17 +420,17 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, onMounted } from 'vue'
+import { ref, reactive, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import draggable from 'vuedraggable'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Plus, Search, Grid, List, Download, ArrowDown } from '@element-plus/icons-vue'
-import { useRoute, useRouter } from 'vue-router'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import ProjectCover from '@/components/ProjectCover.vue'
-import QuickCapture from '@/components/QuickCapture.vue'
-const quickCapture=ref(null)
 import PendingBell from '@/components/PendingBell.vue'
 import BoardHeader from '@/components/board/BoardHeader.vue'
 import OrderDialog from './components/OrderDialog.vue'
+import { useProjectDetail } from '@/utils/useProjectDetail'
 import OrderDetail from './components/OrderDetail.vue'
 import OrderMobileCard from './components/OrderMobileCard.vue'
 import DeliveryDialog from '@/components/DeliveryDialog.vue'
@@ -436,14 +439,16 @@ import NotebookDialog from '@/components/NotebookDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
 import AssignMenu from '@/components/AssignMenu.vue'
+import { trashWithUndo } from '@/utils/orderUndo'
 import { changeOrderStatus } from '@/utils/settle'
 import { copyDunning } from '@/utils/customerNudge'
 import {
-  orders, getOrder, createOrder, editOrder, removeOrder, currentMember, isBoss, exportOrders, setStatus, acceptOrder, collab
+  orders, ordersReady, ordersError, loadOrders, getOrder, createOrder, editOrder, removeOrder, currentMember, isBoss, exportOrders, setStatus, acceptOrder, collab
 } from '@/mock/store'
 import PendingProjects from './components/PendingProjects.vue'
 import ProjectHandling from './components/ProjectHandling.vue'
 import ProjectUrgency from './components/ProjectUrgency.vue'
+import { readProjectList, saveProjectList } from '@/utils/projectListState'
 import { isMobile } from '@/utils/useMobile'
 import { todayStr as todayLocal } from '@/utils/date'
 import { PAY_STATE, payState, payFilterOk, owed, money } from '@/utils/payment'
@@ -451,6 +456,14 @@ import {
   STATUS, CHANNEL, MEMBERS, KANBAN_STATUS,
   statusMap, channelMap, priorityMap, memberMap
 } from '@/constants/options'
+
+defineOptions({
+  beforeRouteEnter(to, from) {
+    // A chart or workbench shortcut starts a fresh result set, even if its filter
+    // happens to equal the one previously used with a date range or later page.
+    to.meta.orderDrilldown = from.name === 'Dashboard' || from.name === 'Workbench'
+  }
+})
 
 // 记住上次用的是看板还是列表
 const VIEW_KEY = 'xc.orderView'
@@ -469,19 +482,24 @@ watch(viewMode, (v) => {
     // 存不了就算了，只是下次不记得
   }
 })
-const filter = reactive({ keyword: '', channel: '', ownerId: '', status: '', paid: '', overdueOnly: false })
-const createRange = ref(null)
-
-// 从工作台「我的团队」点进来：地址里带着 ?owner=某个人，直接只看这个人的单子
 const route = useRoute()
 const router = useRouter()
-watch(
-  () => route.query.owner,
-  (v) => {
-    filter.ownerId = v ? Number(v) : ''
-  },
-  { immediate: true }
-)
+const memberId = currentMember.value.id
+const savedList = readProjectList(memberId)
+const queryKeys = ['status', 'owner', 'q', 'channel']
+const queryText = value => typeof value === 'string' ? value : ''
+function readQuery(query) {
+  return {
+    status: queryText(query.status) || 'all', owner: Number(queryText(query.owner)) || '',
+    q: queryText(query.q), channel: queryText(query.channel)
+  }
+}
+const hasUrlFilters = queryKeys.some(key => route.query[key] !== undefined)
+const initial = hasUrlFilters ? readQuery(route.query) : {status:'all', owner:'', q:'', channel:'', ...savedList.filters}
+const sameFilters = !hasUrlFilters || (!route.meta.orderDrilldown && queryKeys.every(key => initial[key] === savedList.filters?.[key]))
+const filter = reactive({ keyword: initial.q, channel: initial.channel, ownerId: initial.owner, status:'', paid:'', overdueOnly:false })
+const createRange = ref(sameFilters ? savedList.createRange || null : null)
+setQuick(initial.status)
 // ---- 一键筛选条 ----
 // 「看什么」互斥：全部 / 各状态 / 已逾期 / 还欠款；「看谁的」是另一个维度，可以叠加
 const quick = computed(() => (filter.overdueOnly ? 'overdue' : filter.paid === '0' ? 'owing' : filter.status || 'all'))
@@ -519,6 +537,7 @@ const QUICK = computed(() => {
     { key: 'owing', label: '还欠款', warn: true },
     { key: 'done', label: '已完成' }
   )
+  if (quickCounts.value.cancelled || quick.value === 'cancelled') list.push({key:'cancelled', label:statusMap.cancelled.label})
   return list
 })
 const showPeople = computed(() => isBoss.value && MEMBERS.length > 1)
@@ -558,8 +577,7 @@ function hasActionBugs(row) {
   return !['done','cancelled'].includes(row.status) && Number(row.actionBugCount) > 0
 }
 function openActionBugs(row) {
-  const { bug, entry, create, ...filters } = route.query
-  router.replace({ query: { ...filters, id: String(row.id), tab: 'bugs', todo: '1' } })
+  openDetail(row, 'bugs', { todo: '1' })
 }
 function actionLabel(order) {
   if (['done','cancelled'].includes(order.status)) return ''
@@ -619,7 +637,46 @@ function matchesGroup(order, key, anyStatus = searching.value) {
 function groupRows(key, ownerId, anyStatus = searching.value) {
   return matchingOrders.value.filter(row => (!ownerId || row.ownerId === ownerId) && matchesGroup(row,key,anyStatus))
 }
-const filteredOrders = computed(() => prioritizeRows(groupRows(quick.value,filter.ownerId)))
+const sortChoices = [
+  {value:'',label:'默认排序'}, {value:'deadline:ascending',label:'截止最早优先'}, {value:'deadline:descending',label:'截止最晚优先'},
+  {value:'amount:descending',label:'报价从高到低'}, {value:'amount:ascending',label:'报价从低到高'},
+  {value:'owed:descending',label:'欠款从多到少'}, {value:'owed:ascending',label:'欠款从少到多'}
+]
+const sortKey = ref(sameFilters && sortChoices.some(s => s.value === savedList.sortKey) ? savedList.sortKey : '')
+const groupSort = {owing:'owed:descending', overdue:'deadline:ascending'}
+const effectiveSort = computed(() => sortKey.value || groupSort[quick.value] || '')
+const tableSort = computed(() => {
+  const [prop, order] = effectiveSort.value.split(':')
+  return {prop, order}
+})
+const listTable = ref(null)
+function setTableSort({prop, order}) {
+  const key = order ? prop + ':' + order : ''
+  if (key !== effectiveSort.value) sortKey.value = key
+  if (!key && groupSort[quick.value]) nextTick(() => {
+    const {prop, order} = tableSort.value
+    listTable.value?.sort(prop, order)
+  })
+}
+watch(tableSort, ({prop, order}) => {
+  if (prop) listTable.value?.sort(prop, order)
+  else listTable.value?.clearSort()
+}, {flush:'post'})
+function sortRows(input, sorting) {
+  const rows = prioritizeRows(input)
+  if (!sorting) return rows
+  const [prop, order] = sorting.split(':')
+  const dir = order === 'ascending' ? 1 : -1
+  const value = prop === 'owed' ? owed : row => Number(row.amount) || 0
+  return rows.sort((a,b) => {
+    if (prop === 'deadline') {
+      if (!a.deadline || !b.deadline) return Number(!a.deadline) - Number(!b.deadline)
+      return dir * a.deadline.localeCompare(b.deadline)
+    }
+    return dir * (value(a) - value(b))
+  })
+}
+const filteredOrders = computed(() => sortRows(groupRows(quick.value, filter.ownerId), effectiveSort.value))
 const focusScope = ref(null)
 const focusResults = ref(null)
 const focusMatches = computed(() => {
@@ -632,8 +689,9 @@ const focusMatches = computed(() => {
 })
 const needsAttention = row => hasReminder(row) || !!actionLabel(row)
 const focusAttentionCount = computed(() => focusMatches.value.filter(needsAttention).length)
-const focusedRows = computed(() => prioritizeRows(
-  focusScope.value?.onlyAttention ? focusMatches.value.filter(needsAttention) : focusMatches.value
+const focusedRows = computed(() => sortRows(
+  focusScope.value?.onlyAttention ? focusMatches.value.filter(needsAttention) : focusMatches.value,
+  groupSort[focusScope.value?.key] || groupSort[focusScope.value?.extra]
 ))
 function clearFocusFilters() {
   focusScope.value.keyword = ''
@@ -644,11 +702,13 @@ watch([() => focusScope.value?.keyword, () => focusScope.value?.onlyAttention], 
 }, { flush:'post' })
 function chooseGroup(key, fromColumn=false) {
   if (viewMode.value !== 'kanban' || selectionMode.value) { setQuick(key); return }
+  if (!ordersReady.value) return
   focusScope.value = { key, keyword:'', onlyAttention:false, ownerId:filter.ownerId, extra:fromColumn && quick.value !== 'all' ? quick.value : null,
     title:QUICK.value.find(group=>group.key===key)?.label || statusMap[key]?.label }
 }
 function chooseOwner(id) {
   if (viewMode.value !== 'kanban' || selectionMode.value) { filter.ownerId=id; return }
+  if (!ordersReady.value) return
   focusScope.value = { key:quick.value, keyword:'', onlyAttention:false, ownerId:id, title:id ? memberMap[id]?.name : '所有人' }
 }
 
@@ -660,10 +720,7 @@ const hasFilter = computed(
 function resetFilter() {
   Object.assign(filter, { keyword: '', channel: '', ownerId: '', status: '', paid: '', overdueOnly: false })
   createRange.value = null
-  if (route.query.owner || route.query.status) {
-    const { owner, status, ...rest } = route.query
-    router.replace({query:rest})
-  }
+  sortKey.value = ''
 }
 
 // ---- 手机端工具栏 ----
@@ -698,23 +755,88 @@ const rangeEnd = computed({
 const dragOpts = computed(() => (isMobile.value ? { delay: 220, delayOnTouchOnly: true, touchStartThreshold: 12 } : {}))
 
 // 列表视图分页：项目多了也只渲染当前页
-const page = ref(1)
-const pageSize = ref(20)
+const page = ref(sameFilters ? Math.max(1, Number(savedList.page) || 1) : 1)
+const pageSize = ref([20, 50, 100].includes(savedList.pageSize) ? savedList.pageSize : 20)
+const mobileLimit = ref(sameFilters ? Math.max(20, Number(savedList.mobileLimit) || 20) : 20)
 const pagedOrders = computed(() => {
+  if (isMobile.value) return filteredOrders.value.slice(0, mobileLimit.value)
   const start = (page.value - 1) * pageSize.value
   return filteredOrders.value.slice(start, start + pageSize.value)
 })
-watch([filter, createRange, pageSize], () => { page.value = 1 }, { deep: true })
-// 手机翻页后回到页面顶部：页面是在布局的 .main 里滚的，不回去就会停在新一页的最底下（只有手机的翻页器会调用）
+watch([filter, createRange, pageSize, sortKey], () => { page.value = 1; mobileLimit.value = 20 }, {deep:true})
 const pageEl = ref(null)
-function scrollToTop() {
-  const box = pageEl.value?.closest('.main')
-  if (box) box.scrollTop = 0
+const listEnd = ref(null)
+watch(listEnd, (el, old, cleanup) => {
+  if (!el) return
+  const observer = new IntersectionObserver(([entry]) => {
+    if (entry.isIntersecting && mobileLimit.value < filteredOrders.value.length) mobileLimit.value += 20
+  }, {root: pageEl.value?.closest('.main'), rootMargin:'0px 0px 200px'})
+  observer.observe(el)
+  cleanup(() => observer.disconnect())
+}, {flush:'post'})
+
+const urlFilters = computed(() => ({status:quick.value, owner:filter.ownerId, q:filter.keyword, channel:filter.channel || ''}))
+function syncQuery() {
+  if (route.path !== '/order') return
+  const query = { ...route.query }
+  for (const [key, value] of Object.entries(urlFilters.value)) {
+    if (!value || (key === 'status' && value === 'all')) delete query[key]
+    else query[key] = String(value)
+  }
+  if (queryKeys.some(key => query[key] !== route.query[key])) router.replace({query})
 }
+watch(urlFilters, syncQuery)
+watch(() => queryKeys.map(key => route.query[key]), (value, prior) => {
+  if (route.path !== '/order' || value.every((v,i) => v === prior[i])) return
+  const fields = readQuery(route.query)
+  if (queryKeys.every(key => fields[key] === urlFilters.value[key])) return
+  setQuick(fields.status)
+  createRange.value = null
+  sortKey.value = ''
+  Object.assign(filter, {ownerId:fields.owner, keyword:fields.q, channel:fields.channel})
+})
+const mainScroll = () => pageEl.value?.closest('.main')
+let savedScroll = sameFilters ? savedList.scroll : null
+function saveList() {
+  if (!memberId || currentMember.value.id !== memberId) return
+  const board = pageEl.value?.querySelector('.kanban')
+  const scroll = {
+    top: mainScroll()?.scrollTop || 0, left:board?.scrollLeft || 0,
+    columns:Array.from(board?.querySelectorAll('.col-body') || [], el => el.scrollTop)
+  }
+  saveProjectList(memberId, {filters:urlFilters.value, createRange:createRange.value, page:page.value,
+    pageSize:pageSize.value, mobileLimit:mobileLimit.value, sortKey:sortKey.value, scroll:savedScroll || scroll})
+}
+async function restoreListPosition() {
+  if (!savedScroll || !ordersReady.value || !pageEl.value) return
+  await nextTick()
+  // Element Table measures columns before its rows contribute to the scroll height.
+  await new Promise(requestAnimationFrame)
+  await new Promise(requestAnimationFrame)
+  if (!savedScroll || !pageEl.value) return
+  const main = mainScroll()
+  if (main) main.scrollTop = savedScroll.top
+  const board = pageEl.value.querySelector('.kanban')
+  if (board) {
+    board.scrollLeft = savedScroll.left
+    board.querySelectorAll('.col-body').forEach((el, i) => { el.scrollTop = savedScroll.columns?.[i] || 0 })
+  }
+  savedScroll = null
+}
+onBeforeRouteLeave(saveList)
+onMounted(() => {
+  if (!hasUrlFilters && !route.query.id) syncQuery()
+  restoreListPosition()
+  window.addEventListener('pagehide',saveList)
+})
+onBeforeUnmount(() => window.removeEventListener('pagehide',saveList))
+watch(ordersReady, restoreListPosition, {flush:'post'})
+watch([urlFilters,createRange,pageSize,page,mobileLimit,sortKey], saveList, {deep:true})
 // 删除/恢复后总数变少，页码不能停在已经没有数据的位置
 watch(
   () => filteredOrders.value.length,
   (n) => {
+    if (!ordersReady.value) return
     const maxPage = Math.max(1, Math.ceil(n / pageSize.value))
     if (page.value > maxPage) page.value = maxPage
   }
@@ -722,16 +844,24 @@ watch(
 
 // 看板分列：已完成越积越多，只显示最近的一部分，完整的在列表里看
 // 每列最多先画 50 张（已完成 30 张），再多点列头看全部：单子多了打开看板也不卡
-const KANBAN_LIMIT = { pending: 50, doing: 50, review: 50, done: 30 }
-const columns = reactive({ pending: [], doing: [], review: [], done: [] })
-const columnTotals = reactive({ pending: 0, doing: 0, review: 0, done: 0 })
+const boardStatuses = [...KANBAN_STATUS, 'cancelled']
+const KANBAN_LIMIT = { pending: 50, doing: 50, review: 50, done: 30, cancelled: 30 }
+const columns = reactive(Object.fromEntries(boardStatuses.map(s => [s, []])))
+const columnTotals = reactive(Object.fromEntries(boardStatuses.map(s => [s, 0])))
+const draggingOrder = ref(null)
+const visibleColumns = computed(() => {
+  const overview = boardStatuses.filter(s => s !== 'cancelled' || columnTotals[s] > 0)
+  if (!hasFilter.value) return overview
+  const matching = overview.filter(s => columnTotals[s] > 0)
+  return draggingOrder.value ? [...matching, ...overview.filter(s => !matching.includes(s))] : matching
+})
 const selectionMode = ref(false)
 // 总览的待确认列也支持多选；项目总数和「全部」明细由 matchesGroup 单独计算。
-const boardRows = computed(() => quick.value === 'all'
+const boardRows = computed(() => !hasFilter.value
   ? scopedOrders.value
   : groupRows(quick.value, filter.ownerId))
 function rebuild() {
-  KANBAN_STATUS.forEach((s) => {
+  boardStatuses.forEach((s) => {
     const all = prioritizeRows(boardRows.value.filter(o => o.status === s))
     columnTotals[s] = all.length
     columns[s] = KANBAN_LIMIT[s] ? all.slice(0, KANBAN_LIMIT[s]) : all
@@ -750,7 +880,7 @@ const batchStatus = ref('')
 const batchBusy = ref(false)
 const batchErrors = ref([])
 const batchStatuses = computed(() => STATUS.filter(s => isBoss.value || ['pending','doing','review'].includes(s.value)))
-const visibleSelectionOrders = computed(() => viewMode.value === 'kanban' ? KANBAN_STATUS.flatMap(st => columns[st]) : pagedOrders.value)
+const visibleSelectionOrders = computed(() => viewMode.value === 'kanban' ? visibleColumns.value.flatMap(st => columns[st]) : pagedOrders.value)
 const allVisibleSelected = computed(() => visibleSelectionOrders.value.length > 0 && visibleSelectionOrders.value.every(o => selectedIds.value.includes(o.id)))
 function toggleSelection() {
   if (batchBusy.value) return
@@ -873,13 +1003,40 @@ async function doExport() {
   }
 }
 
+let blockedRelease = false
+function beginDrag(order) {
+  draggingOrder.value = order
+  blockedRelease = false
+}
+function trackDropLocation(event) {
+  if (!draggingOrder.value) return
+  const point = event.changedTouches?.[0] || event
+  const column = document.elementFromPoint(point.clientX, point.clientY)?.closest('[data-column-status]')
+  // Sortable keeps the last allowed column when the pointer crosses a forbidden one.
+  // Validate the actual release location before persisting its optimistic move.
+  blockedRelease = !column || !!dropBlocked(draggingOrder.value, column.dataset.columnStatus)
+}
+const dropEvents = ['dragover','drop','pointerup','touchend']
+onMounted(() => dropEvents.forEach(type => document.addEventListener(type, trackDropLocation, true)))
+onBeforeUnmount(() => dropEvents.forEach(type => document.removeEventListener(type, trackDropLocation, true)))
+function dropBlocked(row, target) {
+  if (!row || row.status === target || isBoss.value) return ''
+  if (row.assignState === 'pending') return '请先接收项目'
+  if (target === 'done') return '请先提交验收'
+  if (target === 'cancelled') return '请先申请取消项目'
+  return ''
+}
+function canDrop(event) {
+  const target = event.to?.dataset.status
+  return !!target && !dropBlocked(event.draggedContext?.element, target)
+}
 async function onDragChange(evt, targetStatus) {
   if (!evt.added) return
   const moved = evt.added.element
   if (!moved || moved.status === targetStatus) return
+  if (blockedRelease || dropBlocked(moved, targetStatus)) { rebuild(); return }
   try {
-    await changeOrderStatus(moved, targetStatus)
-    ElMessage.success(`「${moved.title}」已移到 ${statusMap[targetStatus].label}`)
+    await changeOrderStatus(moved, targetStatus, `「${moved.title}」已移到 ${statusMap[targetStatus].label}`)
   } catch (e) {
     // 服务器没改成功：把卡片放回原来的列，并说清楚
     ElMessage.error((e.message || '修改状态失败') + '，已放回原位')
@@ -891,7 +1048,6 @@ async function onDragChange(evt, targetStatus) {
 async function changeStatus(row, status) {
   try {
     await changeOrderStatus(row, status)
-    ElMessage.success(`「${row.title}」→ ${statusMap[status].label}`)
   } catch (e) {
     ElMessage.error(e.message || '修改状态失败')
   }
@@ -987,9 +1143,9 @@ const payTagOf = (o) => ({
 // 弹窗 / 抽屉状态
 const dialogVisible = ref(false)
 const editing = ref(null)
-const detailVisible = ref(false)
-const detailLoading = ref(false)
-const active = ref(null)
+const { active, detailVisible, detailLoading, noticeTab, noticeItem, hasPrevious, hasNext, openDetail, moveDetail } =
+  useProjectDetail('/order', () => focusScope.value ? focusedRows.value :
+    viewMode.value === 'kanban' ? visibleColumns.value.flatMap(st => columns[st]) : filteredOrders.value)
 const notebookVisible = ref(false)
 const notebookOrder = ref(null)
 
@@ -1011,58 +1167,13 @@ async function openDialog(row) {
     ElMessage.error('加载项目失败：' + e.message)
   }
 }
-const noticeTab = computed(() => ['bugs', 'chat', 'internal'].includes(route.query.tab) ? route.query.tab : '')
-const noticeItem = computed(() => {
-  if (noticeTab.value === 'bugs' && route.query.todo === '1' && !route.query.bug) {
-    const marked = (active.value?.bugs || []).filter(bug => bug.status === 'action')
-    return marked.length === 1 ? String(marked[0].id) : ''
-  }
-  const id = noticeTab.value === 'bugs' ? route.query.bug : route.query.entry
-  return typeof id === 'string' && /^\d+$/.test(id) ? id : ''
-})
-
-let detailRequest = 0
-async function openDetail(row) {
-  const request = ++detailRequest
-  active.value = row
-  detailVisible.value = true
-  detailLoading.value = true
-  try {
-    const project = await getOrder(row.id)
-    if (request !== detailRequest) return
-    if (!project) throw new Error('项目已删除或当前账号无法查看')
-    active.value = project
-  } catch (e) {
-    if (request !== detailRequest) return
-    ElMessage.error('加载项目失败：' + e.message)
-    detailVisible.value = false
-  } finally {
-    if (request === detailRequest) detailLoading.value = false
-  }
-}
-function openFromRoute() {
-  if (route.path !== '/order') return
-  if (route.query.create === '1') openDialog()
-  if (/^\d+$/.test(route.query.id || '') && (!detailVisible.value || String(active.value?.id) !== route.query.id)) {
-    openDetail({ id: Number(route.query.id) })
-  }
-}
-watch(() => route.query.status, status => {
-  if (route.path === '/order') setQuick(status ? String(status) : 'all')
-}, { immediate:true })
-onMounted(openFromRoute)
-watch(() => route.query.id, (id, previous) => {
-  if (previous && !id && route.path === '/order') detailVisible.value = false
-})
-watch(() => route.query, openFromRoute)
-watch(detailVisible, visible => {
-  if (visible) return
-  detailRequest++
-  if (route.path === '/order' && route.query.id && localStorage.getItem('token')) {
-    const { id, t, tab, bug, entry, todo, followup, ...rest } = route.query
-    const list = { path: '/order', query: rest }
-    if (history.state?.back === router.resolve(list).fullPath) router.back()
-    else router.replace(list)
+watch(() => route.query.create, create => {
+  if (route.path === '/order' && create === '1') openDialog()
+}, { immediate: true })
+watch(dialogVisible, shown => {
+  if (!shown && route.query.create === '1') {
+    const { create, ...query } = route.query
+    router.replace({ query })
   }
 })
 
@@ -1075,27 +1186,39 @@ async function handleSave(data) {
       await createOrder(data)
       ElMessage.success('已建单')
     }
-    dialogVisible.value = false
+    return true
   } catch (e) {
     ElMessage.error(e.message || '保存失败')
+    return false
   }
 }
-function handleDelete(row) {
-  ElMessageBox.confirm(`确定删除「${row.title}」吗？删除后会放进「回收站」，可以随时恢复。`, '删除项目', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
-    .then(async () => {
-      try {
-        await removeOrder(row.id)
-        detailVisible.value = false
-        ElMessage.success('已放进回收站')
-      } catch (e) {
-        ElMessage.error(e.message || '删除失败')
-      }
-    })
-    .catch(() => {})
+async function handleDelete(row) {
+  try {
+    await trashWithUndo(row)
+    detailVisible.value = false
+  } catch (e) {
+    ElMessage.error(e.message || '删除失败')
+  }
 }
 </script>
 
 <style scoped>
+.order-load-state { padding: 24px; background: white; border-radius: 14px; }
+.order-load-state [role="alert"] { display:flex; align-items:center; gap:12px; }
+.kanban .drop-allowed { outline:2px solid #80aaff; outline-offset:-2px; background:#edf4ff; }
+.kanban .drop-blocked { opacity:.56; }
+.drop-reason { margin-left:auto; padding:0 4px; color:#78400a; font-size:12px; }
+@media (max-width: 768px) {
+  .order-page .board-header { min-height:54px; padding:10px 6px; }
+  .order-page .board-project-tools { gap:7px; margin-bottom:10px; }
+  .compact-search { display:flex; gap:6px; align-items:center; }
+  .compact-search > .el-input { flex:1; min-width:0; }
+  .compact-search .board-filter-row { width:auto; flex:none; gap:4px; }
+  .compact-search .board-filter-row .el-button { flex:none; padding:0 8px; }
+  .order-page .quick-bar { padding:8px; }
+  .list-pager .m-total { text-align:center; width:100%; }
+}
+
 .toolbar {
   display: flex;
   justify-content: space-between;

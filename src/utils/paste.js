@@ -7,7 +7,7 @@
 // 鼠标不在任何区域上（或手机上没有鼠标）时，按光标所在的输入框处理：文字走浏览器原生粘贴，图片传到同一区域的附件。
 // 剪贴板里同时有文字和图片时（从 Excel / Word 复制常这样），按文字处理；只有图片、或文字只是文件名时按文件处理。
 import { nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 
 const targets = []
 const legacyScope = '.bug-form,.bug-update-form,.composer,.panel,.el-form,.el-dialog,.el-drawer,.intake-card'

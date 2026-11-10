@@ -153,6 +153,9 @@ for (const width of [390, 1366]) {
     await page.reload()
     await count('全部',4)
     await count('待确认',0)
+    // 刷新会保留「待确认」，确认这个筛选已空，再回到全部。
+    await expect(list).toContainText('没有符合筛选条件的项目')
+    await chip('全部').click()
     if (width > 768) await count('小陈',3)
     await expect(list).toContainText('尚待确认')
   })

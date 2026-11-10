@@ -10,12 +10,13 @@
     @opened="drawerReady = true"
     @close="drawerReady = false"
   >
-    <div v-if="order" v-loading="loading" class="workspace" :class="{'chat-workspace': isMobile && mobileTab==='chat', 'chat-roomy': isMobile && mobileTab==='chat' && !pendingAccept}">
+    <div v-if="order" class="workspace" :class="{'chat-workspace': isMobile && mobileTab==='chat', 'chat-roomy': isMobile && mobileTab==='chat' && !pendingAccept}">
       <header class="workspace-head">
         <button v-if="isMobile" class="board-detail-close icon-button" aria-label="关闭项目详情" @click="emit('update:visible',false)"><el-icon><ArrowLeft/></el-icon></button>
         <div class="title-block">
           <div class="title-line">
-            <h2 v-if="isMobile">{{ order.title }}</h2>
+            <h2 v-if="loading && !order.title">项目详情</h2>
+            <h2 v-else-if="isMobile">{{ order.title }}</h2>
             <h2 v-else><InlineEdit :model-value="order.title" :disabled="!canInlineEdit" placeholder="项目名" :save="(v) => saveField('title', v)" /></h2>
             <span class="order-no">{{ order.orderNo }}</span>
             <el-tag v-if="isMobile" class="detail-title-status" :class="'project-status-'+order.status" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag>
@@ -32,6 +33,10 @@
           </div>
         </div>
 
+        <nav class="project-neighbours" aria-label="切换项目">
+          <button type="button" aria-label="上一个项目" title="上一个项目（Alt+←）" :disabled="!hasPrevious" @click="emit('navigate', -1)"><span aria-hidden="true">‹</span><span class="neighbour-text">上一个</span></button>
+          <button type="button" aria-label="下一个项目" title="下一个项目（Alt+→）" :disabled="!hasNext" @click="emit('navigate', 1)"><span class="neighbour-text">下一个</span><span aria-hidden="true">›</span></button>
+        </nav>
         <div v-if="!isMobile" class="head-actions">
           <ProjectUrgency v-if="visible" :key="order.id" :order="order" />
           <!-- 员工：老板刚派来的项目，先接收或拒绝 -->
@@ -73,7 +78,7 @@
               </template>
             </el-dropdown>
           </template>
-          <el-button circle class="close-btn" :icon="Close" @click="emit('update:visible', false)" />
+          <el-button circle aria-label="关闭项目详情" class="close-btn" :icon="Close" @click="emit('update:visible', false)" />
         </div>
 
         <!-- 手机端：只留主要操作，其余都收进“更多操作”（每项和电脑端同名按钮做的事一样） -->
@@ -108,21 +113,24 @@
             </template>
           </el-dropdown>
           <!-- 以前这里还有一个「项目操作」菜单，内容和「更多操作」重复，去掉了 -->
-          <el-button v-if="!pendingAccept" @click="emit('edit',order)">编辑</el-button>
+          <el-button v-if="!pendingAccept && !(na && isBoss && ['review', 'done'].includes(order.status))" @click="emit('edit',order)">编辑</el-button>
         </div>
       </header>
       <ProjectHandling v-if="showHandling && !loading" :order="order" class="detail-handling" />
-      <NextStepBar v-if="!pendingAccept" :order="order" class="workspace-next" />
+      <NextStepBar v-if="!pendingAccept && !loading" :order="order" class="workspace-next" />
 
-      <section v-if="isMobile && mobileTab==='overview'" class="board-detail-summary">              <ProjectCover :order="order" />
+      <section v-if="isMobile && !loading && mobileTab==='overview'" class="board-detail-summary">              <ProjectCover :order="order" />
               <div class="project-facts"><p><el-icon><User /></el-icon><span>客户</span><b>{{ order.customer || '未填写' }}</b><b class="contact-inline">{{ order.contact }}</b></p><p><el-icon><Phone /></el-icon><span>联系方式</span><b>{{ order.contact || '未填写' }}</b></p><p><el-icon><UserFilled /></el-icon><span>负责人</span><b>{{ memberMap[order.ownerId]?.name }}</b></p><p><el-icon><Calendar /></el-icon><span>截止日期</span><b>{{ order.deadline || '未设置' }}</b></p></div>
               <div class="project-finance"><div><small>报价</small><strong>{{ money(order.amount) }}</strong></div><div><small>已收</small><strong>{{ money(order.receivedAmount) }}</strong></div><div><small>待收</small><strong>{{ money(owed(order)) }}</strong></div></div>
               <p class="muted">优先级：{{ priorityMap[order.priority]?.label }} · 修改 {{ order.revisions || 0 }} 次</p>
 </section>
-      <nav v-if="isMobile" class="workspace-mobile-tabs"><button v-for="t in mobileTabs" :key="t.key" :class="{active:mobileTab===t.key}" @click="mobileTab=t.key">{{ t.label }}</button></nav>
+      <nav v-if="isMobile" class="workspace-mobile-tabs"><button v-for="t in mobileTabs" :key="t.key" :class="{active:mobileTab===t.key}" @click="selectTab(t.key)">{{ t.label }}</button></nav>
       <nav v-else class="workspace-tabs" aria-label="项目详情视图"><button v-for="tab in desktopTabs" :key="tab.key"
-        :aria-pressed="desktopTab===tab.key" @click="desktopTab=tab.key">{{ tab.label }}</button></nav>
-      <div ref="workspaceBody" class="workspace-body" :data-tab="mobileTab" :data-desktop-tab="desktopTab">
+        :aria-pressed="desktopTab===tab.key" @click="selectTab(tab.key)">{{ tab.label }}</button></nav>
+      <section v-if="loading" class="project-skeleton" aria-label="正在加载项目详情" aria-busy="true" role="status">
+        <article v-for="label in ['问题清单', '内部记录', '客户沟通']" :key="label"><h3>{{ label }}</h3><el-skeleton animated :rows="3" /></article>
+      </section>
+      <div v-else ref="workspaceBody" class="workspace-body" :data-tab="mobileTab" :data-desktop-tab="desktopTab">
         <main class="left-pane">
           <section class="panel overview-panel">
             <div class="section-head compact">
@@ -146,7 +154,7 @@
                 </AssignMenu>
               </el-descriptions-item>
               <el-descriptions-item label="报价">
-                <InlineEdit type="number" :model-value="Number(order.amount || 0)" :disabled="!isBoss || pendingAccept" :save="(v) => saveField('amount', v ?? 0)">¥{{ order.amount || 0 }}</InlineEdit>
+                <InlineEdit type="number" :model-value="Number(order.amount || 0)" :disabled="!isBoss || pendingAccept" :save="(v) => saveField('amount', v ?? 0)">{{ money(order.amount) }}</InlineEdit>
                 <el-button v-if="!isBoss && !pendingAccept" link type="primary" size="small" @click="openRequest('amount')">申请改价</el-button>
               </el-descriptions-item>
               <el-descriptions-item label="收款" :span="isMobile ? 1 : 2">
@@ -169,12 +177,12 @@
                 <InlineEdit type="date" :model-value="order.deadline" :disabled="!canInlineEdit" placeholder="点击设置" :save="(v) => saveField('deadline', v || '')"><span :class="{ red: isOverdue }">{{ order.deadline }}</span></InlineEdit>
               </el-descriptions-item>
               <el-descriptions-item label="需求" :span="isMobile ? 1 : 3">
-                <InlineEdit type="textarea" class="requirement-edit" :model-value="order.requirement" :maxlength="10000" :disabled="!canInlineEdit" placeholder="点击填写需求" :save="(v) => saveField('requirement', v)"><span class="requirement">{{ order.requirement }}</span></InlineEdit>
+                <InlineEdit type="textarea" class="requirement-edit" :model-value="order.requirement" :maxlength="10000" :disabled="!canInlineEdit" placeholder="点击填写需求" :save="(v) => saveField('requirement', v)"><LinkText class="requirement" :text="order.requirement"/></InlineEdit>
               </el-descriptions-item>
             </el-descriptions>
 
             <div v-if="isMobile" class="project-overview-mobile">
-              <h3>需求说明</h3><p class="requirement">{{ order.requirement || '暂无需求说明' }}</p>
+              <h3>需求说明</h3><p class="requirement"><LinkText :text="order.requirement || '暂无需求说明'"/></p>
             </div>
             <div v-if="order.attachments && order.attachments.length" class="gallery">
               <div class="gallery-label"><el-icon><Paperclip /></el-icon> 需求材料（{{ order.attachments.length }}）</div>
@@ -255,7 +263,7 @@
                   <div v-if="!isBugExpanded(bug) && (bug.time || bug.attachments?.length || bug.updates?.length)" class="bug-summary-counts">
                     <!-- 收起时也写上是谁提的（以前只有时间，分不清是客户提的还是自己人记的，得一条条点开） -->
                     <span class="bug-summary-who">{{ bug.createdBy || '客户' }}</span>
-                    <time v-if="bug.time" :datetime="bug.time.replace(' ', 'T')">{{ bug.time }} 提交</time>
+                    <time v-if="bug.time" :datetime="bug.time.replace(' ', 'T')" :title="fmtTime(bug.time)">{{ friendlyTime(bug.time) }} 提交</time>
                     <span v-if="bug.attachments?.length">{{ bug.attachments.length }} 个附件</span>
                     <span v-if="bug.updates?.length">{{ bug.updates.length }} 条补充</span>
                   </div>
@@ -268,13 +276,14 @@
                   </div>
                   <div v-if="isBugExpanded(bug)" :id="bugDetailsId(bug)" class="bug-details">
                     <div class="bug-body">
+                      <LinkText v-if="/https?:\/\//i.test(bug.content)" :text="bug.content" />
                       <AttachmentView v-if="bug.attachments && bug.attachments.length" :items="bug.attachments" :gallery="problemImages" :size="64" />
-                      <div class="bug-meta">{{ bug.createdBy || '客户' }} · {{ bug.time }}</div>
+                      <div class="bug-meta">{{ bug.createdBy || '客户' }} · <time :title="fmtTime(bug.time)">{{ friendlyTime(bug.time) }}</time></div>
 
                       <div v-if="bug.updates && bug.updates.length" class="bug-updates">
                         <div v-for="u in bug.updates" :key="u.id" class="bug-update">
-                          <div class="update-meta">补充说明 · {{ u.createdBy || '客户' }} · {{ u.time }}</div>
-                          <p>{{ u.content || '只有附件' }}</p>
+                          <div class="update-meta">补充说明 · {{ u.createdBy || '客户' }} · <time :title="fmtTime(u.time)">{{ friendlyTime(u.time) }}</time></div>
+                          <p><LinkText :text="u.content || '只有附件'" /></p>
                           <AttachmentView v-if="u.attachments && u.attachments.length" :items="u.attachments" :gallery="problemImages" :size="64" />
                         </div>
                       </div>
@@ -382,12 +391,12 @@
                   :key="t.id || i"
                   :data-notice-id="t.id"
                   :class="{ 'notice-target': isNoticeItem('internal', t.id) }"
-                  :timestamp="t.time"
+                  :title="fmtTime(t.time)" :timestamp="friendlyTime(t.time)"
                   :color="dotColor(t.type)"
                   placement="top"
                 >
                   <div>
-                    <span class="t-user">{{ t.user }}</span> {{ recordText(t) }}
+                    <span class="t-user">{{ t.user }}</span> <LinkText :text="recordText(t)" />
                   </div>
                   <div v-if="t.mentions && t.mentions.length" class="t-mentions">
                     <span v-for="m in t.mentions" :key="m.memberId" :class="{ read: m.read }">@{{ m.name }} · {{ m.read ? '已读' : '未读' }}</span>
@@ -425,23 +434,27 @@
               <el-button v-if="!acceptNudged" size="small" type="primary" plain :loading="nudgingAccept" @click="doAcceptNudge">催客户验收</el-button>
               <el-button v-else size="small" plain title="今天已经催过了；点一下把这句话再复制一遍，可以粘到微信发" @click="copyAcceptNudge(order)">今天已催</el-button>
             </div>
-            <div ref="chatList" class="chat-list">
-              <div v-for="(t, i) in chatItems" :key="t.id || i" class="chat-row" :data-notice-id="t.id" :class="{ team: t.type === 'reply', 'notice-target': isNoticeItem('chat', t.id) }">
+            <div ref="chatList" class="chat-list" @scroll.passive="onChatScroll">
+              <template v-for="({item:t, day, meta}, i) in chatRows" :key="t.id || i">
+              <div v-if="day" class="chat-day">{{ day }}</div>
+              <div class="chat-row" :data-notice-id="t.id" :class="{ team: t.type === 'reply', 'notice-target': isNoticeItem('chat', t.id) }">
                 <div class="avatar">{{ avatarOf(t) }}</div>
                 <div class="bubble-wrap">
-                  <div class="meta">
+                  <div v-if="meta" class="meta">
                     <span>{{ t.type === 'reply' ? t.user : '客户 · ' + t.user }}</span>
-                    <em>{{ t.time }}</em>
+                    <time :title="fmtTime(t.time)">{{ friendlyTime(t.time) }}</time>
                   </div>
                   <div class="bubble">
-                    <p v-if="t.content">{{ t.content }}</p>
+                    <p v-if="t.content"><LinkText :text="t.content" /></p>
                     <AttachmentView v-if="t.attachments && t.attachments.length" :items="t.attachments" :size="64" />
                   </div>
                 </div>
               </div>
+              </template>
               <div v-if="!chatItems.length" class="empty">还没有客户沟通消息</div>
             </div>
 
+            <button v-if="hasNewChat" class="new-chat-jump" @click="scrollChatBottom()">有新消息 ↓</button>
             <div class="composer" :class="{'board-composer':isMobile}">
               <ChatInput ref="replyInput" v-model="replyText" class="reply-input" label="回复客户" :rows="1" :busy="replying"
                 placeholder="回复客户，回车发送" @send="sendReply" @files="addReplyFiles">
@@ -489,6 +502,10 @@
 </template>
 
 <script setup>
+import { useRoute, useRouter } from 'vue-router'
+import LinkText from '@/components/LinkText.vue'
+import { friendlyTime, fmtTime } from '@/utils/time'
+import { chatGroup, useChatArrival } from '@/utils/chatDisplay'
 const replyUploadOpen = ref(false)
 
 import DeliveryDialog from '@/components/DeliveryDialog.vue'
@@ -498,7 +515,8 @@ import ProjectHandling from './ProjectHandling.vue'
 import ProjectUrgency from './ProjectUrgency.vue'
 import { ref, computed, watch, nextTick, onBeforeUnmount, toRefs } from 'vue'
 import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close, Coin, RefreshLeft, Back, ArrowDown, CopyDocument } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { chatDraft, sendDraft } from '@/utils/chatDraft'
 import ChatInput from '@/components/ChatInput.vue'
 import QuickPhrases from '@/components/QuickPhrases.vue'
@@ -527,6 +545,15 @@ import { changeOrderStatus } from '@/utils/settle'
 import { PAY_STATE, payState, owed, money } from '@/utils/payment'
 import { isMobile } from '@/utils/useMobile'
 
+const projectRoute = useRoute()
+const projectRouter = useRouter()
+function selectTab(tab) {
+  desktopTab.value = tab
+  mobileTab.value = tab === 'all' ? 'overview' : tab
+  if (!projectRoute.query.id) return
+  const { bug, entry, todo, followup, ...query } = projectRoute.query
+  projectRouter.replace({ path: projectRoute.path, query: { ...query, tab } })
+}
 const mobileTab=ref('overview')
 const mobileTabs=[{key:'overview',label:'需求'},{key:'chat',label:'沟通'},{key:'bugs',label:'问题'},{key:'internal',label:'内部'}]
 const desktopTab = ref('all')
@@ -536,10 +563,12 @@ const props = defineProps({
   order: { type: Object, default: null },
   loading: { type: Boolean, default: false },
   noticeTab: { type: String, default: '' },
+  hasPrevious: Boolean,
+  hasNext: Boolean,
   showHandling: Boolean,
   noticeItem: { type: String, default: '' }
 })
-const emit = defineEmits(['update:visible', 'edit', 'delete', 'notebook'])
+const emit = defineEmits(['update:visible', 'edit', 'delete', 'notebook', 'navigate'])
 
 const note = ref('')
 const noteFiles = ref([])
@@ -588,7 +617,7 @@ const requestVisible = ref(false)
 const requestType = ref('amount')
 const pendingAccept = computed(() => !isBoss.value && props.order?.assignState === 'pending')
 // 订单信息就地修改：只把改的那一项发给后端（和「编辑」窗口走同一个接口、同样的权限）
-const canInlineEdit = computed(() => !pendingAccept.value)
+const canInlineEdit = computed(() => !props.loading && !pendingAccept.value)
 async function saveField(field, value) {
   if (field === 'title' && !String(value || '').trim()) throw new Error('项目名不能为空')
   await editOrder({ id: props.order.id, [field]: value })
@@ -629,12 +658,18 @@ function openRequest(type) {
   requestVisible.value = true
 }
 const chatList = ref(null)
+const { hasNew: hasNewChat, onScroll: onChatScroll, onArrival } = useChatArrival(chatList)
 const syncState = ref('online')
 const syncing = ref(false)
 let poller = null
 
 const chatTypes = ['message', 'reply']
 const chatItems = computed(() => (props.order?.timeline || []).filter((t) => chatTypes.includes(t.type)))
+const chatRows = computed(() => chatItems.value.map((item, i, items) => ({ item, ...chatGroup(item, items[i - 1]) })))
+watch(() => chatItems.value.at(-1)?.id, (last, old) => {
+  if (old != null && last != null && props.visible && !props.loading) onArrival(scrollChatBottom)
+})
+
 const recordItems = computed(() => (props.order?.timeline || []).filter((t) => !chatTypes.includes(t.type)))
 // 内部记录最新的排最上面（输入框就在上面）：刚写的那条紧跟在输入框下面，打开项目先看到的也是最新进展。
 // 以前最早的在最上面，记录一多，新写的一条落在最底下，写完看不到，得往下翻才知道记上了没有
@@ -754,10 +789,12 @@ watch([drawerReady, () => props.visible, () => props.loading, () => props.order?
     if (target) processingBugId.value = target.id
     else processingBugs.value = false
   }
-  mobileTab.value = desktopTab.value = props.noticeTab
+  desktopTab.value = props.noticeTab
+  mobileTab.value = props.noticeTab === 'all' ? 'overview' : props.noticeTab
   await nextTick()
   if (cancelled) return
   const panelClass = { bugs: '.bug-panel', chat: '.chat-panel', internal: '.record-panel' }[props.noticeTab]
+  if (!panelClass) return
   const panel = workspaceBody.value?.querySelector(panelClass)
   const target = panel?.querySelector('.notice-target') || panel
   target?.scrollIntoView({ block: 'nearest' })
@@ -772,14 +809,15 @@ function isBugResolved(bug) {
 }
 
 watch(
-  () => props.order,
-  (o) => {
-    statusModel.value = o?.status || ''
+  () => props.order?.status,
+  (status) => {
+    statusModel.value = status || ''
   },
   { immediate: true }
 )
 
 function scrollChatBottom(smooth = false) {
+  hasNewChat.value = false
   nextTick(() => {
     const el = chatList.value
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
@@ -800,9 +838,7 @@ async function syncNow(force = false) {
   try {
     const version = await getOrderVersion(props.order.id)
     if (force || Number(version?.version || 0) !== Number(props.order.version || 0)) {
-      const before = chatItems.value.length
       await getOrder(props.order.id)
-      if (chatItems.value.length > before) scrollChatBottom(true)
     }
     syncState.value = 'online'
   } catch (e) {
@@ -828,10 +864,23 @@ function defaultMobileTab() {
   return 'overview'
 }
 
+function navigateByKey(event) {
+  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing || event.defaultPrevented) return
+  if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return
+  if (event.target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="combobox"]')) return
+  const otherOverlay = [...document.querySelectorAll('.el-overlay')].some(el =>
+    el.getClientRects().length && !el.classList.contains('order-workspace-overlay') &&
+    Number(getComputedStyle(el).zIndex) > Number(getComputedStyle(document.querySelector('.order-workspace-overlay')).zIndex))
+  if (otherOverlay) return
+  event.preventDefault()
+  if (event.key === 'ArrowLeft' && props.hasPrevious) emit('navigate', -1)
+  if (event.key === 'ArrowRight' && props.hasNext) emit('navigate', 1)
+}
 function onOpen() {
+  window.addEventListener('keydown', navigateByKey)
   resetIssueFilters()
   desktopTab.value = props.noticeTab || 'all'
-  mobileTab.value = props.noticeTab || defaultMobileTab()
+  mobileTab.value = props.noticeTab === 'all' ? 'overview' : props.noticeTab || defaultMobileTab()
   syncNow(false)
   scrollChatBottom()
   startSync()
@@ -840,6 +889,7 @@ function onOpen() {
 }
 
 function onClosed() {
+  window.removeEventListener('keydown', navigateByKey)
   processingBugs.value = false
   if (poller) {
     clearInterval(poller)
@@ -1090,6 +1140,21 @@ function dotColor(type) {
 
 <style scoped>
 .issue-awaiting,.bug-summary-status.status-confirm {color:#865500;background:#fff1d8;border-radius:6px;padding:3px 7px;font-size:12px}
+.project-neighbours { display: inline-flex; flex: none; align-items: center; gap: 2px; }
+.project-neighbours button { display: inline-flex; align-items: center; gap: 4px; background: transparent; border: 0; border-radius: 6px; padding: 5px; color: #335eaa; font: inherit; font-size: 13px; cursor: pointer; }
+.project-neighbours button:disabled { color: #aeb8c7; cursor: default; }
+.project-neighbours button:not(:disabled):hover { background: #edf3ff; }
+.project-skeleton { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); align-content: start; gap: 16px; padding: 20px; overflow: auto; }
+.project-skeleton article { background: white; border-radius: 10px; padding: 16px; }
+.project-skeleton h3 { margin: 0 0 12px; font-size: 15px; }
+@media(max-width:1100px) {
+  .project-neighbours .neighbour-text { display: none; }
+  .project-neighbours button { justify-content: center; width: 30px; height: 32px; font-size: 23px; }
+}
+@media(max-width:768px) {
+  .workspace .head-actions-m { flex-wrap: nowrap !important; }
+  .workspace .head-actions-m .el-button { min-width: 0 !important; }
+}
 .detail-handling { flex:none; padding:6px 16px; background:#f7f9fd; }
 .workspace-next { flex: 0 0 auto; margin: 12px 16px 0; }
 .chat-unbound { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: #fff7e8; color: #9a6a1c; font-size: 12px; line-height: 1.6; }

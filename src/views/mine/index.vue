@@ -9,7 +9,7 @@
 </template>
 <script setup>
 import BoardAvatar from '@/components/board/BoardAvatar.vue'
-import {ElMessage} from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { currentMember, isBoss, customerName, signOutDevice } from '@/mock/store'

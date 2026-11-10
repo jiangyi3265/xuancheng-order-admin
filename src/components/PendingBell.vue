@@ -35,8 +35,9 @@
 import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import { completePendingItem, loadOrders, me, orders, isBoss } from '@/mock/store'
+import { toast as ElMessage } from '@/utils/toast'
+import { finishPendingWithUndo } from '@/utils/orderUndo'
+import { loadOrders, me, orders, isBoss } from '@/mock/store'
 import { pendingItems, pendingLabels, pendingDestination } from '@/utils/pendingItems'
 import { isMobile } from '@/utils/useMobile'
 
@@ -77,8 +78,7 @@ async function finish(item) {
   if (busy.has(item.id)) return
   busy.set(item.id, item.key)
   try {
-    await completePendingItem(item.order, item.kind, item.bugId)
-    ElMessage.success('已处理：' + item.title + ' · ' + pendingLabels[item.kind])
+    await finishPendingWithUndo(item.order, item.kind, item.bugId, '已处理：' + item.title + ' · ' + pendingLabels[item.kind])
   } catch (err) {
     ElMessage.error(err.message || '标记失败，请重试')
     await refresh()

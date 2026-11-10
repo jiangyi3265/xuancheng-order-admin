@@ -1,5 +1,5 @@
 <template>
-  <el-dialog
+  <el-dialog :close-on-click-modal="false" :before-close="requestClose"
     :model-value="visible"
     :title="title"
     width="440px"
@@ -23,13 +23,15 @@
     <p class="rd-help">{{ tip || '请说明具体原因，相关负责人可查看本次处理记录。' }}</p>
     <div v-if="error" class="rd-error">{{ error }}</div>
     <template #footer>
-      <el-button @click="emit('update:visible', false)">取消</el-button>
+      <el-button @click="requestClose">取消</el-button>
       <el-button :type="danger ? 'danger' : 'primary'" :loading="saving" @click="confirm">{{ confirmText }}</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
+import { focusField } from '@/utils/formKeys'
+import { useFormClose } from '@/utils/dialogGuard'
 // 通用“写原因”小窗：交回、拒绝、退回返工、驳回申请都用它。原因必填；submit 失败时窗口保持打开并显示原因。
 import ProjectCover from '@/components/ProjectCover.vue'
 import { ref, nextTick } from 'vue'
@@ -56,7 +58,7 @@ const inputRef = ref(null)
 function onOpen() {
   reason.value = ''
   error.value = ''
-  nextTick(() => inputRef.value?.focus())
+  nextTick(() => focusField(inputRef))
 }
 
 async function confirm() {
@@ -76,6 +78,10 @@ async function confirm() {
     saving.value = false
   }
 }
+const requestClose = useFormClose({
+  visible: () => props.visible, close: () => emit('update:visible', false), name: 'reason',
+  isDirty: () => reason.value !== '', isBusy: () => saving.value
+})
 </script>
 
 <style scoped>

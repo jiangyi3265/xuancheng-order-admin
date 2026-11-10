@@ -18,7 +18,7 @@
       <span v-if="isQuoteUnread(q)" class="quote-reason">{{ q.replyVersion > 0 ? '有新回复' : (isBoss ? '收到报价' : '报价邀请') }}</span>
       <span v-if="q.quoteNo && q.title!==q.quoteNo" class="quote-code">{{ q.quoteNo }}</span>
       <span v-if="q.createTime">发起于 <time>{{ formatTime(q.createTime) }}</time></span>
-    </div><p class="quote-description">{{ q.requirement || '请查看附件中的需求' }}</p><div class="quote-meta"><span>报价人：{{ q.employeeName || '已删除成员' }}</span><span>{{ q.attachments?.length || 0 }} 个附件</span></div><div class="quote-card-foot"><strong v-if="q.amount!=null"><small v-if="q.status==='pending'">上次报价 </small>¥{{ money(q.amount) }}</strong><span v-else>等待填写报价</span><small v-if="q.sentTime && q.sentTime!==q.createTime">最近邀请 {{ formatTime(q.sentTime) }}</small><el-icon><ArrowRight/></el-icon></div></button>
+    </div><p class="quote-description">{{ q.requirement || '请查看附件中的需求' }}</p><div class="quote-meta"><span>报价人：{{ q.employeeName || '已删除成员' }}</span><span>{{ q.attachments?.length || 0 }} 个附件</span></div><div class="quote-card-foot"><strong v-if="q.amount!=null"><small v-if="q.status==='pending'">上次报价 </small>{{ money(q.amount, 2) }}</strong><span v-else>等待填写报价</span><small v-if="q.sentTime && q.sentTime!==q.createTime">最近邀请 {{ formatTime(q.sentTime) }}</small><el-icon><ArrowRight/></el-icon></div></button>
     <div v-if="isBoss || isQuoteUnread(q)" class="quote-card-actions">
       <el-button v-if="isQuoteUnread(q)" size="small" text :disabled="busy" @click="readQuotes([q])">标为已读</el-button>
       <el-button v-if="isBoss" size="small" plain type="primary" :disabled="busy" @click="openEdit(q)">编辑</el-button>
@@ -28,7 +28,7 @@
   <button v-if="embedded && filtered.length > 3" class="quote-expand" @click="expanded=!expanded">{{ expanded ? '收起' : '展开全部 '+filtered.length+' 张报价单' }}</button>
   <el-empty v-if="!loading&&!filtered.length&&!quoteLoadError" :image-size="embedded ? 38 : 90" :description="unreadOnly?'当前没有未读报价':keyword?'没有匹配的报价单':status?'该状态下暂无报价单':isBoss?'还没有报价单，上传需求后发给报价人':'暂无分配给你的报价单'"/>
 
-  <el-dialog v-model="createVisible" :title="editing ? '编辑报价单' : '发起报价'" append-to-body class="quote-dialog quote-editor-dialog" :close-on-press-escape="!busy" :show-close="!busy" align-center :style="viewportStyle" :close-on-click-modal="false">
+  <el-dialog v-model="createVisible" :before-close="closeEditor" :title="editing ? '编辑报价单' : '发起报价'" append-to-body class="quote-dialog quote-editor-dialog" :close-on-press-escape="!busy" :show-close="!busy" align-center :style="viewportStyle" :close-on-click-modal="false">
    <el-form class="quote-edit-form" label-position="top" data-paste-zone="报价需求" @submit.prevent>
     <el-form-item class="wide-field" label="谁的项目" :required="!editing">
       <div v-if="editing?.sourceName" class="quote-code">{{ editing.quoteNo }}</div>
@@ -52,7 +52,7 @@
     <el-form-item label="报价人" required><el-select :disabled="editing?.status==='converted'" v-model="draft.employeeId" placeholder="请选择负责报价的人" filterable><el-option v-for="m in employees" :key="m.id" :label="m.name" :value="m.id"/></el-select><p v-if="editing && draft.employeeId!==editing.employeeId" class="quote-help">更换报价人后，原金额会清空，新邀请发给所选的人。</p><p v-if="!employees.length" class="quote-help">暂无可选报价人，请先在成员管理中新增或启用账号。</p></el-form-item>
    </el-form><el-alert v-if="!editing" title="报价不会计入项目或收款统计，成交后可一键转为项目。" :closable="false" type="info"/>
    <template #footer>
-    <el-button :disabled="busy" @click="createVisible=false">取消</el-button>
+    <el-button :disabled="busy" @click="closeEditor">取消</el-button>
     <el-button v-if="editing" :disabled="editorBlocked || draft.employeeId!==editing.employeeId" :loading="busy" @click="saveDraft(false)">保存</el-button>
     <el-button v-if="!editing || editing.status!=='converted'" type="primary" :loading="busy" :disabled="editorBlocked" @click="saveDraft(true)">
       {{ editing ? '保存并邀请报价' : '发送报价邀请' }}
@@ -71,7 +71,7 @@
    <QuoteConversation v-if="participant && chatOpened" v-show="detailTab==='chat'" :key="selected.id+':'+selected.employeeId" :quote="selected" :revision="Number(liveQuote?.conversationVersion || 0)" :active="detailTab==='chat'" @seen="readConversation"/>
    <div v-if="detailTab==='info'" class="quote-info-scroll">
    <section class="quote-section"><h3>需求说明</h3><p class="quote-requirement">{{ selected.requirement || '详见附件' }}</p><h3>需求附件（{{ selected.attachments?.length || 0 }}）</h3><AttachmentView v-if="selected.attachments?.length" :items="selected.attachments" :size="100"/><p v-else class="quote-help">暂无附件</p></section>
-   <section v-if="selected.amount!=null" class="quote-result"><span>{{ selected.employeeName }} 的{{ selected.status==='pending' ? '上次报价' : '报价' }}</span><strong>¥{{ money(selected.amount) }}</strong><p>{{ selected.quoteNote || '未填写报价说明' }}</p><el-button v-if="participant" type="primary" link @click="switchTab('chat')">继续沟通</el-button></section>
+   <section v-if="selected.amount!=null" class="quote-result"><span>{{ selected.employeeName }} 的{{ selected.status==='pending' ? '上次报价' : '报价' }}</span><strong>{{ money(selected.amount, 2) }}</strong><p>{{ selected.quoteNote || '未填写报价说明' }}</p><el-button v-if="participant" type="primary" link @click="switchTab('chat')">继续沟通</el-button></section>
    <el-form v-if="canPrice" class="quote-price-form" label-position="top" :disabled="busy" @submit.prevent>
      <div v-if="reviewPrice" class="price-review" role="status">报价单已更新，你填写的金额和说明已保留。请先核对最新需求。<el-button size="small" @click="reviewPrice=false">已核对新需求</el-button></div>
      <el-form-item label="报价金额（元）" required><el-input-number v-model="price.amount" :min="0.01" :max="9999999999.99" :precision="2" :controls="false" placeholder="请输入报价金额"/></el-form-item><el-form-item label="报价说明"><el-input v-model="price.quoteNote" type="textarea" :rows="4" maxlength="5000" placeholder="例如：包含哪些内容、预计工期、报价有效期"/></el-form-item><el-alert title="提交前请确认金额和范围，发起人可将此报价转为正式项目。" :closable="false" type="info"/></el-form>
@@ -91,13 +91,16 @@
      </div>
    </template>
   </el-dialog>
-  <el-dialog v-model="assignVisible" title="重新指派报价" append-to-body class="quote-dialog" align-center :style="viewportStyle"><el-alert title="重新指派会清空原报价，需求和附件保持不变。" type="warning" :closable="false"/><el-select v-model="assignId" placeholder="请选择报价人"><el-option v-for="m in employees" :key="m.id" :label="m.name" :value="m.id"/></el-select><template #footer><el-button @click="assignVisible=false">取消</el-button><el-button type="primary" :loading="busy" @click="assign">确认重新指派</el-button></template></el-dialog>
+  <el-dialog v-model="assignVisible" :close-on-click-modal="false" :before-close="closeReassign" title="重新指派报价" append-to-body class="quote-dialog" align-center :style="viewportStyle"><el-alert title="重新指派会清空原报价，需求和附件保持不变。" type="warning" :closable="false"/><el-select v-model="assignId" placeholder="请选择报价人"><el-option v-for="m in employees" :key="m.id" :label="m.name" :value="m.id"/></el-select><template #footer><el-button @click="closeReassign">取消</el-button><el-button type="primary" :loading="busy" @click="assign">确认重新指派</el-button></template></el-dialog>
  </div>
 </template>
 <script setup>
+import { useFormClose } from '@/utils/dialogGuard'
+import { money } from '@/utils/payment'
 import {ref,reactive,computed,onMounted,onBeforeUnmount,watch} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
-import {ElMessage,ElMessageBox} from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import {Search,Plus,Refresh} from '@element-plus/icons-vue'
 import QuoteConversation from './QuoteConversation.vue'
 import BoardHeader from '@/components/board/BoardHeader.vue'
@@ -131,6 +134,16 @@ function releaseViewport() {
 onBeforeUnmount(releaseViewport)
 const blank=()=>({title:'',requirement:'',attachments:[],employeeId:null,sourceName:'',manualNumber:''})
 const draft=reactive(blank()),price=reactive({amount:null,quoteNote:''})
+let originalDraft
+const closeEditor = useFormClose({
+  visible: () => createVisible.value, close: () => { createVisible.value = false },
+  isDirty: () => editorBlocked.value || JSON.stringify(draft) !== JSON.stringify(originalDraft),
+  isBusy: () => busy.value
+})
+const closeReassign = useFormClose({
+  visible: () => assignVisible.value, close: () => { assignVisible.value = false },
+  isDirty: () => assignId.value !== selected.value?.employeeId, isBusy: () => busy.value
+})
 const statuses=[{key:'',label:'全部'},{key:'pending',label:'待报价'},{key:'quoted',label:'已报价'},{key:'converted',label:'已转项目'}]
 const employees=computed(()=>MEMBERS.filter(m=>m.role==='staff'||m.role==='employee').filter(m=>m.status==='0'))
 const sourceOptions=ref([]), numberError=ref(false), manual=ref(false)
@@ -143,7 +156,7 @@ const plannedNumber=computed(()=>{
   return option.name+option.next
 })
 const defaultEmployeeId=computed(()=>employees.value.find(member=>member.defaultQuoteEmployee)?.id ?? null)
-watch(defaultEmployeeId,id=>{ if(createVisible.value && !editing.value && draft.employeeId==null)draft.employeeId=id })
+watch(defaultEmployeeId,id=>{ if(createVisible.value && !editing.value && draft.employeeId==null){ draft.employeeId=id; originalDraft.employeeId=id } })
 const formatTime=value=>value ? String(value).slice(0,16) : ''
 const normalizeSearch=value=>String(value||'').replace(/\s+/g,'').toLowerCase()
 const matches=computed(()=>{
@@ -253,7 +266,7 @@ function resetPrice(q) {
   price.quoteNote=q.quoteNote || ''
   reviewPrice.value=false
 }
-const money=v=>Number(v).toLocaleString('zh-CN',{minimumFractionDigits:2,maximumFractionDigits:2})
+
 const tag=s=>s==='pending'?'warning':s==='converted'?'success':'primary'
 const count=s=>quotes.value.filter(q=>!s||q.status===s).length
 async function refresh(){loading.value=true;try{await syncQuotes()}catch(e){ElMessage.error(e.message)}finally{loading.value=false}}
@@ -267,6 +280,7 @@ function openCreate(){
   editorEpoch.value++
   editing.value=null; manual.value=false
   Object.assign(draft,blank(),{employeeId:defaultEmployeeId.value})
+  originalDraft = { ...draft, attachments: [] }
   createVisible.value=true
   loadNumbering()
 }
@@ -328,6 +342,7 @@ function openEdit(q) {
   manual.value=false
   if(!q.sourceName)loadNumbering()
   Object.assign(draft, {sourceName:q.sourceName || '',manualNumber:'',title:q.title, requirement:q.requirement || '', attachments:(q.attachments || []).map(a=>({...a})), employeeId:q.employeeId})
+  originalDraft = { ...draft, attachments: [...draft.attachments] }
   createVisible.value = true
 }
 async function saveDraft(requestPrice) {

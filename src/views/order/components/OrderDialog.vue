@@ -1,14 +1,15 @@
 <template>
   <el-dialog
     :model-value="visible"
+    :close-on-click-modal="false" :before-close="requestClose"
     :title="form.id ? '编辑项目' : '新建项目'"
     width="560px"
     class="design-order-dialog"
     @update:model-value="(v) => emit('update:visible', v)"
-    @open="onOpen"
     @opened="onOpened"
   >
     <template #header="{ titleId }"><div class="design-form-heading"><h2 :id="titleId" :aria-label="form.id ? '编辑项目' : '新建项目'">{{ form.id ? '编辑项目' : '完整建单' }}</h2><p>完善项目信息，规范管理与交付</p></div></template>
+    <p v-if="restored" class="draft-banner" role="status">已恢复上次没建完的内容 <el-button link type="primary" @click="clearDraft">清空</el-button></p>
     <el-form ref="formRef" :model="form" :rules="rules" label-width="84px" class="design-order-form" data-paste-zone="新建项目">
       <el-form-item class="field-title" label="项目名" prop="title"><el-input ref="titleInput" v-model="form.title" placeholder="一句话写清做什么，比如：餐饮点餐小程序" /></el-form-item>
       <el-form-item class="field-customer" label="客户 / 联系方式"><div class="customer-inline"><el-input v-model="form.customer" placeholder="客户称呼"/><el-input v-model="form.contact" placeholder="微信/旺旺号，选填"/></div></el-form-item>
@@ -24,13 +25,13 @@
     </el-form>
 
     <template #footer>
-      <el-button class="secondary-form-cancel" @click="emit('update:visible', false)">取消</el-button>
-      <el-button type="primary" aria-label="保存" @click="submit">保存项目</el-button>
+      <el-button class="secondary-form-cancel" @click="requestClose">取消</el-button>
+      <el-button type="primary" aria-label="保存" :loading="saving" @click="submit">保存项目</el-button>
     </template>
 
     <!-- 快捷新建客户账号 -->
     <!-- 昵称按上面填的客户称呼带过来、密码先给一个随机的，只用填账号；打开光标就在「账号」里，回车创建 -->
-    <el-dialog v-model="quickVisible" title="新建客户账号" width="420px" append-to-body @opened="focusField(quickAccountInput)">
+    <el-dialog v-model="quickVisible" :close-on-click-modal="false" :before-close="closeQuick" title="新建客户账号" width="420px" append-to-body @opened="focusField(quickAccountInput)">
       <el-form ref="qFormRef" :model="quickForm" :rules="quickRules" label-width="64px" @submit.prevent>
         <el-form-item label="账号" prop="userName">
           <el-input ref="quickAccountInput" v-model="quickForm.userName" placeholder="客户登录用，字母/数字" @keydown.enter="enterQuickCreate" />
@@ -43,7 +44,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="quickVisible = false">取消</el-button>
+        <el-button @click="closeQuick">取消</el-button>
         <el-button type="primary" :loading="quickSaving" @click="submitQuickCreate">创建并绑定</el-button>
       </template>
     </el-dialog>
@@ -51,9 +52,11 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed } from 'vue'
+import { projectDraft } from '@/utils/projectDraft'
+import { useFormClose } from '@/utils/dialogGuard'
+import { ref, reactive, computed, watch } from 'vue'
 import { Plus } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
 import { CHANNEL, PRIORITY, STATUS, MEMBERS } from '@/constants/options'
@@ -64,9 +67,10 @@ import { onEnter, focusField } from '@/utils/formKeys'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
-  data: { type: Object, default: null }
+  data: { type: Object, default: null },
+  save: { type: Function, required: true }
 })
-const emit = defineEmits(['update:visible', 'save'])
+const emit = defineEmits(['update:visible'])
 
 const formRef = ref()
 const titleInput = ref(null)
@@ -82,6 +86,11 @@ const quickVisible = ref(false)
 const quickSaving = ref(false)
 const qFormRef = ref()
 const quickForm = reactive({ userName: '', nickName: '', password: '' })
+let initialQuick = ''
+const closeQuick = useFormClose({
+  visible: () => quickVisible.value, close: () => { quickVisible.value = false },
+  isDirty: () => JSON.stringify(quickForm) !== initialQuick, isBusy: () => quickSaving.value, name: 'project-account'
+})
 const quickRules = {
   userName: [
     { required: true, message: '请填写账号', trigger: 'blur' },
@@ -106,6 +115,7 @@ function openQuickCreate() {
   // 昵称先按上面填的客户称呼带过来，密码先给一个随机的（建好后会连同账号整理成一段话供复制），都可以改
   quickForm.nickName = String(form.customer || '').trim().slice(0, 30)
   quickForm.password = suggestPassword()
+  initialQuick = JSON.stringify(quickForm)
   quickVisible.value = true
   qFormRef.value?.clearValidate()
 }
@@ -145,6 +155,31 @@ const blank = () => ({
   attachments: []
 })
 const form = reactive(blank())
+const saving = ref(false)
+const restored = ref(false)
+let initial = ''
+let initializing = false
+const draft = () => projectDraft('project', currentMember.value.id)
+function resetForm(values) {
+  initializing = true
+  for (const key of Object.keys(form)) delete form[key]
+  Object.assign(form, blank(), values)
+  initializing = false
+}
+function clearDraft() {
+  draft().write(null)
+  restored.value = false
+  resetForm()
+  formRef.value?.clearValidate()
+}
+watch(form, () => {
+  if (initializing || !props.visible || form.id) return
+  draft().write(JSON.stringify(form) === initial ? null : form)
+}, { flush: 'sync' })
+const requestClose = useFormClose({
+  visible: () => props.visible, close: () => emit('update:visible', false),
+  isDirty: () => !!form.id && JSON.stringify(form) !== initial, isBusy: () => saving.value, name: () => props.data?.id ? 'edit-project' : 'project'
+})
 
 const rules = {
   title: [{ required: true, message: '请填写项目名', trigger: 'blur' }],
@@ -152,24 +187,37 @@ const rules = {
 }
 
 function onOpen() {
-  Object.assign(form, blank(), props.data || {})
+  resetForm(props.data ? JSON.parse(JSON.stringify(props.data)) : {})
+  initial = JSON.stringify(form)
+  const saved = !form.id && draft().read()
+  restored.value = !!saved
+  if (saved) resetForm(saved)
   formRef.value?.clearValidate()
   loadCustomers()
 }
+
+watch(() => props.visible, shown => { if (shown) onOpen() }, { immediate: true })
 
 // 新建时光标直接放进「项目名」；编辑时不抢（多半只是来改某一栏）
 function onOpened() {
   if (!form.id) focusField(titleInput)
 }
 
-function submit() {
-  formRef.value.validate((ok) => {
-    if (ok) emit('save', { ...form })
-  })
+async function submit() {
+  if (saving.value) return
+  saving.value = true
+  try {
+    if (!await formRef.value.validate().catch(() => false)) return
+    if (await props.save({ ...form })) {
+      if (!form.id) clearDraft()
+      emit('update:visible', false)
+    }
+  } finally { saving.value = false }
 }
 </script>
 
 <style scoped>
+.draft-banner { margin: 0 0 12px; color: #546981; font-size: 13px; }
 .deadline-box { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 
 .amount-hint {

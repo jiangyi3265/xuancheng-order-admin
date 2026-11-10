@@ -7,23 +7,24 @@
     <el-button v-if="canRemind" size="small" link type="primary" :loading="reminding" :aria-label="'提醒' + ownerName" :title="'提醒' + ownerName" @click.stop="remind">{{ compact ? '提醒' : '提醒' + ownerName }}</el-button>
   </span>
   <el-dialog v-if="visible" v-model="visible" title="加急截止时间" width="360px" align-center append-to-body
-    class="project-urgency-dialog" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+    class="project-urgency-dialog" :close-on-click-modal="false" :before-close="closeDraft" :close-on-press-escape="!saving" :show-close="!saving">
     <el-date-picker-panel v-model="day" type="date" value-format="YYYY-MM-DD" />
     <label class="urgency-clock">截止时间（北京时间）<input v-model="clock" type="time" required></label>
     <el-checkbox v-if="canReopen" v-model="reopen" :disabled="saving">将项目改为未处理，重新放入{{ ownerName }}的待办</el-checkbox>
     <p v-if="error" role="alert" class="urgency-error">{{ error }}</p>
     <template #footer>
       <el-button v-if="previousUntil" :disabled="saving" link type="danger" @click="save(null)">取消加急</el-button>
-      <el-button :disabled="saving" @click="visible = false">返回</el-button>
+      <el-button :disabled="saving" @click="closeDraft">返回</el-button>
       <el-button type="primary" :loading="saving" :disabled="!deadline || (deadline === previousUntil && !(canReopen && reopen))" @click="save(deadline)">保存</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
+import { useFormClose } from '@/utils/dialogGuard'
 import { ref, computed } from 'vue'
 import { AlarmClock } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { memberMap } from '@/constants/options'
 import { currentMember, getOrder, isBoss, nudge, setProjectUrgency } from '@/mock/store'
 
@@ -53,6 +54,13 @@ const day = ref(null)
 const clock = ref('')
 const deadline = computed(() => day.value && clock.value ? day.value + ' ' + clock.value : null)
 const error = ref('')
+
+const closeDraft = useFormClose({
+  visible: () => visible.value, close: () => { visible.value = false },
+  isDirty: () => !!reopen.value || day.value !== (previousUntil.value?.slice(0, 10) || null) ||
+    clock.value !== (previousUntil.value?.slice(11, 16) || '23:59'),
+  isBusy: () => saving.value
+})
 
 function resetDraft(value) {
   previousUntil.value = value || null

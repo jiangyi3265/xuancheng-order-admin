@@ -44,7 +44,8 @@
 
 <script setup>
 import { ref } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { InfoFilled, Paperclip, Check } from '@element-plus/icons-vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import { getOrderNotes, saveOrderNotes } from '@/mock/store'

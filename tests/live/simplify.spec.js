@@ -122,7 +122,7 @@ test('real browser: quick create links the customer, who sees progress; inbox sh
       expect((await api(boss, '/jiedan/customer', 'POST', { userName: cust, nickName: nick, password: pw, ownerId: sid2 })).code).toBe(200)
       await boss.reload()
       await test.step('quick create suggests the account, binds it and assigns to its employee', async () => {
-        await boss.locator('.fab').click()
+        await boss.getByRole('button',{name:'极速建单',exact:true}).click()
         const d = boss.locator('.design-quick-dialog')
         await d.getByPlaceholder(/直接粘贴客户消息/).fill(title2 + '\n商城小程序二期')
         await d.getByPlaceholder('选填：客户名 / 旺旺号，可选以前的客户').fill(cust)

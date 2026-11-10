@@ -11,7 +11,7 @@
         <div class="message-body">
           <strong>{{ message.title }} <small v-if="message.kind==='review'" class="review-label">等你确认</small></strong>
           <p>{{ message.content }}</p>
-          <span class="muted">{{ message.meta }}</span>
+          <span class="muted" :title="fmtTime(message.time)">{{ message.meta }}</span>
         </div>
         <i v-if="message.unread" class="unread-dot" aria-label="未读" title="有新回复"></i>
         <el-icon aria-hidden="true"><ArrowRight /></el-icon>
@@ -22,6 +22,7 @@
 </template>
 
 <script setup>
+import { fmtTime } from '@/utils/time'
 import { computed } from 'vue'
 import { ArrowRight, ChatDotRound, Document } from '@element-plus/icons-vue'
 import { useCustomerOrders } from '@/customer/utils/useCustomerOrders'

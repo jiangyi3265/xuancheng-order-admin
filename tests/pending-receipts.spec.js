@@ -18,6 +18,8 @@ for (const width of [390, 1440]) {
     })
     await page.goto('/#/order')
     const area = page.getByRole('region', { name: /^待处理/ })
+    const openMobile = async () => { if (width === 390) await area.getByRole('button', {name:/^待处理/}).click() }
+    await openMobile()
     const next = area.getByRole('listitem').filter({ hasText: '确认初稿' })
     const filter = area.getByRole('button', { name: /只看未提醒/ })
     await expect(next).toContainText('2026-11-08 10:30 · 费鹏飞 已提醒')
@@ -30,6 +32,7 @@ for (const width of [390, 1440]) {
     await filter.click()
     await expect(area.getByRole('listitem')).toHaveCount(2)
     await page.reload()
+    await openMobile()
     await expect(area.getByText('再提醒', { exact: true })).toHaveCount(2)
     await expect(area).toContainText('11:10 · 尚琦凯 已提醒')
     await expect(area.getByRole('link').first()).toHaveAttribute('href', /order\?id=1/)

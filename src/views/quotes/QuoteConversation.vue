@@ -7,10 +7,10 @@
       <p v-if="initialLoading" class="empty-thread">正在加载沟通记录…</p>
       <p v-else-if="!items.length && !error" class="empty-thread">还没有沟通记录。可以从需求、交付范围或工期聊起。</p>
       <article v-for="m in items" :key="m.id" :class="{mine:m.authorId===currentMember.id}">
-        <div class="byline">{{ m.authorName }} <time>{{ m.createdAt || '历史报价' }}</time></div>
+        <div class="byline">{{ m.authorName }} <time :title="fmtTime(m.createdAt)">{{ friendlyTime(m.createdAt) || '历史报价' }}</time></div>
         <div class="bubble">
-          <strong v-if="m.kind==='price'" class="price">报价 ¥{{ Number(m.amount).toLocaleString('zh-CN',{minimumFractionDigits:2}) }}</strong>
-          <p v-if="m.content">{{ m.content }}</p>
+          <strong v-if="m.kind==='price'" class="price">报价 {{ money(m.amount, 2) }}</strong>
+          <p v-if="m.content"><LinkText :text="m.content"/></p>
           <AttachmentView v-if="m.attachments?.length" :items="m.attachments" :size="64"/>
         </div>
       </article>
@@ -25,8 +25,11 @@
 </template>
 
 <script setup>
+import LinkText from '@/components/LinkText.vue'
+import { friendlyTime, fmtTime } from '@/utils/time'
+import { money } from '@/utils/payment'
 import {ref,computed,nextTick,watch,onBeforeUnmount,onMounted,toRefs} from 'vue'
-import {ElMessage} from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import {currentMember} from '@/mock/store'
 import {quoteRequest} from '@/stores/quotes'
 import {chatDraft,sendDraft} from '@/utils/chatDraft'

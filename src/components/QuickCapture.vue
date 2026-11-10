@@ -4,9 +4,10 @@
     <span>极速建单</span>
   </div>
 
-  <el-dialog v-model="open" title="⚡ 极速建单" width="560px" class="design-quick-dialog" @open="onOpen" @closed="reset">
+  <el-dialog v-model="open" title="⚡ 极速建单" width="560px" class="design-quick-dialog" :close-on-click-modal="false">
     <template #header="{titleId}"><div class="design-form-heading"><h2 :id="titleId" aria-label="⚡ 极速建单">快速建单</h2><p>粘贴需求，快速创建项目</p><span class="quick-lightning" aria-hidden="true"/></div></template>
     <div class="quick-design-body" data-paste-zone="极速建单">
+      <p v-if="restored" class="draft-banner" role="status">已恢复上次没建完的内容 <el-button link type="primary" @click="clearDraft">清空</el-button></p>
       <label class="design-field-label">粘贴需求内容 <em>*</em></label>
       <el-input ref="textRef" v-model="text" type="textarea" :rows="5" resize="none" placeholder="例如：做个餐饮点餐小程序，要堂食和外卖，预算 5000……（直接粘贴客户消息）"/>
       <p v-if="titlePreview" class="qc-title">项目名：<b>{{ titlePreview }}</b><span>（自动取自第一句话，建好后可以改）</span></p>
@@ -29,10 +30,14 @@
 </template>
 
 <script setup>
+import { money } from '@/utils/payment'
 defineExpose({show:()=>{open.value=true}})
 
 import { ref, watch, nextTick, computed, onMounted, onBeforeUnmount } from 'vue'
-import { ElMessage } from 'element-plus'
+import { useRoute, useRouter } from 'vue-router'
+import { projectDraft } from '@/utils/projectDraft'
+import { focusField } from '@/utils/formKeys'
+import { toast as ElMessage } from '@/utils/toast'
 import { Lightning, Promotion, MagicStick, PriceTag, User, ChatDotRound } from '@element-plus/icons-vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
@@ -41,7 +46,19 @@ import { CHANNEL, MEMBERS, memberMap } from '@/constants/options'
 import { parseOrderHints, titleFromText } from '@/utils/parse'
 
 const props=defineProps({showFab:{type:Boolean,default:true},shortcut:{type:Boolean,default:true}})
-const open = ref(false)
+const router = useRouter()
+const route = useRoute()
+const open = computed({
+  get: () => route.query.open === 'quick',
+  set(shown) {
+    if (shown === open.value || submitting.value) return
+    if (shown) { router.push({ path: route.path, query: { ...route.query, open: 'quick' } }); return }
+    const { open: ignored, ...query } = route.query
+    const parent = { path: route.path, query }
+    if (history.state?.back === router.resolve(parent).fullPath) router.back()
+    else router.replace(parent)
+  }
+})
 const text = ref('')
 const media = ref([])
 const amount = ref(0)
@@ -80,18 +97,24 @@ function dueLabel(d) {
   return `${m}月${dd}日（周${WEEK[new Date(y, m - 1, dd).getDay()]}）`
 }
 watch(text, (val) => {
+  if (restoring) return
   const h = parseOrderHints(val)
-  if (h.amount != null && !amount.value) { amount.value = h.amount; autoParts.amount = '报价 ¥' + h.amount }
+  if (h.amount != null && !amount.value) { amount.value = h.amount; autoParts.amount = '报价 ' + money(h.amount) }
   if (h.deadline && !deadline.value) { deadline.value = h.deadline; autoParts.deadline = '截止 ' + dueLabel(h.deadline) }
   // 只填客户称呼，不自动绑定客户账号：同名客户很常见，绑错了别人会看到这个项目
   if (h.customer && !customer.value) { customer.value = h.customer; autoParts.customer = '客户 ' + h.customer }
   if (h.contact && !contact.value) { contact.value = h.contact; autoParts.contact = '联系方式 ' + h.contact }
   const parts = Object.values(autoParts)
   if (parts.length) autoHint.value = '已识别：' + parts.join('、')
-})
+}, { flush: 'sync' })
 
 function onOpen() {
-  nextTick(() => textRef.value?.focus())
+  clearForm()
+  baseline = JSON.stringify(snapshotFields())
+  const saved = draft().read()
+  restored.value = !!saved
+  if (saved) setFields(saved)
+  nextTick(() => focusField(textRef))
   // 客户账号：老板看全部，员工看自己名下的；拿不到就只按以前的项目提示
   listCustomers().then((list) => { accounts.value = (list || []).filter((c) => c.status === '0') }).catch(() => {})
 }
@@ -147,20 +170,36 @@ function unbindAccount() {
 }
 // 自动派的人被手动改掉了，就不再提示「已按客户归属派给」
 watch(ownerId, (id) => {
-  if (autoOwnerName.value && memberMap[id]?.name !== autoOwnerName.value) {
+  if (!restoring && autoOwnerName.value && memberMap[id]?.name !== autoOwnerName.value) {
     autoOwnerName.value = ''
     ownerBeforeAuto.value = null
   }
 })
 // 改了客户名就不再是刚才选的那个账号
 watch(customer, (v) => {
-  if (!customerAccount.value) return
+  if (restoring || !customerAccount.value) return
   const a = accounts.value.find((c) => c.userName === customerAccount.value)
   const names = [a?.nickName, a?.userName, ...orders.filter((o) => o.customerAccount === customerAccount.value).map((o) => o.customer)]
   if (!names.some((n) => n && n.trim() === (v || '').trim())) unbindAccount()
-})
+}, { flush: 'sync' })
 
-function reset() {
+const restored = ref(false)
+let restoring = false
+const fields = { text, media, amount, customer, contact, customerAccount, autoOwnerName, ownerBeforeAuto, deadline, channel, ownerId, autoHint }
+const draft = () => projectDraft('quick', currentMember.value.id)
+let baseline = ''
+function snapshotFields() {
+  return Object.fromEntries(Object.entries(fields).map(([key, field]) => [key, field.value]))
+}
+function setFields(saved) {
+  restoring = true
+  for (const [key, field] of Object.entries(fields)) {
+    if (Object.hasOwn(saved, key)) field.value = saved[key]
+  }
+  restoring = false
+}
+function clearForm() {
+  restoring = true
   text.value = ''
   customer.value = ''
   contact.value = ''
@@ -171,8 +210,21 @@ function reset() {
   deadline.value = ''
   autoHint.value = ''
   autoParts = {}
-  // 保留 channel / ownerId（记住上次）
+  channel.value = localStorage.getItem('qc.channel') || 'wechat'
+  const saved = Number(localStorage.getItem('qc.owner'))
+  ownerId.value = isBoss.value && MEMBERS.some(m => m.id === saved && m.status === '0') ? saved : currentMember.value.id
+  restoring = false
 }
+function clearDraft() {
+  clearForm()
+  restored.value = false
+  draft().write(null)
+}
+watch(Object.values(fields), () => {
+  if (!open.value || restoring) return
+  const snapshot = snapshotFields()
+  draft().write(JSON.stringify(snapshot) === baseline ? null : snapshot)
+}, { deep: true, flush: 'sync' })
 
 const titlePreview = computed(() => titleFromText(text.value))
 // 项目名：取需求的第一句话，去掉「张总：」「你好，我们想做一个」这类开头
@@ -217,6 +269,7 @@ async function submit() {
   localStorage.setItem('qc.channel', channel.value)
   localStorage.setItem('qc.owner', String(autoOwnerName.value && ownerBeforeAuto.value != null ? ownerBeforeAuto.value : ownerId.value))
   ElMessage.success(isBoss.value && ownerId.value !== currentMember.value.id ? `已建单，已派给 ${ownerName.value}，等 TA 接收` : '已建单')
+  clearDraft()
   open.value = false
 }
 
@@ -229,11 +282,13 @@ function onKey(e) {
     submit()
   }
 }
+watch(open, shown => { if (shown) onOpen() }, { immediate: true, flush: 'post' })
 onMounted(() => {if(props.shortcut)window.addEventListener('keydown', onKey)})
 onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 </script>
 
 <style scoped>
+.draft-banner { margin: 0 0 12px; color: #546981; font-size: 13px; }
 .qc-deadline-chips { margin-top: 10px; }
 .qc-title { margin: 8px 0 0; font-size: 13px; color: #6f7d96; line-height: 1.5; overflow-wrap: anywhere; }
 .qc-title b { color: #17233b; font-weight: 600; }

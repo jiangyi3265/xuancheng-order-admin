@@ -26,7 +26,7 @@
 
 <script setup>
 import { ref, computed, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { EditPen } from '@element-plus/icons-vue'
 
 const props = defineProps({

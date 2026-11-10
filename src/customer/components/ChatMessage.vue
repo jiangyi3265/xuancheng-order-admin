@@ -1,7 +1,7 @@
 <template>
   <!-- 系统提示（创建 / 状态变更）：居中灰字 -->
   <div v-if="isSystem" class="sys">
-    <span>{{ item.content }}</span>
+    <span><LinkText :text="item.content"/></span>
     <em>{{ item.time }}</em>
   </div>
 
@@ -9,12 +9,12 @@
   <div v-else class="msg" :class="{ mine }">
     <div class="avatar">{{ avatarText }}</div>
     <div class="body">
-      <div class="meta">
+      <div v-if="showMeta" class="meta">
         <span class="name">{{ mine ? '我' : item.user }}</span>
-        <span class="time">{{ item.time }}</span>
+        <time class="time" :title="fmtTime(item.time)">{{ friendlyTime(item.time) }}</time>
       </div>
       <div class="bubble">
-        <div v-if="item.content" class="text">{{ item.content }}</div>
+        <div v-if="item.content" class="text"><LinkText :text="item.content"/></div>
 
         <div v-if="mediaItems.length" class="media">
           <MediaThumb v-for="(m, i) in mediaItems" :key="'m' + i" :item="m" :siblings="mediaItems" :size="120" />
@@ -39,6 +39,8 @@
 </template>
 
 <script setup>
+import LinkText from '@/components/LinkText.vue'
+import { friendlyTime, fmtTime } from '@/utils/time'
 import { computed } from 'vue'
 import { Document } from '@element-plus/icons-vue'
 import MediaThumb from './MediaThumb.vue'
@@ -46,6 +48,7 @@ import { SYSTEM_TYPES } from '@/customer/constants/options'
 
 const props = defineProps({
   item: { type: Object, required: true },
+  showMeta: { type: Boolean, default: true },
   mine: { type: Boolean, default: false }
 })
 

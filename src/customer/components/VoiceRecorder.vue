@@ -23,7 +23,7 @@
 <script setup>
 import { ref, computed, onBeforeUnmount } from 'vue'
 import { Microphone } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 
 const emit = defineEmits(['recorded'])
 

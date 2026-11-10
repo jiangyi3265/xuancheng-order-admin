@@ -18,8 +18,9 @@
 </template>
 
 <script setup>
+import { offerOrderUndo } from '@/utils/orderUndo'
 import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { isBoss, currentMember, getOrder, setOrderHandled } from '@/mock/store'
 
 const props = defineProps({ order: {type: Object, required: true} })
@@ -29,8 +30,18 @@ async function mark(handled) {
   if (saving.value || !canMark.value) return
   saving.value = true
   const row = props.order
+  const previous = Boolean(row.handled)
+  const hadMark = Boolean(row.handledTime)
   try {
-    await setOrderHandled(row, handled)
+    const updated = await setOrderHandled(row, handled)
+    // The API can mark either state, but cannot remove a project's very first mark.
+    if (hadMark && previous !== handled) {
+      const markedAt = updated.handledTime
+      offerOrderUndo(row.id, 'manual', handled ? '已标为已处理' : '已标为未处理',
+        cur => cur.handled === handled && cur.handledTime === markedAt, cur => setOrderHandled(cur, previous))
+    } else {
+      ElMessage.success(handled ? '已标为已处理' : '已加入待处理')
+    }
   } catch (e) {
     ElMessage.error(e.message || '未能保存处理状态')
     await getOrder(row.id).catch(() => {})

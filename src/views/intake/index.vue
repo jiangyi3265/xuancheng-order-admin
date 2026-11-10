@@ -81,7 +81,7 @@
 <script setup>
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Histogram, CircleCheckFilled } from '@element-plus/icons-vue'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import { customerHttp, customerLogout, customerName } from '@/mock/store'

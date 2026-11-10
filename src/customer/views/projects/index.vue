@@ -109,7 +109,7 @@
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { ArrowDown, ArrowRight, ChatDotRound, Close, Document, Filter, FolderOpened, Plus, Search } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { useCustomerOrders } from '@/customer/utils/useCustomerOrders'
 import { hasNewReply } from '@/customer/utils/seen'
 import { statusMap } from '@/customer/constants/options'

@@ -34,7 +34,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Histogram, User, Lock } from '@element-plus/icons-vue'
 import { customerLogin, getCaptcha } from '@/mock/store'
 

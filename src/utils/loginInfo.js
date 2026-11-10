@@ -1,7 +1,8 @@
 // 建好账号 / 重置密码后，顺手把「地址 + 账号 + 密码」整理成一段话，一键复制发到微信，不用再自己拼。
 // 用右上角的通知卡片（不挡操作），点「复制这段话」才复制，关掉就算了。
 import { h } from 'vue'
-import { ElMessage, ElNotification } from 'element-plus'
+import { ElNotification } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 
 export function loginLink() {
   return window.location.origin + '/#/login'

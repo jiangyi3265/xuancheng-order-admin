@@ -51,6 +51,7 @@
           <div class="title">{{ currentTitle }}</div>
         </div>
         <WorkSearch v-if="!isMobile" ref="jumpRef" class="header-search" :loading="searchLoading" />
+        <el-button v-if="!isMobile" type="primary" plain class="header-quick" title="极速建单（Alt+N）" @click="quickCapture.show()"><el-icon><Lightning /></el-icon>极速建单</el-button>
         <div class="user">
           <el-avatar :size="30" :style="{ background: currentMember.color }">
             {{ currentMember.name.slice(-1) }}
@@ -73,7 +74,7 @@
         <el-badge :is-dot="item.path === '/workbench' && todoCount > 0"><el-icon><component :is="route.path===item.path && item.icon==='House'?'HomeFilled':route.path===item.path && item.icon==='User'?'UserFilled':item.icon" /></el-icon></el-badge><span>{{ item.label }}</span>
       </router-link>
     </nav>
-    <QuickCapture :show-fab="!isMobile && ['/order','/workbench'].includes(route.path)" />
+    <QuickCapture ref="quickCapture" :show-fab="false" />
     <SettleDialog />
     <ChangePasswordDialog v-model:visible="pwdVisible" />
   </el-container>
@@ -88,7 +89,8 @@ import { isMobile } from '@/utils/useMobile'
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { SwitchButton, Key, Menu } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
+import { ElMessageBox, ElNotification } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { menuRoutes } from '@/router'
 
 import QuickCapture from '@/components/QuickCapture.vue'
@@ -104,6 +106,7 @@ const BASE_TITLE = '玄成科技 · 接单系统'
 
 const route = useRoute()
 const router = useRouter()
+const quickCapture = ref(null)
 const activeMenu = computed(() => route.path)
 // 「成员管理」「操作日志」只有总管理员看得到；员工的菜单里不放“数据站”，只留干活用得到的
 const visibleRoutes = computed(() =>

@@ -11,6 +11,7 @@ const props = defineProps({
   height: { type: Number, default: 300 }
 })
 
+const emit = defineEmits(['select'])
 const el = ref(null)
 let chart = null
 let ro = null
@@ -18,6 +19,7 @@ let ro = null
 function ensure() {
   if (!chart && el.value && el.value.clientWidth > 0 && el.value.clientHeight > 0) {
     chart = echarts.init(el.value)
+    chart.on('click', 'series', event => emit('select', event))
   }
   return chart
 }

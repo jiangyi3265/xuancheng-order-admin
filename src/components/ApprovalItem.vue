@@ -48,7 +48,7 @@
 // 一条申请：老板看到“批准 / 驳回…”，申请人看到“撤回”。
 import { isMobile } from '@/utils/useMobile'
 import { ref, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import ReasonDialog from '@/components/ReasonDialog.vue'
 import { isBoss, currentMember, approveApproval, rejectApproval, withdrawApproval } from '@/mock/store'
 

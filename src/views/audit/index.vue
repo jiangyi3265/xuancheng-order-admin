@@ -82,7 +82,7 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Refresh, Search } from '@element-plus/icons-vue'
 import { listAudit } from '@/mock/store'
 import { fmtTime } from '@/utils/time'

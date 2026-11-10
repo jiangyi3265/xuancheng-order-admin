@@ -120,7 +120,7 @@
 import BoardHeader from '@/components/board/BoardHeader.vue'
 import {isMobile} from '@/utils/useMobile'
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Bell, User, Promotion, Check, AlarmClock, Share, CopyDocument, Link } from '@element-plus/icons-vue'
 import { isNotifySupported, notifyState, enableNotify, disableNotify, hasBackgroundPush, testSystemNotification } from '@/utils/notify'
 import { MEMBERS } from '@/constants/options'

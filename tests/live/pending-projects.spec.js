@@ -22,6 +22,8 @@ for (const width of [1440, 390]) {
     const area = page.getByRole('region',{name:/^待处理/})
     const links = area.getByRole('link').filter({hasText:title})
     const showAll = async () => {
+      const toggle = area.getByRole('button', {name:/^待处理/})
+      if (width === 390 && await toggle.getAttribute('aria-expanded') === 'false') await toggle.click()
       await expect(area.getByRole('link').first()).toBeVisible()
       const btn = area.getByRole('button',{name:/查看全部/})
       if (await btn.isVisible()) await btn.click()

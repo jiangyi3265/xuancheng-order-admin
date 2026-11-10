@@ -9,7 +9,7 @@
     </div>
 
     <el-input v-model="keyword" class="entity-search" placeholder="搜索客户名称或登录账号" clearable prefix-icon="Search" />
-    <div class="entity-cards" v-loading="loading"><article v-for="row in filtered" :key="row.userId" class="entity-card"><div class="entity-card-head"><el-avatar :size="46">{{ (row.nickName || row.userName).slice(-1) }}</el-avatar><div><h3>{{ row.nickName || row.userName }}</h3><p>账号：{{ row.userName }}</p><p>负责人：{{ row.ownerName || currentMember.name }} · {{ row.projectCount || 0 }} 个项目</p></div><el-tag :type="row.status==='0'?'success':'info'">{{ row.status==='0'?'正常':'停用' }}</el-tag></div><div class="entity-actions"><el-button @click="selectedCustomer=row">编辑</el-button><el-button @click="doReset(row)">重置密码</el-button></div></article><el-empty v-if="!filtered.length&&!loading" description="暂无客户账号" /></div>
+    <div class="entity-cards" v-loading="loading"><article v-for="row in filtered" :key="row.userId" class="entity-card"><div class="entity-card-head"><el-avatar :size="46">{{ (row.nickName || row.userName).slice(-1) }}</el-avatar><div><h3>{{ row.nickName || row.userName }}</h3><p>账号：{{ row.userName }}</p><p>负责人：{{ row.ownerName || currentMember.name }} · {{ row.projectCount || 0 }} 个项目</p></div><el-tag :type="row.status==='0'?'success':'info'">{{ row.status==='0'?'正常':'停用' }}</el-tag></div><div class="entity-actions"><el-button @click="selectedCustomer=row">编辑</el-button><el-button @click="doReset(row)">重置密码</el-button></div></article><el-empty v-if="!filtered.length && !loading" :description="keyword ? '没找到匹配的客户' : '还没有客户账号'"><el-button v-if="keyword" @click="keyword=''">清空搜索</el-button><el-button v-else type="primary" plain @click="openCreate">新建客户账号</el-button></el-empty></div>
     <el-table :data="filtered" v-loading="loading" border stripe>
       <el-table-column label="账号" prop="userName" min-width="130" />
       <el-table-column label="昵称" prop="nickName" min-width="130" />
@@ -40,14 +40,14 @@
         </template>
       </el-table-column>
       <template #empty>
-        <el-empty description="还没有客户账号" />
+        <el-empty v-if="!filtered.length && !loading" :description="keyword ? '没找到匹配的客户' : '还没有客户账号'"><el-button v-if="keyword" @click="keyword=''">清空搜索</el-button><el-button v-else type="primary" plain @click="openCreate">新建客户账号</el-button></el-empty>
       </template>
     </el-table>
 
     <el-dialog :model-value="!!selectedCustomer" title="客户信息" @close="selectedCustomer=null"><template v-if="selectedCustomer"><div class="board-account-profile"><el-avatar :size="58">{{ (selectedCustomer.nickName||selectedCustomer.userName).slice(-1) }}</el-avatar><h2>{{ selectedCustomer.nickName || selectedCustomer.userName }}</h2><p>客户账号</p></div><el-form label-position="top"><el-form-item label="登录账号"><el-input :model-value="selectedCustomer.userName" readonly/></el-form-item><el-form-item label="客户名称"><el-input :model-value="selectedCustomer.nickName" readonly/></el-form-item><el-form-item label="所属负责人"><el-input :model-value="selectedCustomer.ownerName || currentMember.name" readonly/></el-form-item></el-form><p class="muted">转交负责人仅影响后续提交的需求，现有项目负责人保持不变。</p><div class="board-account-actions"><el-button v-if="isBoss" @click="openTransfer(selectedCustomer)">转交负责人</el-button><el-button @click="doReset(selectedCustomer)">重置密码</el-button><el-button type="danger" plain @click="doDelete(selectedCustomer)">删除客户账号</el-button></div></template><template #footer><el-button type="primary" @click="selectedCustomer=null">完成</el-button></template></el-dialog>
     <!-- 新建账号 -->
     <!-- 打开光标就在「账号」里，填完按回车就创建 -->
-    <el-dialog v-model="createVisible" title="新建客户账号" width="440px" @opened="focusField(accountInput)">
+    <el-dialog v-model="createVisible" :before-close="closeCreate" :close-on-click-modal="false" title="新建客户账号" width="440px" @opened="focusField(accountInput)">
       <el-form ref="formRef" :model="createForm" :rules="rules" label-width="72px" @submit.prevent>
         <el-form-item label="账号" prop="userName">
           <el-input ref="accountInput" v-model="createForm.userName" placeholder="客户登录用，字母/数字" @keydown.enter="enterCreate" />
@@ -67,13 +67,13 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="createVisible = false">取消</el-button>
+        <el-button @click="closeCreate()">取消</el-button>
         <el-button type="primary" :loading="saving" @click="submitCreate">创建</el-button>
       </template>
     </el-dialog>
 
     <!-- 转交客户（仅总管理员） -->
-    <el-dialog v-model="transferVisible" title="转交客户" width="420px">
+    <el-dialog v-model="transferVisible" :before-close="closeTransfer" :close-on-click-modal="false" title="转交客户" width="420px">
       <p class="transfer-tip">
         把「{{ transferRow?.userName }}」转交给：
       </p>
@@ -82,7 +82,7 @@
       </el-select>
       <div class="field-hint">只影响之后提交的新需求；已有项目的负责人不变，需要的话在项目里点负责人名字改派。</div>
       <template #footer>
-        <el-button @click="transferVisible = false">取消</el-button>
+        <el-button @click="closeTransfer()">取消</el-button>
         <el-button type="primary" :loading="saving" @click="submitTransfer">确定转交</el-button>
       </template>
     </el-dialog>
@@ -90,10 +90,12 @@
 </template>
 
 <script setup>
+import { useFormClose } from '@/utils/dialogGuard'
 const selectedCustomer = ref(null)
 
 import { ref, reactive, computed, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Plus } from '@element-plus/icons-vue'
 import { MEMBERS } from '@/constants/options'
 import {
@@ -114,6 +116,12 @@ const createVisible = ref(false)
 const formRef = ref()
 const accountInput = ref(null)
 const createForm = reactive({ userName: '', nickName: '', password: '', ownerId: null })
+let initialForm = ''
+const closeCreate = useFormClose({
+  visible: () => createVisible.value, close: () => { createVisible.value = false },
+  isDirty: () => JSON.stringify(createForm) !== initialForm, isBusy: () => saving.value
+})
+
 // 可以当客户负责人的人：总管理员自己 + 未停用的下属
 const assignable = computed(() => MEMBERS.filter((m) => m.status === '0'))
 
@@ -121,6 +129,10 @@ const transferVisible = ref(false)
 const transferRow = ref(null)
 const transferOwnerId = ref(null)
 
+const closeTransfer = useFormClose({
+  visible: () => transferVisible.value, close: () => { transferVisible.value = false },
+  isDirty: () => transferOwnerId.value !== transferRow.value?.ownerId, isBusy: () => saving.value
+})
 const rules = {
   userName: [
     { required: true, message: '请填写账号', trigger: 'blur' },
@@ -148,6 +160,7 @@ function openCreate() {
   createForm.nickName = ''
   createForm.password = suggestPassword()
   createForm.ownerId = currentMember.value.id
+  initialForm = JSON.stringify(createForm)
   createVisible.value = true
   formRef.value?.clearValidate()
 }

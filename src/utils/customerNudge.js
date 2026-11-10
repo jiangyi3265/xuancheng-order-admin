@@ -1,7 +1,8 @@
 // 催客户验收 / 催款：把要说的话整理好，省得每次自己打。
 // 客户不一定开着系统，所以两件事一起做：系统里留一条，同样的话复制好，方便再粘到微信发一遍。
 import { h } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { addProgress } from '@/mock/store'
 import { loginLink } from '@/utils/loginInfo'
 import { owed, money } from '@/utils/payment'

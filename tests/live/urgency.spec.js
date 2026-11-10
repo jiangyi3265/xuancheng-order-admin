@@ -55,6 +55,7 @@ for (const width of [1440, 390]) {
       await cell(17).click()
       await time.fill('09:10')
       await dialog.getByRole('button', {name:'返回', exact:true}).click()
+      await page.getByRole('button', {name:'放弃', exact:true}).click()
       await expect(detail).toContainText('-15 16:35')
       await detail.click()
       await cell(17).click()

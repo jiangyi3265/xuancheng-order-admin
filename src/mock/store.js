@@ -1,4 +1,6 @@
 import {inWeChat,rememberWechatSession,restoreWechatSession,forgetWechatSession} from '@/utils/wechatSession'
+import { clearProjectDrafts } from '@/utils/projectDraft'
+import { clearProjectList } from '@/utils/projectListState'
 import { disableNotify } from '@/utils/notify'
 import { reactive, ref, computed } from 'vue'
 import { setStaff, memberMap } from '@/constants/options'
@@ -94,6 +96,11 @@ export function logout() {
   // 清掉内存里的身份和项目，避免同一浏览器换账号登录后看到上一个人的数据
   me.value = null
   orders.splice(0, orders.length)
+  ordersReady.value = false
+  ordersError.value = ''
+  orderListRequest++
+  clearProjectList()
+  clearProjectDrafts()
   approvals.splice(0, approvals.length)
   lastStamp = null
   setStaff([])
@@ -262,6 +269,9 @@ export async function deleteStaff(userId) {
 }
 
 export const orders = reactive([])
+export const ordersReady = ref(false)
+export const ordersError = ref('')
+let orderListRequest = 0
 
 // 申请（员工的改报价/取消/删除/收款）：老板看到全部，员工只看到自己的
 export const approvals = reactive([])
@@ -310,7 +320,17 @@ function upsert(vo) {
 }
 
 export async function loadOrders() {
-  const data = await http(`${BASE}/list`)
+  const request = ++orderListRequest
+  if (!ordersReady.value) ordersError.value = ''
+  let data
+  try {
+    data = await http(`${BASE}/list`)
+    if (!Array.isArray(data)) throw new Error('服务器未返回项目列表')
+  } catch (err) {
+    if (request === orderListRequest && !ordersReady.value) ordersError.value = err.message || '连接失败'
+    throw err
+  }
+  if (request !== orderListRequest) return orders
   const existing = new Map(orders.map((o) => [o.id, o]))
   const next = (data || []).map((vo) => {
     const current = existing.get(vo.id)
@@ -319,6 +339,8 @@ export async function loadOrders() {
     return current
   })
   orders.splice(0, orders.length, ...next)
+  ordersReady.value = true
+  ordersError.value = ''
   return orders
 }
 
@@ -326,11 +348,20 @@ export async function loadOrders() {
 // 每个人每 10 秒一次的整表请求，就变成了一个几十字节的小请求。
 let lastStamp = null
 export async function syncOrders(force = false) {
-  const { stamp } = await http(`${BASE}/stamp`)
-  if (!force && stamp === lastStamp) return false
+  const session = token.value
+  let stamp
+  try {
+    const response = await http(`${BASE}/stamp`)
+    stamp = response.stamp
+  } catch (err) {
+    if (session && session === token.value && !ordersReady.value) ordersError.value = err.message || '连接失败'
+    throw err
+  }
+  if (!session || session !== token.value) return false
+  if (ordersReady.value && !force && stamp === lastStamp) return false
   await loadOrders()
   await loadApprovals().catch(() => {})
-  lastStamp = stamp
+  if (token.value === session) lastStamp = stamp
   return true
 }
 
@@ -402,7 +433,9 @@ export async function changeMyPassword(oldPassword, newPassword) {
 }
 
 export async function getOrder(id) {
-  return upsert(await http(`${BASE}/${id}`))
+  const session = token.value
+  const detail = await http(`${BASE}/${id}`)
+  return session === token.value ? upsert(detail) : null
 }
 
 export async function getOrderVersion(id) {

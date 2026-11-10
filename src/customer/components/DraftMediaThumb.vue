@@ -13,7 +13,7 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { EditPen } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import MediaThumb from './MediaThumb.vue'
 import { customerToken } from '@/customer/mock/store'
 import { extOf } from '@/customer/utils/file'

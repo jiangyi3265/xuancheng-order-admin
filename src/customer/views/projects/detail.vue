@@ -23,12 +23,12 @@
     <section v-if="order && detailTab==='overview'" class="customer-project-summary">
       <ProgressSteps :status="order.status" :deadline="order.deadline" class="summary-progress" />
       <p v-if="order.status === 'review'" class="accept-hint" role="status">团队已经交付，请检查一下。没问题点「确认验收」，有不满意的地方点「还有问题」。</p>
-      <div class="info-row summary-price"><label><el-icon><PriceTag/></el-icon> 报价：</label><span v-if="Number(order.amount)">¥{{ Number(order.amount).toLocaleString() }}</span><span v-else class="summary-unpriced">待报价</span></div>
+      <div class="info-row summary-price"><label><el-icon><PriceTag/></el-icon> 报价：</label><span v-if="Number(order.amount)">{{ money(order.amount) }}</span><span v-else class="summary-unpriced">待报价</span></div>
       <div class="info-row"><label><el-icon><Calendar/></el-icon> 截止日期：</label><span>{{ order.deadline || '未设置' }}</span></div>
       <div class="info-row"><label><el-icon><User/></el-icon> 负责团队：</label><span>{{ TEAM_NAME }}</span></div>
     </section>
     <nav v-if="order" class="detail-tabs" aria-label="项目详情分区"><button v-for="t in detailTabs" :key="t.key" :aria-current="detailTab===t.key ? 'page' : undefined" :class="{active:detailTab===t.key}" @click="detailTab=t.key">{{ t.label }}<i v-if="t.key==='chat' && chatHasNew" class="tab-new-dot" aria-hidden="true" title="团队有新回复"></i></button></nav>
-    <main ref="scroller" class="scroll">
+    <main ref="scroller" class="scroll" @scroll.passive="onChatScroll">
       <div v-if="loading" class="state"><el-icon class="loading"><Loading /></el-icon> 加载中...</div>
 
       <div v-else-if="loadError && !order" class="state error-state">
@@ -79,17 +79,17 @@
                   <div class="bug-body" :class="{'split-record': issueId && historyFor(bug).length}">
                     <div class="issue-original">
                     <div class="issue-heading"><strong><el-icon aria-hidden="true"><Document /></el-icon>需求 #{{ bug.id }}</strong><RequirementStatus :status="bug.progressStatus || bug.status" /></div>
-                    <p class="issue-description">{{ bug.content || '附件需求' }}</p>
+                    <p class="issue-description"><LinkText :text="bug.content || '附件需求'" /></p>
                     <AttachmentView v-if="bug.attachments?.length" :items="bug.attachments" :gallery="problemImages" :size="82" />
-                    <div class="bug-meta">{{ bug.createdBy || '客户' }} 提交<template v-if="bug.time"><span>·</span><time>{{ bug.time }}</time></template></div>
+                    <div class="bug-meta">{{ bug.createdBy || '客户' }} 提交<template v-if="bug.time"><span>·</span><time :title="fmtTime(bug.time)">{{ friendlyTime(bug.time) }}</time></template></div>
 
                     </div>
                     <div v-if="historyFor(bug).length" class="bug-updates">
                       <h3>补充记录 <small>{{ historyFor(bug).length }}</small></h3>
                       <div v-for="u in historyFor(bug)" :key="u.id" class="bug-update" :id="'issue-reply-'+u.id"
                         :class="{'target-reply': issueId && targetUpdateId === String(u.id)}" :data-team-reply="u.senderKind === 'team' ? u.id : undefined">
-                        <div class="update-meta"><strong v-if="u.senderKind === 'team'">团队回复</strong>{{ u.createdBy || '客户' }} · {{ u.time }}</div>
-                        <p>{{ u.content || '只有附件' }}</p>
+                        <div class="update-meta"><strong v-if="u.senderKind === 'team'">团队回复</strong>{{ u.createdBy || '客户' }} · <time :title="fmtTime(u.time)">{{ friendlyTime(u.time) }}</time></div>
+                        <p><LinkText :text="u.content || '只有附件'"/></p>
                         <AttachmentView v-if="u.attachments && u.attachments.length" :items="u.attachments" :gallery="problemImages" :size="64" />
                       </div>
                     </div>
@@ -144,7 +144,7 @@
         </section>
 
         <section v-show="detailTab==='overview'" class="info">
-          <div class="info-row col"><label>需求内容</label><p>{{ order.requirement || '-' }}</p></div>
+          <div class="info-row col"><label>需求内容</label><p><LinkText :text="order.requirement || '-'"/></p></div>
           <div v-if="order.attachments && order.attachments.length" class="info-row col">
             <label>需求材料</label>
             <div class="mats">
@@ -158,12 +158,13 @@
         </div>
 
         <div v-show="detailTab==='chat'" class="chat">
-          <ChatMessage
-            v-for="(t, i) in chatItems"
-            :key="i"
+          <template v-for="({item:t, day, meta}, i) in chatRows" :key="t.id || i">
+          <div v-if="day" class="chat-day">{{ day }}</div>
+          <ChatMessage :show-meta="meta"
             :item="t"
             :mine="t.type === 'message'"
           />
+          </template>
           <div v-if="!chatItems.length" class="empty-chat">
             还没有沟通消息，发一条给团队
           </div>
@@ -173,19 +174,25 @@
 
     <div v-if="order && detailTab==='overview' && order.status === 'review'" class="detail-footer"><el-button @click="detailTab='bugs'; openBugCreate()"><el-icon><ChatDotRound/></el-icon>还有问题</el-button><el-button type="primary" :loading="accepting" @click="confirmAccept"><el-icon><CircleCheck/></el-icon>确认验收</el-button></div>
     <div v-else-if="order && detailTab==='overview'" class="detail-footer"><el-button @click="detailTab='chat'"><el-icon><Phone/></el-icon>联系负责人</el-button><el-button type="primary" @click="detailTab='bugs'; openBugCreate()"><el-icon><ChatDotRound/></el-icon>反馈问题</el-button></div>
-    <el-dialog v-model="bugCreateOpen" title="反馈问题" class="customer-issue-dialog" align-center append-to-body><section class="bug-associated"><small>关联项目</small><h3>{{ order?.title }}</h3></section><el-form label-position="top" data-paste-zone="反馈问题"><el-form-item label="问题说明"><el-input v-model="bugDraft.text" :disabled="bugDraft.sending" type="textarea" :rows="7" placeholder="请描述具体问题、出现位置及预期效果"/></el-form-item><el-form-item label="截图 / 相关文件"><AttachmentUploader :draft="bugDraft" class="bug-upload"/></el-form-item></el-form><p class="muted">提交后负责人会收到通知，你可以在问题列表查看处理进度。</p><template #footer><el-button @click="bugCreateOpen=false">取消</el-button><el-button type="primary" :loading="bugDraft.sending" :disabled="!!bugDraft.annotating || !!bugDraft.attachmentWaitList.length" @click="submitBug">提交反馈</el-button></template></el-dialog>
+    <el-dialog v-model="bugCreateOpen" title="反馈问题" :close-on-click-modal="false" class="customer-issue-dialog" align-center append-to-body><section class="bug-associated"><small>关联项目</small><h3>{{ order?.title }}</h3></section><el-form label-position="top" data-paste-zone="反馈问题"><el-form-item label="问题说明"><el-input v-model="bugDraft.text" :disabled="bugDraft.sending" type="textarea" :rows="7" placeholder="请描述具体问题、出现位置及预期效果"/></el-form-item><el-form-item label="截图 / 相关文件"><AttachmentUploader :draft="bugDraft" class="bug-upload"/></el-form-item></el-form><p class="muted">提交后负责人会收到通知，你可以在问题列表查看处理进度。</p><template #footer><el-button @click="bugCreateOpen=false">取消</el-button><el-button type="primary" :loading="bugDraft.sending" :disabled="!!bugDraft.annotating || !!bugDraft.attachmentWaitList.length" @click="submitBug">提交反馈</el-button></template></el-dialog>
     <MessageComposer v-if="showIssueComposer && updateDraft" :key="reviewAdjusting ? 'review-'+focusedBug.review.id : focusedBug.id" ref="issueComposer" issue
       :draft="updateDraft" :adjusting="adjusting" :reviewing="reviewAdjusting" :reference-image="focusedBug.review?.afterImage"
       :blocked="statusUpdatingBugId===focusedBug.id || deletingBugId===focusedBug.id" @cancel-adjust="cancelAdjustment" @send="submitBugUpdate(focusedBug)" />
+    <button v-if="detailTab==='chat' && hasNewChat" class="new-chat-jump" @click="scrollBottom()">有新消息 ↓</button>
     <MessageComposer v-if="order && detailTab==='chat'" :draft="draft" @send="onSend" />
   </div>
 </template>
 
 <script setup>
+import LinkText from '@/components/LinkText.vue'
+import { friendlyTime, fmtTime } from '@/utils/time'
+import { chatGroup, useChatArrival } from '@/utils/chatDisplay'
+import { money } from '@/utils/payment'
 import { Document } from '@element-plus/icons-vue'
 import { computed, ref, toRefs, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { ArrowLeft, Loading, CirclePlus, ArrowDown, ArrowUp, Refresh } from '@element-plus/icons-vue'
 import { useVisibleIssueReplies } from '@/customer/utils/useVisibleIssueReplies'
 import { issueGallery } from '@/utils/imagePreview'
@@ -243,9 +250,15 @@ const statusUpdatingBugId = ref(null)
 const activeUpdateBugId = ref(null)
 const updatesInFlight = ref(0)
 const scroller = ref(null)
+const { hasNew: hasNewChat, onScroll: onChatScroll, onArrival } = useChatArrival(scroller)
 let poller = null
 
 const chatItems = computed(() => (order.value?.timeline || []).filter((t) => t.type === 'message' || t.type === 'reply'))
+const chatRows = computed(() => chatItems.value.map((item, i, items) => ({ item, ...chatGroup(item, items[i - 1]) })))
+watch(() => chatItems.value.at(-1)?.id, (last, old) => {
+  if (old != null && last != null && detailTab.value === 'chat') onArrival(scrollBottom)
+})
+
 // 团队有新回复：「沟通」上亮红点；打开沟通看过就记下，列表和消息页的红点一起灭
 const lastChat = computed(() => chatItems.value[chatItems.value.length - 1])
 const chatHasNew = computed(() => detailTab.value !== 'chat' && hasNewReply({ id, lastMessage: lastChat.value }))
@@ -356,6 +369,7 @@ watch(detailTab, tab => { if(tab==='chat') scrollBottom(); else if (!route.query
 
 function scrollBottom(smooth = false, retry = 2) {
   if(detailTab.value!=='chat') return
+  hasNewChat.value = false
   nextTick(() => {
     const el = scroller.value
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
@@ -401,9 +415,7 @@ async function syncNow() {
   try {
     const version = await getMyOrderVersion(id)
     if (Number(version?.version || 0) !== Number(order.value.version || 0)) {
-      const before = chatItems.value.length
       await load(false, true)
-      if (chatItems.value.length > before) scrollBottom(true)
     } else {
       syncState.value = 'online'
     }

@@ -1,5 +1,5 @@
 <template>
-  <el-dialog
+  <el-dialog :close-on-click-modal="false" :before-close="requestClose"
     :model-value="visible"
     :title="tab==='history' ? '收款流水' : isBoss ? '登记收款' : '申请收款'"
     width="480px"
@@ -71,7 +71,7 @@
     </div>
 
     <template #footer>
-      <el-button @click="emit('update:visible', false)">关闭</el-button>
+      <el-button @click="requestClose">关闭</el-button>
       <el-button v-if="tab==='history'" type="primary" @click="tab='entry'">{{ isBoss ? '登记收款' : '申请收款' }}</el-button>
       <el-button v-else type="primary" :loading="saving" @click="submit">{{ isBoss ? '记这一笔' : '提交收款申请' }}</el-button>
     </template>
@@ -79,9 +79,11 @@
 </template>
 
 <script setup>
+import { useFormClose } from '@/utils/dialogGuard'
 import ProjectCover from '@/components/ProjectCover.vue'
 import { ref, reactive, computed, watch, nextTick } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { getOrder, addPayment, removePayment, requestApproval, approvals, isBoss } from '@/mock/store'
 import { owed, money, payState } from '@/utils/payment'
 import { todayStr } from '@/utils/date'
@@ -129,12 +131,13 @@ async function submitFromAmount(e) {
   submit()
 }
 
+let initialDate
 async function onOpen() {
   // 点「记收款」就是要记一笔：直接到登记页，金额已经按还欠的填好（以前先进流水页，还得再点一下）。
   // 已经收清的才先看流水
   tab.value = payState(props.order) === 'full' ? 'history' : 'entry'
   cur.value = props.order
-  form.payDate = todayStr()
+  form.payDate = initialDate = todayStr()
   form.note = ''
   form.amount = owed(props.order)
   if (!props.order?.id) return focusAmount()
@@ -218,6 +221,10 @@ async function removeOne(p) {
     deletingId.value = null
   }
 }
+const requestClose = useFormClose({
+  visible: () => props.visible, close: () => emit('update:visible', false), name: 'payment',
+  isDirty: () => form.note !== '' || Number(form.amount) !== Number(owed(cur.value)) || form.payDate !== initialDate, isBusy: () => saving.value
+})
 </script>
 
 <style scoped>

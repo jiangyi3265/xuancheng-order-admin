@@ -1,15 +1,21 @@
 <template>
   <section class="pending-projects" aria-labelledby="pending-projects-heading">
     <header>
-      <h2 id="pending-projects-heading">待处理 <span>{{ items.length }} 条</span></h2>
-      <button v-if="items.length || onlyUnreminded" class="pending-filter" type="button"
+      <h2 id="pending-projects-heading">
+        <button v-if="isMobile" type="button" class="pending-toggle" aria-controls="pending-project-content" :aria-expanded="mobileOpen" @click="mobileOpen = !mobileOpen">
+          待处理 <span>{{ items.length }} 条</span><el-icon aria-hidden="true"><component :is="mobileOpen ? 'ArrowDown' : 'ArrowRight'"/></el-icon>
+        </button>
+        <template v-else>待处理 <span>{{ items.length }} 条</span></template>
+      </h2>
+      <button v-if="(!isMobile || mobileOpen) && (items.length || onlyUnreminded)" class="pending-filter" type="button"
         :aria-pressed="onlyUnreminded" @click="onlyUnreminded = !onlyUnreminded; expanded = false">
         只看未提醒 <span>{{ unreminded.length }}</span>
       </button>
-      <button v-if="filteredItems.length > limit" class="pending-expand" type="button" :aria-expanded="expanded" aria-controls="pending-project-links"
+      <button v-if="(!isMobile || mobileOpen) && filteredItems.length > limit" class="pending-expand" type="button" :aria-expanded="expanded" aria-controls="pending-project-links"
         @click="expanded = !expanded">{{ expanded ? '收起' : '查看全部 ' + filteredItems.length + ' 条' }}</button>
-      <span v-if="!items.length" class="pending-empty">当前没有待处理事项</span>
+      <span v-if="(!isMobile || mobileOpen) && !items.length" class="pending-empty">当前没有待处理事项</span>
     </header>
+    <div v-show="!isMobile || mobileOpen" id="pending-project-content">
     <p v-if="items.length && !filteredItems.length" class="pending-empty">当前待处理事项都已提醒。</p>
     <ul v-if="filteredItems.length" id="pending-project-links">
       <li v-for="item in visibleItems" :key="item.key">
@@ -30,12 +36,13 @@
         </button>
       </li>
     </ul>
+    </div>
   </section>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { loadOrders, remindPendingItem } from '@/mock/store'
 import { useRoute } from 'vue-router'
 import { ArrowRight } from '@element-plus/icons-vue'
@@ -45,6 +52,7 @@ import { fmtTime } from '@/utils/time'
 
 const props = defineProps({ orders: { type: Array, required: true } })
 const route = useRoute()
+const mobileOpen = ref(false)
 const expanded = ref(false)
 const onlyUnreminded = ref(false)
 const sending = reactive(new Set())
@@ -80,6 +88,7 @@ async function remind(item, event) {
 .pending-projects h2 { display: flex; align-items: baseline; gap: 8px; margin: 0; font-size: 16px; color: #1e304f; }
 .pending-projects h2 span, .pending-empty { color: #64748b; font-size: 12px; font-weight: 400; }
 .pending-projects header button { padding: 4px; border: 0; background: transparent; color: #1757c7; font: inherit; font-size: 13px; cursor: pointer; }
+.pending-projects h2 .pending-toggle { display:flex; align-items:center; gap:6px; padding:3px 2px; color:inherit; font:inherit; }
 .pending-projects .pending-expand { margin-left: auto; }
 .pending-projects .pending-filter { padding: 4px 8px; border: 1px solid #d6e0ef; border-radius: 6px; color: #455977; }
 .pending-filter[aria-pressed="true"] { color: #1757c7; background: #edf3ff; border-color: #8fb1ed; }

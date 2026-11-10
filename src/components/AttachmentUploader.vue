@@ -52,7 +52,7 @@
 <script setup>
 import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Plus, InfoFilled, Close, Loading } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import MediaThumb from './MediaThumb.vue'
 import { attType, extOf, fmtSize, fileIcon } from '@/utils/file'
 import { uploadAttachment } from '@/utils/upload'

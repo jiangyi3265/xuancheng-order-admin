@@ -1,5 +1,5 @@
 <template>
-  <el-dialog
+  <el-dialog :close-on-click-modal="false" :before-close="requestClose"
     :model-value="visible"
     :title="meta.title"
     width="440px"
@@ -30,16 +30,18 @@
     <div v-if="error" class="ar-error">{{ error }}</div>
 
     <template #footer>
-      <el-button @click="emit('update:visible', false)">取消</el-button>
+      <el-button @click="requestClose">取消</el-button>
       <el-button :type="meta.danger ? 'danger' : 'primary'" :loading="saving" @click="confirm">提交申请</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
+import { focusField } from '@/utils/formKeys'
+import { useFormClose } from '@/utils/dialogGuard'
 // 员工申请改报价 / 取消 / 删除：提交后需要审批才生效。
 import { ref, computed, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { requestApproval } from '@/mock/store'
 import { money } from '@/utils/payment'
 
@@ -67,7 +69,7 @@ function onOpen() {
   reason.value = ''
   error.value = ''
   newAmount.value = Number(props.order?.amount) || 0
-  nextTick(() => inputRef.value?.focus())
+  nextTick(() => focusField(inputRef))
 }
 
 async function confirm() {
@@ -96,6 +98,10 @@ async function confirm() {
     saving.value = false
   }
 }
+const requestClose = useFormClose({
+  visible: () => props.visible, close: () => emit('update:visible', false), name: 'approval',
+  isDirty: () => reason.value !== '' || (props.type === 'amount' && Number(newAmount.value) !== Number(props.order?.amount || 0)), isBusy: () => saving.value
+})
 </script>
 
 <style scoped>

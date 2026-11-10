@@ -24,9 +24,10 @@
 <script setup>
 // 一步派单：老板在卡片 / 列表上直接点人，立刻转给 TA，对方马上收到通知。员工不能转派，所以不显示。
 import { computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { User } from '@element-plus/icons-vue'
-import { orders, editOrder, isBoss, currentMember as me } from '@/mock/store'
+import { assignWithUndo } from '@/utils/orderUndo'
+import { orders, isBoss, currentMember as me } from '@/mock/store'
 import { MEMBERS, memberMap } from '@/constants/options'
 
 const props = defineProps({
@@ -46,9 +47,8 @@ const people = computed(() =>
 
 async function assign(id) {
   try {
-    await editOrder({ id: props.order.id, ownerId: id })
     const name = memberMap[id]?.name || ''
-    ElMessage.success(id === me.value.id ? '已转到你自己名下' : `已派给 ${name}，TA 接收后开工`)
+    await assignWithUndo(props.order, id, id === me.value.id ? '已转到你自己名下' : `已派给 ${name}，TA 接收后开工`)
   } catch (e) {
     ElMessage.error(e.message || '派单失败')
   }

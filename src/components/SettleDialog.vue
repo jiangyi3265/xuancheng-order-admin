@@ -26,17 +26,20 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, watch } from 'vue'
+import { toast as ElMessage } from '@/utils/toast'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import { addPayment } from '@/mock/store'
-import { settlePrompt } from '@/utils/settle'
+import { finishSettlement, settlePrompt } from '@/utils/settle'
 import { owed, money } from '@/utils/payment'
 import { todayStr } from '@/utils/date'
 
 const order = computed(() => settlePrompt.order)
 const saving = ref(false)
 const partialVisible = ref(false)
+watch(() => settlePrompt.visible || partialVisible.value, (open) => {
+  if (!open) finishSettlement()
+}, { flush: 'post' })
 
 async function settleAll() {
   const o = order.value

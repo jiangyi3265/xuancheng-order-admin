@@ -1,11 +1,16 @@
 <template>
   <div class="dashboard">
     <BoardHeader v-if="isMobile" title="数据统计" back @back="$router.push('/mine')"/>
+    <OrdersLoading v-if="!ordersReady" />
+    <template v-else>
+    <el-alert v-if="incomeError" type="warning" :closable="false">
+      <template #title>收款数据没加载出来 <el-button link type="primary" @click="loadIncome">重试收款数据</el-button></template>
+    </el-alert>
     <header class="income-hero"><div><p>本月实收</p><h1>{{ income ? money(income.thisMonth) : '—' }}</h1><span>按真实收款流水统计</span></div><el-icon><TrendCharts /></el-icon></header>
     <section v-if="isMobile" class="board-stats"><div><strong>{{ countedOrders.length }}</strong><small>项目总数</small></div><div><strong>{{ orders.filter(o=>o.status==='doing').length }}</strong><small>进行中</small></div><div><strong>{{ orders.filter(o=>o.status==='done').length }}</strong><small>已完成</small></div></section>
     <section v-if="isMobile" class="board-chart"><h3>近 6 个月实收</h3><ChartCard :option="incomeBar" :height="170"/></section>
-    <section v-if="isMobile" class="board-chart"><h3>项目状态分布</h3><ChartCard :option="statusPie" :height="175"/></section>
-    <details v-if="isMobile" class="board-extra-stats"><summary>查看更多统计与预警</summary><div v-for="s in moneyCards" :key="s.label"><span>{{ s.label }}</span><b>{{ s.value }}</b></div><p v-for="o in unpaidDone" :key="o.id" class="m-unpaid" role="button" tabindex="0" @click="openProject(o)" @keydown.enter="openProject(o)">{{ o.title }} · 待收 {{ money(owed(o)) }} ›</p><ChartCard :option="trendBar" :height="200"/><ChartCard :option="channelPie" :height="200"/><ChartCard :option="memberBar" :height="200"/></details>
+    <section v-if="isMobile" class="board-chart"><h3>项目状态分布</h3><ChartCard :option="statusPie" @select="showChartProjects" :height="175"/></section>
+    <details v-if="isMobile" class="board-extra-stats"><summary>查看更多统计与预警</summary><div v-for="s in moneyCards" :key="s.label"><span>{{ s.label }}</span><b>{{ s.value }}</b></div><p v-for="o in unpaidDone" :key="o.id" class="m-unpaid" role="button" tabindex="0" @click="openProject(o)" @keydown.enter="openProject(o)">{{ o.title }} · 待收 {{ money(owed(o)) }} ›</p><ChartCard :option="trendBar" :height="200"/><ChartCard :option="channelPie" @select="showChartProjects" :height="200"/><ChartCard :option="memberBar" @select="showChartProjects" :height="200"/></details>
     <div v-if="!isMobile">
     <!-- 干活的指标 -->
     <div class="stat-grid">
@@ -110,13 +115,13 @@
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="chart-card">
           <template #header><span class="chart-title">项目状态分布</span></template>
-          <div class="chart-box"><ChartCard :option="statusPie" :height="chartH" /></div>
+          <div class="chart-box"><ChartCard :option="statusPie" @select="showChartProjects" :height="chartH" /></div>
         </el-card>
       </el-col>
       <el-col :xs="24" :md="12">
         <el-card shadow="never" class="chart-card">
           <template #header><span class="chart-title">渠道来源占比</span></template>
-          <div class="chart-box"><ChartCard :option="channelPie" :height="chartH" /></div>
+          <div class="chart-box"><ChartCard :option="channelPie" @select="showChartProjects" :height="chartH" /></div>
         </el-card>
       </el-col>
     </el-row>
@@ -126,15 +131,18 @@
       <el-col :xs="24">
         <el-card shadow="never" class="chart-card">
           <template #header><span class="chart-title">成员工作量对比</span></template>
-          <div class="chart-box"><ChartCard :option="memberBar" :height="chartH" /></div>
+          <div class="chart-box"><ChartCard :option="memberBar" @select="showChartProjects" :height="chartH" /></div>
         </el-card>
       </el-col>
     </el-row>
     </div>
+    </template>
   </div>
 </template>
 
 <script setup>
+import OrdersLoading from '@/components/OrdersLoading.vue'
+import { ordersReady } from '@/mock/store'
 import BoardHeader from '@/components/board/BoardHeader.vue'
 import { computed, ref, watch, onMounted } from 'vue'
 import ChartCard from '@/components/ChartCard.vue'
@@ -145,6 +153,9 @@ import { STATUS, CHANNEL, MEMBERS } from '@/constants/options'
 import { isMobile } from '@/utils/useMobile'
 import { useRouter } from 'vue-router'
 const router = useRouter()
+function showChartProjects(event) {
+  if (event.data?.query) router.push({ path: '/order', query: event.data.query })
+}
 // 预警里的项目点一下直接打开
 const openProject = (o) => router.push('/order?id=' + o.id)
 
@@ -164,11 +175,17 @@ const overdueList = computed(() => orders.filter(isOverdue))
 
 // ---- 实收（来自收款流水，服务端统计）----
 const income = ref(null)
+const incomeError = ref(false)
+let incomeRequest = 0
 async function loadIncome() {
+  const request = ++incomeRequest
   try {
-    income.value = await getIncome()
-  } catch (e) {
-    income.value = null
+    const data = await getIncome()
+    if (request !== incomeRequest) return
+    income.value = data
+    incomeError.value = false
+  } catch {
+    if (request === incomeRequest) incomeError.value = true
   }
 }
 onMounted(loadIncome)
@@ -227,7 +244,7 @@ const moneyCards = computed(() => [
 const incomeBar = computed(() => {
   const months = income.value?.months || []
   return {
-    tooltip: { trigger: 'axis', formatter: (p) => `${p[0].name}<br/>实收：¥${num(p[0].value).toLocaleString()}` },
+    tooltip: { trigger: 'axis', formatter: (p) => `${p[0].name}<br/>实收：${money(p[0].value)}` },
     grid: { left: 56, right: 20, top: 24, bottom: 30 },
     xAxis: { type: 'category', data: months.map((m) => Number(m.month.slice(5)) + '月') },
     yAxis: { type: 'value' },
@@ -256,7 +273,7 @@ const statusPie = computed(() => ({
       avoidLabelOverlap: true,
       label: { formatter: '{b}\n{c}' },
       data: STATUS.filter(s => s.value !== 'pending').map((s) => ({
-        name: s.label,
+        name: s.label, query: { status: s.value },
         value: count((o) => o.status === s.value),
         itemStyle: { color: s.color }
       }))
@@ -304,7 +321,7 @@ const channelPie = computed(() => ({
       label: { show: !isMobile.value },
       labelLine: { show: !isMobile.value },
       data: CHANNEL.map((c) => ({
-        name: c.label,
+        name: c.label, query: { channel: c.value },
         value: countedOrders.value.filter(o => o.channel === c.value).length,
         itemStyle: { color: c.color }
       })).filter((d) => d.value > 0)
@@ -331,7 +348,7 @@ const memberBar = computed(() => {
       stack: 'total',
       barWidth: '40%',
       itemStyle: { color: c.color },
-      data: MEMBERS.map((m) => count((o) => o.ownerId === m.id && o.status === c.key))
+      data: MEMBERS.map(m => ({ value: count(o => o.ownerId === m.id && o.status === c.key), query: { owner: String(m.id) } }))
     }))
   }
 })

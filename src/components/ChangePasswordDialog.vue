@@ -3,7 +3,7 @@
     :model-value="visible"
     title="修改登录密码"
     width="420px"
-    :close-on-click-modal="false"
+    :close-on-click-modal="false" :before-close="closeDraft"
     @update:model-value="(v) => emit('update:visible', v)"
     @closed="reset"
   >
@@ -22,23 +22,29 @@
       修改成功后，这个账号在其他设备上的登录会自动退出，当前这台不受影响。
     </el-alert>
     <template #footer>
-      <el-button @click="emit('update:visible', false)">取消</el-button>
+      <el-button @click="closeDraft">取消</el-button>
       <el-button type="primary" :loading="saving" @click="submit">确认修改</el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup>
+import { useFormClose } from '@/utils/dialogGuard'
 import { reactive, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { changeMyPassword } from '@/mock/store'
 
-defineProps({ visible: { type: Boolean, default: false } })
+const props = defineProps({ visible: { type: Boolean, default: false } })
 const emit = defineEmits(['update:visible'])
 
 const formRef = ref()
 const saving = ref(false)
 const form = reactive({ oldPassword: '', newPassword: '', confirm: '' })
+
+const closeDraft = useFormClose({
+  visible: () => props.visible, close: () => emit('update:visible', false),
+  isDirty: () => Object.values(form).some(Boolean), isBusy: () => saving.value
+})
 
 const rules = {
   oldPassword: [{ required: true, message: '请输入旧密码', trigger: 'blur' }],

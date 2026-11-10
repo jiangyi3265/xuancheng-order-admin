@@ -44,10 +44,11 @@
 
 <script setup>
 import { ref, reactive, computed, nextTick } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Flag } from '@element-plus/icons-vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
-import { setNextStep, completeNextStep, currentMember } from '@/mock/store'
+import { finishNext } from '@/utils/orderUndo'
+import { setNextStep, currentMember } from '@/mock/store'
 import { MEMBERS, memberMap } from '@/constants/options'
 import { nextDueState, shortDue } from '@/utils/workbench'
 
@@ -118,8 +119,8 @@ async function complete() {
   busy.value = true
   const done = props.order.nextStep
   try {
-    await completeNextStep(props.order.id)
-    ElMessage.success('已完成')
+    const offerUndo = await finishNext(props.order)
+    offerUndo(() => { if (justDone.value && !form.content.trim()) cancel() })
     justDone.value = done
     startEdit(true)
   } catch (e) {

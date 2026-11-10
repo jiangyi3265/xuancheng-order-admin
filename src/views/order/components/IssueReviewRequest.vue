@@ -35,7 +35,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import { chatDraft, sendDraft } from '@/utils/chatDraft'
 import { requestIssueReview } from '@/mock/store'

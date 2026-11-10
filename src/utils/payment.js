@@ -33,6 +33,6 @@ export function payFilterOk(o, filter) {
 }
 
 // ¥1,234.5 ；整数不带小数
-export function money(v) {
-  return '¥' + n(v).toLocaleString('zh-CN', { maximumFractionDigits: 2 })
+export function money(v, minimumFractionDigits = 0) {
+  return '¥' + n(v).toLocaleString('zh-CN', { minimumFractionDigits, maximumFractionDigits: 2 })
 }

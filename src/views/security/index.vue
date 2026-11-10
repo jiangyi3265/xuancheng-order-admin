@@ -13,7 +13,7 @@ import BoardAvatar from '@/components/board/BoardAvatar.vue'
 import {ref,reactive,computed} from 'vue'
 import {useRoute,useRouter} from 'vue-router'
 import {ArrowLeft} from '@element-plus/icons-vue'
-import {ElMessage} from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import {currentMember,customerName,changeMyPassword,isBoss} from '@/mock/store'
 import {changeMyPassword as changeCustomerPassword} from '@/customer/mock/store'
 const route=useRoute(),router=useRouter(),formRef=ref(),saving=ref(false)

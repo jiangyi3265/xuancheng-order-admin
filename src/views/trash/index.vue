@@ -31,7 +31,7 @@
         </template>
       </el-table-column>
       <el-table-column label="金额" width="100">
-        <template #default="{ row }">¥{{ row.amount || 0 }}</template>
+        <template #default="{ row }">{{ money(row.amount) }}</template>
       </el-table-column>
       <el-table-column label="删除人" width="130" show-overflow-tooltip>
         <template #default="{ row }">
@@ -54,9 +54,11 @@
 </template>
 
 <script setup>
+import { money } from '@/utils/payment'
 import ProjectCover from '@/components/ProjectCover.vue'
 import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Refresh } from '@element-plus/icons-vue'
 import { isBoss, listTrash, restoreOrder, purgeOrder } from '@/mock/store'
 import { fmtTime } from '@/utils/time'

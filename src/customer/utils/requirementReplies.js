@@ -1,3 +1,5 @@
+import { friendlyTime } from '@/utils/time'
+
 export function issueRoute(project, requirement, updateId) {
   const query = {tab:'bugs', issue:requirement.id}
   if (updateId) query.update = updateId
@@ -14,7 +16,4 @@ export function reviewRoute(project, requirement) {
   return route
 }
 
-export function replyTime(value) {
-  if (!value) return ''
-  return String(value).replace('T', ' ').slice(5,16)
-}
+export const replyTime = friendlyTime

@@ -35,7 +35,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { ElMessage } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { isBoss } from '@/mock/store'
 import { phrases, savePhrases, PHRASE_MAX, PHRASE_LEN } from '@/utils/phrases'
 

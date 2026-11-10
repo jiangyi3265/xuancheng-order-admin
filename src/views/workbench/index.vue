@@ -1,6 +1,7 @@
 <template>
   <div class="workbench">
-    <section v-if="isMobile" class="board-workbench" :class="isBoss?'boss-workbench':'employee-workbench'">
+    <OrdersLoading v-if="!ordersReady" />
+    <section v-else-if="isMobile" class="board-workbench" :class="isBoss?'boss-workbench':'employee-workbench'">
       <header class="wb-person wb-person-compact"><BoardAvatar :role="isBoss?'boss':'employee'" :size="40"/><div><h1>{{ currentMember.name }}，{{ greeting }}</h1></div><PendingBell /></header>
       <template v-if="isBoss">
         <section class="wb-stat-panel"><button v-for="(s,i) in overview" :key="s.label" :class="'tone-'+i" @click="router.push(s.path)"><span class="stat-symbol"><el-icon><component :is="s.icon"/></el-icon></span><div><small>{{ s.label }}</small><strong>{{ s.value }}</strong></div></button></section>
@@ -282,7 +283,7 @@
     <OrderDetail :key="active?.id"
       v-model:visible="detailVisible"
       :order="active"
-      :loading="detailLoading"
+      :loading="detailLoading" :has-previous="hasPrevious" :has-next="hasNext" @navigate="moveDetail"
       :notice-tab="detailTab"
       :notice-item="detailIssueId"
       @edit="openDialog"
@@ -291,7 +292,7 @@
     />
     <NotebookDialog v-model:visible="notebookVisible" :order="notebookOrder" />
     <DeliveryDialog v-model:visible="deliveryVisible" :order="deliveryOrder" :target="deliveryTarget" />
-    <OrderDialog v-model:visible="dialogVisible" :data="editing" @save="handleSave" />
+    <OrderDialog v-model:visible="dialogVisible" :data="editing" :save="handleSave" />
     <ReasonDialog
       v-model:visible="rejectVisible"
       title="拒绝这个项目"
@@ -305,6 +306,8 @@
 </template>
 
 <script setup>
+import OrdersLoading from '@/components/OrdersLoading.vue'
+import { ordersReady } from '@/mock/store'
 import QuotePanel from '@/views/quotes/index.vue'
 import {unreadQuotes, markInboxRead} from '@/stores/quotes'
 import PendingBell from '@/components/PendingBell.vue'
@@ -312,8 +315,10 @@ import BoardAvatar from '@/components/board/BoardAvatar.vue'
 import ProjectCover from '@/components/ProjectCover.vue'
 import { isMobile } from '@/utils/useMobile'
 import { ref, computed } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessageBox } from 'element-plus'
+import { toast as ElMessage } from '@/utils/toast'
 import { Paperclip, Clock, Refresh, Promotion, Bell, Check, ChatDotRound, Plus } from '@element-plus/icons-vue'
+import { useProjectDetail } from '@/utils/useProjectDetail'
 import OrderDetail from '@/views/order/components/OrderDetail.vue'
 import OrderDialog from '@/views/order/components/OrderDialog.vue'
 import NotebookDialog from '@/components/NotebookDialog.vue'
@@ -322,11 +327,12 @@ import ApprovalItem from '@/components/ApprovalItem.vue'
 import ReasonDialog from '@/components/ReasonDialog.vue'
 import DeliveryDialog from '@/components/DeliveryDialog.vue'
 import { syncQuotes } from '@/stores/quotes'
+import { finishNext, finishPendingWithUndo, trashWithUndo } from '@/utils/orderUndo'
 import { changeOrderStatus } from '@/utils/settle'
 import { useRouter } from 'vue-router'
 import {
-  orders, approvals, pendingApprovals, getOrder, currentMember, isBoss, editOrder, createOrder, removeOrder, nudge,
-  acceptOrder, rejectOrder, syncOrders, loadApprovals, collab, completeNextStep, setNextStep, completePendingItem
+  orders, approvals, pendingApprovals, getOrder, currentMember, isBoss, editOrder, createOrder, nudge,
+  acceptOrder, rejectOrder, syncOrders, loadApprovals, collab, setNextStep
 } from '@/mock/store'
 import { statusMap, MEMBERS, memberMap } from '@/constants/options'
 import { isWaitingOther, nextAction, stalledDays, shortDue } from '@/utils/workbench'
@@ -354,8 +360,7 @@ async function finishPending(t) {
   if (finishing.value) return
   finishing.value = t.key
   try {
-    await completePendingItem(t.order, t.kind)
-    ElMessage.success(t.kind === 'urgent' ? '已结束本次加急' : '已标为已处理')
+    await finishPendingWithUndo(t.order, t.kind, null, t.kind === 'urgent' ? '已结束本次加急' : '已标为已处理')
   } catch (e) {
     ElMessage.error(e.message || '标记失败，请重试')
   } finally {
@@ -426,8 +431,9 @@ async function quickCompleteNext(o) {
   if (completing.value) return
   completing.value = o.id
   const done = o.nextStep
+  let offerUndo
   try {
-    await completeNextStep(o.id)
+    offerUndo = await finishNext(o)
   } catch (e) {
     ElMessage.error(e.message || '操作失败')
     return
@@ -446,14 +452,14 @@ async function quickCompleteNext(o) {
     })
     content = (value || '').trim()
   } catch {
-    ElMessage.success('已完成')
-    return
+    return offerUndo()
   }
-  if (!content) return ElMessage.success('已完成')
+  if (!content) return offerUndo()
   try {
     await setNextStep(o.id, { content, ownerId: nextOwner, due: '' })
     ElMessage.success('下一步已安排给 ' + who)
   } catch (e) {
+    offerUndo()
     ElMessage.error(e.message || '保存失败')
   }
 }
@@ -487,8 +493,7 @@ async function doMyself(o) {
   if (acting.value) return
   acting.value = o.id
   try {
-    await changeOrderStatus(o, 'doing')
-    ElMessage.success(`「${o.title}」已开工，在你手上了`)
+    await changeOrderStatus(o, 'doing', `「${o.title}」已开工，在你手上了`)
   } catch (e) {
     ElMessage.error(e.message || '操作失败')
   } finally {
@@ -571,7 +576,6 @@ async function quickNext(o) {
   if (na.to === 'bugs') return openDetail(o, 'bugs')
   try {
     await changeOrderStatus(o, na.to)
-    ElMessage.success(`「${o.title}」→ ${statusMap[na.to]?.label}`)
   } catch (e) {
     ElMessage.error(e.message || '修改状态失败')
   }
@@ -663,11 +667,16 @@ function dueTag(o) {
   return null
 }
 
-const detailVisible = ref(false)
-const detailLoading = ref(false)
-const active = ref(null)
-const detailTab = ref('')
-const detailIssueId = ref('')
+function workbenchSequence(id) {
+  const groups = [todoItems.value.flatMap(item => item.order ? [item.order] : []),
+    stalledList.value.map(item => item.o), isMobile.value ? employeeOrders.value : myHands.value, waitingList.value]
+  return groups.find(rows => rows.some(row => row.id === id)) || orders
+}
+const { active, detailVisible, detailLoading, noticeTab: detailTab, noticeItem: detailIssueId,
+  hasPrevious, hasNext, openDetail: routeToDetail, moveDetail } = useProjectDetail('/workbench', workbenchSequence)
+function openDetail(order, tab = '') {
+  routeToDetail(order, tab, tab === 'bugs' ? { todo: '1' } : {})
+}
 const dialogVisible = ref(false)
 const editing = ref(null)
 const notebookVisible = ref(false)
@@ -678,31 +687,6 @@ function openNotebook(row) {
   notebookVisible.value = true
 }
 
-let detailRequest = 0
-async function openDetail(o, tab = '') {
-  const request = ++detailRequest
-  detailTab.value = tab
-  detailIssueId.value = ''
-  active.value = o
-  detailVisible.value = true
-  detailLoading.value = true
-  try {
-    const project = await getOrder(o.id)
-    if (request !== detailRequest || !detailVisible.value) return
-    if (!project) throw new Error('项目已删除或当前账号无法查看')
-    active.value = project
-    if (tab === 'bugs') {
-      const targets = (project.bugs || []).filter(b => b.status === 'action')
-      if (targets.length === 1) detailIssueId.value = String(targets[0].id)
-    }
-  } catch (e) {
-    if (request !== detailRequest || !detailVisible.value) return
-    detailVisible.value = false
-    ElMessage.error('加载项目失败：' + e.message)
-  } finally {
-    if (request === detailRequest) detailLoading.value = false
-  }
-}
 async function openDialog(row) {
   try {
     editing.value = row?.id ? { ...(await getOrder(row.id)) } : null
@@ -720,23 +704,19 @@ async function handleSave(data) {
       await createOrder(data)
       ElMessage.success('已建单')
     }
-    dialogVisible.value = false
+    return true
   } catch (e) {
     ElMessage.error(e.message || '保存失败')
+    return false
   }
 }
-function handleDelete(row) {
-  ElMessageBox.confirm(`确定删除「${row.title}」吗？删除后会放进「回收站」，可以随时恢复。`, '删除项目', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' })
-    .then(async () => {
-      try {
-        await removeOrder(row.id)
-        detailVisible.value = false
-        ElMessage.success('已放进回收站')
-      } catch (e) {
-        ElMessage.error(e.message || '删除失败')
-      }
-    })
-    .catch(() => {})
+async function handleDelete(row) {
+  try {
+    await trashWithUndo(row)
+    detailVisible.value = false
+  } catch (e) {
+    ElMessage.error(e.message || '删除失败')
+  }
 }
 </script>
 
