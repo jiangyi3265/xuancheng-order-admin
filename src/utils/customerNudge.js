@@ -52,7 +52,7 @@ export async function nudgeCustomerAccept(o) {
     // 复制不了不影响发消息
   }
   await addProgress(o.id, text, 'reply', [])
-  ElMessage.success(copied ? '已在客户沟通里提醒；同样的话也复制好了，可以粘到微信再发一遍' : '已在客户沟通里提醒客户验收')
+  ElMessage.success(copied ? '已提醒客户验收；这句话也复制好了，可以粘到微信再发一遍' : '已提醒客户验收')
 }
 // 今天已经催过：只复制，不再往客户沟通里发第二遍
 export const copyAcceptNudge = (o) =>

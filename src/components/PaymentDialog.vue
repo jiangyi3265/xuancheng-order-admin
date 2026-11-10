@@ -82,7 +82,7 @@ import ProjectCover from '@/components/ProjectCover.vue'
 import { ref, reactive, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOrder, addPayment, removePayment, requestApproval, approvals, isBoss } from '@/mock/store'
-import { owed, money } from '@/utils/payment'
+import { owed, money, payState } from '@/utils/payment'
 import { todayStr } from '@/utils/date'
 
 const props = defineProps({
@@ -108,7 +108,9 @@ const waiting = computed(() =>
 const afterToday = (d) => d.getTime() > Date.now() + 24 * 3600 * 1000
 
 async function onOpen() {
-  tab.value='history'
+  // 点「记收款」就是要记一笔：直接到登记页，金额已经按还欠的填好（以前先进流水页，还得再点一下）。
+  // 已经收清的才先看流水
+  tab.value = payState(props.order) === 'full' ? 'history' : 'entry'
   cur.value = props.order
   form.payDate = todayStr()
   form.note = ''

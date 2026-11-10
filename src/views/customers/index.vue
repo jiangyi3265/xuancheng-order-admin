@@ -55,7 +55,8 @@
           <el-input v-model="createForm.nickName" placeholder="选填，如公司/称呼" />
         </el-form-item>
         <el-form-item label="密码" prop="password">
-          <el-input v-model="createForm.password" placeholder="5-20 位" show-password />
+          <!-- 先给一个随机密码，不用自己想；建好后会连同账号一起整理成一段话供复制 -->
+          <el-input v-model="createForm.password" placeholder="5-20 位" />
         </el-form-item>
         <el-form-item v-if="isBoss" label="负责人">
           <el-select v-model="createForm.ownerId" style="width: 100%">
@@ -99,6 +100,7 @@ import {
   isBoss, currentMember
 } from '@/mock/store'
 import { offerLoginInfo } from '@/utils/loginInfo'
+import { suggestPassword } from '@/utils/password'
 import { fmtTime } from '@/utils/time'
 
 const list = ref([])
@@ -141,7 +143,7 @@ async function load() {
 function openCreate() {
   createForm.userName = ''
   createForm.nickName = ''
-  createForm.password = ''
+  createForm.password = suggestPassword()
   createForm.ownerId = currentMember.value.id
   createVisible.value = true
   formRef.value?.clearValidate()
@@ -193,6 +195,7 @@ async function doReset(row) {
     const { value } = await ElMessageBox.prompt(`为「${row.userName}」设置新密码（5-20 位）`, '重置密码', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
+      inputValue: suggestPassword(),
       inputPattern: /^.{5,20}$/,
       inputErrorMessage: '密码需为 5-20 位'
     })

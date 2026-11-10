@@ -2,7 +2,7 @@
   <!-- 整张卡片点开详情；底部一行放“下一步”按钮，不用点进详情也能接单 / 开工 / 交付 -->
   <div class="board-project-row" :class="{overdue}" role="button" tabindex="0" @click="emit('open')" @keydown.enter.self="emit('open')">
     <ProjectCover :order="order" :inert="selecting" compact/>
-    <div class="board-project-copy"><h3><i v-if="unread" class="unread-dot"/>{{ order.title }}</h3><div class="board-project-meta"><strong v-if="!overdue && Number(order.amount)">¥{{ Number(order.amount).toLocaleString() }}</strong><span v-else-if="!overdue" class="board-project-unpriced">未报价</span><el-tag v-if="overdue" size="small" type="danger">逾期</el-tag><el-tag v-else size="small" :class="'project-status-'+order.status" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag><el-tag v-if="order.priority==='high'" size="small" type="danger">高</el-tag></div><small v-if="order.deadline || ownerName || stalled || awaiting"><template v-if="order.deadline"><el-icon><Calendar/></el-icon>截止：{{ shortDeadline(order.deadline) }}</template><template v-if="ownerName">{{ order.deadline ? ' · ' : '' }}{{ ownerName }}</template><b v-if="stalled" class="board-project-stalled">{{ order.deadline || ownerName ? ' · ' : '' }}{{ stalled }} 天没动静</b><b v-if="awaiting" class="board-project-stalled">{{ order.deadline || ownerName ? ' · ' : '' }}等客户验收 {{ awaiting }} 天</b></small>
+    <div class="board-project-copy"><h3><i v-if="unread" class="unread-dot"/>{{ order.title }}</h3><div class="board-project-meta"><strong v-if="!overdue && Number(order.amount)">¥{{ Number(order.amount).toLocaleString() }}</strong><span v-else-if="!overdue" class="board-project-unpriced">未报价</span><el-tag v-if="overdue" size="small" type="danger">逾期</el-tag><el-tag v-else size="small" :class="'project-status-'+order.status" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag><el-tag v-if="order.priority==='high'" size="small" type="danger">高</el-tag></div><small v-if="order.deadline || ownerName || stalled"><template v-if="order.deadline"><el-icon><Calendar/></el-icon>截止：{{ shortDeadline(order.deadline) }}</template><template v-if="ownerName">{{ order.deadline ? ' · ' : '' }}{{ ownerName }}</template><b v-if="stalled" class="board-project-stalled">{{ order.deadline || ownerName ? ' · ' : '' }}{{ stalled }} 天没动静</b></small>
       <ProjectUrgency :order="order" :selecting="selecting" />
       <p v-if="order.nextStep" class="board-project-next" :class="nextDueState(order)">下一步：{{ order.nextStep }}<em> · {{ nextWho }}{{ order.nextDue ? ' · ' + shortDue(order.nextDue) : '' }}</em></p>
       <div v-if="action || $slots.tools" class="board-project-quick" @click.stop>
@@ -19,7 +19,7 @@ import { Calendar } from '@element-plus/icons-vue'
 import ProjectUrgency from './ProjectUrgency.vue'
 import ProjectCover from '@/components/ProjectCover.vue'
 import { isBoss, currentMember, collab } from '@/mock/store'
-import { nextDueState, shortDue, stalledDays, awaitingCustomerDays } from '@/utils/workbench'
+import { nextDueState, shortDue, stalledDays, reviewIdleDays } from '@/utils/workbench'
 import { MEMBERS, statusMap, memberMap } from '@/constants/options'
 
 // 这里只管显示：逾期 / 未读 / 下一步按钮，都由 order/index.vue 算好传进来，规则只有一份
@@ -38,9 +38,8 @@ const shortDeadline = value => value ? value.slice(5).replace('-', '月') + '日
 // 老板看列表时顺带显示负责人，一眼知道单子在谁手上
 const ownerName = computed(() => (isBoss.value && MEMBERS.length > 1 ? memberMap[props.order.ownerId]?.name || '' : ''))
 const nextWho = computed(() => (props.order.nextOwnerId === currentMember.value.id ? '我' : props.order.nextOwnerName || memberMap[props.order.nextOwnerId]?.name || '负责人'))
-const stalled = computed(() => stalledDays(props.order, collab.stallDays))
-// 交付了、客户一直没验收也没回话的天数
-const awaiting = computed(() => awaitingCustomerDays(props.order, collab.stallDays))
+// 待确认 / 进行中，加上交付后一直没人验收的待验收项目
+const stalled = computed(() => stalledDays(props.order, collab.stallDays) || reviewIdleDays(props.order, collab.stallDays))
 </script>
 
 <style scoped>

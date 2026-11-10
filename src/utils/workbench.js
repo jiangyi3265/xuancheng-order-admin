@@ -70,9 +70,10 @@ export function stalledDays(order, limit) {
   const days = Math.floor((Date.now() - t.getTime()) / 86400000)
   return days >= limit ? days : 0
 }
-// 待验收、已绑定客户账号的项目：交付后多少天没有任何动静（客户没验收、也没回话）。没到停滞天数返回 0
-export function awaitingCustomerDays(order, limit) {
-  if (!order || order.status !== 'review' || !order.customerAccount || !order.updateTime) return 0
+// 待验收的项目多少天没有任何动静（没人验收、客户也没回话）。没到停滞天数返回 0。
+// 只给卡片上的「N 天没动静」用；工作台「快被忘了」仍然只列待确认 / 进行中（待验收的已经在老板的待办里）
+export function reviewIdleDays(order, limit) {
+  if (!order || order.status !== 'review' || !order.updateTime) return 0
   const t = new Date(String(order.updateTime).replace(' ', 'T'))
   if (Number.isNaN(t.getTime())) return 0
   const days = Math.floor((Date.now() - t.getTime()) / 86400000)

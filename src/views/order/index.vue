@@ -165,12 +165,10 @@
                 <button v-if="!selectionMode" type="button" class="project-title-button" :aria-label="'打开项目：' + element.title" @click.stop="openDetail(element)">{{ element.title }}</button>
                 <template v-else>{{ element.title }}</template>
               </div>
-              <div v-if="element.assignState === 'pending' || Number(element.pendingApprovals) > 0 || stalledOf(element) || awaitingOf(element)" class="card-flags">
+              <div v-if="element.assignState === 'pending' || Number(element.pendingApprovals) > 0 || stalledOf(element)" class="card-flags">
                 <span v-if="element.assignState === 'pending'" class="flag amber">{{ isBoss ? '等 ' + (memberMap[element.ownerId]?.name || '负责人') + ' 接收' : '待接收' }}</span>
                 <span v-if="Number(element.pendingApprovals) > 0" class="flag red">{{ element.pendingApprovals }} 条申请待批</span>
                 <span v-if="stalledOf(element)" class="flag amber">{{ stalledOf(element) }} 天没动静</span>
-                <!-- 交付了、客户一直没验收也没回话 -->
-                <span v-if="awaitingOf(element)" class="flag amber" title="已交付，客户还没验收，也没有新消息">等客户验收 · {{ awaitingOf(element) }} 天没动静</span>
               </div>
               <!-- 下一步：谁做什么、哪天前 -->
               <div v-if="element.nextStep" class="card-next" :class="nextDueState(element)" :title="element.nextStep">
@@ -422,7 +420,7 @@ import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import OrderMobileCard from './components/OrderMobileCard.vue'
 import DeliveryDialog from '@/components/DeliveryDialog.vue'
-import { isMyTodo, nextAction, nextDueState, shortDue, stalledDays, awaitingCustomerDays } from '@/utils/workbench'
+import { isMyTodo, nextAction, nextDueState, shortDue, stalledDays, reviewIdleDays } from '@/utils/workbench'
 import NotebookDialog from '@/components/NotebookDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
@@ -859,8 +857,8 @@ async function changeStatus(row, status) {
 
 // 卡片上的协作信息：下一步交给谁、停滞了几天
 const nextWho = (o) => (o.nextOwnerId === currentMember.value.id ? '我' : o.nextOwnerName || memberMap[o.nextOwnerId]?.name || '负责人')
-const stalledOf = (o) => stalledDays(o, collab.stallDays)
-const awaitingOf = (o) => awaitingCustomerDays(o, collab.stallDays)
+// 卡片上的「N 天没动静」：待确认 / 进行中，加上交付后一直没人验收的待验收项目
+const stalledOf = (o) => stalledDays(o, collab.stallDays) || reviewIdleDays(o, collab.stallDays)
 
 // ---- 手机卡片上的“下一步”按钮：接收 / 开始做 / 完成 / 提交验收 / 验收通过 ----
 const actingId = ref(null)

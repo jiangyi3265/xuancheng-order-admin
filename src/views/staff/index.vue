@@ -75,7 +75,8 @@
           <el-input v-model="createForm.nickName" placeholder="显示在项目负责人处，如 费鹏飞" />
         </el-form-item>
         <el-form-item label="初始密码" prop="password">
-          <el-input v-model="createForm.password" placeholder="5-20 位" show-password />
+          <!-- 先给一个随机密码，不用自己想；建好后会连同账号一起整理成一段话供复制 -->
+          <el-input v-model="createForm.password" placeholder="5-20 位" />
         </el-form-item>
         <el-form-item label="企业微信" prop="wecom">
           <el-input v-model="createForm.wecom" placeholder="选填：通讯录里的「账号」，填了能收到微信提醒" clearable />
@@ -98,6 +99,7 @@ import { Plus } from '@element-plus/icons-vue'
 import { MEMBERS } from '@/constants/options'
 import { loadStaff, createStaff, resetStaffPwd, setStaffStatus, deleteStaff, getPushConfig, savePushConfig } from '@/mock/store'
 import { offerLoginInfo } from '@/utils/loginInfo'
+import { suggestPassword } from '@/utils/password'
 import { fmtTime } from '@/utils/time'
 import InlineEdit from '@/components/InlineEdit.vue'
 
@@ -153,7 +155,7 @@ async function load() {
 function openCreate() {
   createForm.userName = ''
   createForm.nickName = ''
-  createForm.password = ''
+  createForm.password = suggestPassword()
   createForm.wecom = ''
   createVisible.value = true
   formRef.value?.clearValidate()
@@ -199,6 +201,7 @@ async function doReset(row) {
       {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
+        inputValue: suggestPassword(),
         inputPattern: /^.{5,20}$/,
         inputErrorMessage: '密码需为 5-20 位'
       }

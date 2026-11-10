@@ -103,8 +103,8 @@ test('待验收：写出交付几天了，一键催客户验收；今天催过�
   // 同样的话带着登录地址复制好了
   expect((await copied(page))[0]).toContain('查看地址：')
   // 今天催过：按钮变成只复制
-  await expect(bar.getByRole('button', { name: '今天已催 · 再复制一遍' })).toBeVisible()
-  await bar.getByRole('button', { name: '今天已催 · 再复制一遍' }).click()
+  await expect(bar.getByRole('button', { name: '今天已催' })).toBeVisible()
+  await bar.getByRole('button', { name: '今天已催' }).click()
   await expect.poll(async () => (await copied(page)).length).toBe(2)
   expect(sent.length).toBe(1)
 })
@@ -141,7 +141,8 @@ test('工作台和看板：等客户验收的项目能直接催，卡片上写�
 
   await page.addInitScript(() => localStorage.setItem('xc.orderView', 'kanban'))
   await page.goto('/#/order')
-  await expect(page.locator('.kanban').getByText('等客户验收 · 5 天没动静')).toHaveCount(1)
+  // 待验收的项目一直没人验收：卡片上和别的列一样写「N 天没动静」（两张都有）
+  await expect(page.locator('.kanban').getByText('5 天没动静')).toHaveCount(2)
 })
 
 test('还欠款的项目：一键复制催款话术（总价、已收、还差）；收清了就没有这个按钮', async ({ page }) => {
@@ -165,4 +166,40 @@ test('员工看不到催款话术', async ({ page }) => {
   await page.goto('/#/order?id=1')
   await expect(page.getByText('项目信息')).toBeVisible()
   await expect(page.getByRole('button', { name: '复制催款话术' })).toHaveCount(0)
+})
+
+test('建客户账号：密码已经随机填好，只填账号就能建；建好后的那段话里带着这个密码', async ({ page }) => {
+  await as(page, 'boss')
+  let body = null
+  await page.route('**/jiedan/customer', async (r) => {
+    if (r.request().method() !== 'POST') return r.fallback()
+    body = r.request().postDataJSON()
+    await ok(r, null)
+  })
+  await page.goto('/#/customers')
+  await page.getByRole('button', { name: '新建客户账号' }).click()
+  const d = page.getByRole('dialog', { name: '新建客户账号' })
+  const pwd = await d.getByPlaceholder('5-20 位').inputValue()
+  // 4 个字母 + 4 个数字，没有容易看错的 0 o 1 l i
+  expect(pwd).toMatch(/^[a-hj-km-np-z]{4}[2-9]{4}$/)
+  await d.getByPlaceholder('客户登录用，字母/数字').fill('kh90001')
+  await d.getByRole('button', { name: '创建' }).click()
+  await expect.poll(() => body).toEqual(expect.objectContaining({ userName: 'kh90001', password: pwd }))
+  await expect(page.locator('.login-info-notice')).toContainText('密码：' + pwd)
+})
+
+test('记收款：点一下直接到登记页，金额按还欠的填好；已收清的项目先看流水', async ({ page }) => {
+  await as(page, 'boss')
+  await page.goto('/#/order?id=1')
+  await page.locator('.desc').getByRole('button', { name: '记收款' }).click()
+  const entry = page.getByRole('dialog', { name: '登记收款' })
+  await expect(entry.locator('.pay-form')).toBeVisible()
+  await expect(entry.locator('.el-input-number input')).toHaveValue('5800.00')
+  await entry.locator('.el-dialog__footer').getByRole('button', { name: '关闭' }).click()
+
+  await page.route('**/jiedan/order/1', (r) => ok(r, { ...order, receivedAmount: 8800 }))
+  await page.route('**/jiedan/order/list', (r) => ok(r, [{ ...order, receivedAmount: 8800 }]))
+  await page.reload()
+  await page.locator('.desc').getByRole('button', { name: '记收款' }).click()
+  await expect(page.getByRole('dialog', { name: '收款流水' })).toContainText('项目定金')
 })

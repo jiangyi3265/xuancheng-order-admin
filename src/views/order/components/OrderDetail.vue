@@ -422,7 +422,7 @@
             <div v-if="awaitsCustomer" class="chat-await" role="note">
               <span>{{ reviewDays > 0 ? '交付 ' + reviewDays + ' 天了，客户还没验收' : '已交付，等客户验收' }}</span>
               <el-button v-if="!acceptNudged" size="small" type="primary" plain :loading="nudgingAccept" @click="doAcceptNudge">催客户验收</el-button>
-              <el-button v-else size="small" plain title="今天已经在客户沟通里催过了；点这里再复制一遍，粘到微信发" @click="copyAcceptNudge(order)">今天已催 · 再复制一遍</el-button>
+              <el-button v-else size="small" plain title="今天已经催过了；点一下把这句话再复制一遍，可以粘到微信发" @click="copyAcceptNudge(order)">今天已催</el-button>
             </div>
             <div ref="chatList" class="chat-list">
               <div v-for="(t, i) in chatItems" :key="t.id || i" class="chat-row" :data-notice-id="t.id" :class="{ team: t.type === 'reply', 'notice-target': isNoticeItem('chat', t.id) }">
