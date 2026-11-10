@@ -583,6 +583,7 @@ export async function loadCollabConfig() {
     const cfg = await http('/jiedan/push/config')
     const n = Number(cfg['push.stallDays'])
     if (Number.isInteger(n) && n >= 1 && n <= 60) collab.stallDays = n
+    return cfg
   } catch (e) {
     // 读不到就用默认 3 天
   }

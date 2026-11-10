@@ -92,6 +92,7 @@
                   设为「{{ s.label }}」
                 </el-dropdown-item>
                 <el-dropdown-item command="pay" :icon="Coin" :divided="moreStatusOptions.length > 0">{{ isBoss ? '记收款' : '申请收款' }}</el-dropdown-item>
+                <el-dropdown-item v-if="canDun" command="dun" :icon="CopyDocument">复制催款话术</el-dropdown-item>
                 <el-dropdown-item command="notebook" :icon="Notebook">项目记事本</el-dropdown-item>
                 <el-dropdown-item command="revision" :icon="EditPen">改稿 +1</el-dropdown-item>
                 <el-dropdown-item v-if="nudgeLabel" command="nudge" :icon="Bell">{{ nudgeLabel }}</el-dropdown-item>
@@ -155,6 +156,8 @@
                   <template v-if="owed(order) > 0"> · 还欠 <b class="red">{{ money(owed(order)) }}</b></template>
                 </span>
                 <el-button link type="primary" size="small" @click="payVisible = true">{{ isBoss ? '记收款' : '申请收款' }}</el-button>
+                <!-- 还欠款：一键生成「总价、已收、还差多少」，粘到微信就能催 -->
+                <el-button v-if="canDun" link type="primary" size="small" title="生成一段催款的话并复制，粘到微信发给客户" @click="copyDunning(order)">复制催款话术</el-button>
               </el-descriptions-item>
               <el-descriptions-item label="优先级"><InlineEdit type="select" :options="PRIORITY" :model-value="order.priority" :disabled="!canInlineEdit" :save="(v) => saveField('priority', v)">{{ priorityMap[order.priority]?.label || '-' }}</InlineEdit></el-descriptions-item>
               <el-descriptions-item label="改稿次数">
@@ -415,6 +418,12 @@
               这个项目还没绑定客户账号，客户登录后看不到这里的消息。
               <el-button link type="primary" size="small" @click="emit('edit', order)">去绑定</el-button>
             </div>
+            <!-- 交付了、客户还没点验收：写出等了几天，一键催（系统里留一条，同样的话复制好可以粘到微信） -->
+            <div v-if="awaitsCustomer" class="chat-await" role="note">
+              <span>{{ reviewDays > 0 ? '交付 ' + reviewDays + ' 天了，客户还没验收' : '已交付，等客户验收' }}</span>
+              <el-button v-if="!acceptNudged" size="small" type="primary" plain :loading="nudgingAccept" @click="doAcceptNudge">催客户验收</el-button>
+              <el-button v-else size="small" plain title="今天已经在客户沟通里催过了；点这里再复制一遍，粘到微信发" @click="copyAcceptNudge(order)">今天已催 · 再复制一遍</el-button>
+            </div>
             <div ref="chatList" class="chat-list">
               <div v-for="(t, i) in chatItems" :key="t.id || i" class="chat-row" :data-notice-id="t.id" :class="{ team: t.type === 'reply', 'notice-target': isNoticeItem('chat', t.id) }">
                 <div class="avatar">{{ avatarOf(t) }}</div>
@@ -433,8 +442,10 @@
             </div>
 
             <div class="composer" :class="{'board-composer':isMobile}">
-              <ChatInput v-model="replyText" class="reply-input" label="回复客户" :rows="1" :busy="replying"
-                placeholder="回复客户，回车发送" @send="sendReply" @files="addReplyFiles" />
+              <ChatInput ref="replyInput" v-model="replyText" class="reply-input" label="回复客户" :rows="1" :busy="replying"
+                placeholder="回复客户，回车发送" @send="sendReply" @files="addReplyFiles">
+                <template #extra><QuickPhrases :disabled="replying" @pick="(t) => replyInput?.fill(t)" /></template>
+              </ChatInput>
               <button v-if="isMobile" class="icon-button" aria-label="添加附件" @click="replyUploadOpen=!replyUploadOpen"><el-icon><CirclePlus/></el-icon></button>
               <AttachmentUploader v-show="!isMobile || replyUploadOpen || replyFiles.length > 0 || draft.attachmentWaitList?.length" ref="replyUploader" :draft="draft" v-model="replyFiles" compact class="note-upload" />
               <el-button type="primary" :icon="Promotion" :loading="replying" :disabled="!replyReady" @click="sendReply">发送给客户</el-button>
@@ -485,10 +496,12 @@ import ProjectCover from '@/components/ProjectCover.vue'
 import ProjectHandling from './ProjectHandling.vue'
 import ProjectUrgency from './ProjectUrgency.vue'
 import { ref, computed, watch, nextTick, onBeforeUnmount, toRefs } from 'vue'
-import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close, Coin, RefreshLeft, Back, ArrowDown } from '@element-plus/icons-vue'
+import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close, Coin, RefreshLeft, Back, ArrowDown, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { chatDraft, sendDraft } from '@/utils/chatDraft'
 import ChatInput from '@/components/ChatInput.vue'
+import QuickPhrases from '@/components/QuickPhrases.vue'
+import { awaitingCustomer, nudgedToday, nudgeCustomerAccept, copyAcceptNudge, copyDunning } from '@/utils/customerNudge'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import NextStepBar from '@/components/NextStepBar.vue'
 import InlineEdit from '@/components/InlineEdit.vue'
@@ -893,6 +906,7 @@ async function doNudge() {
 const moreStatusOptions = computed(() => statusOptions.value.filter((s) => s.value !== props.order?.status))
 const moreActions = {
   pay: () => { payVisible.value = true },
+  dun: () => copyDunning(props.order),
   notebook: () => emit('notebook', props.order),
   revision: doRevision,
   nudge: doNudge,
@@ -998,6 +1012,33 @@ async function changeBugStatus(bug, status) {
   }
 }
 const replyUploader = ref(null)
+const replyInput = ref(null)
+// ---- 等客户验收 ----
+const awaitsCustomer = computed(() => awaitingCustomer(props.order))
+// 从记录里找最近一次改成「待验收」的时间，算交付几天了
+const reviewDays = computed(() => {
+  if (!awaitsCustomer.value) return 0
+  const last = [...recordItems.value].reverse().find((t) => t.type === 'status' && String(t.content || '').includes('待验收'))
+  const t = last && new Date(String(last.time || '').replace(' ', 'T'))
+  if (!t || Number.isNaN(t.getTime())) return 0
+  return Math.max(0, Math.floor((Date.now() - t.getTime()) / 86400000))
+})
+const acceptNudged = computed(() => awaitsCustomer.value && nudgedToday(props.order, chatItems.value))
+const nudgingAccept = ref(false)
+async function doAcceptNudge() {
+  if (nudgingAccept.value) return
+  nudgingAccept.value = true
+  try {
+    await nudgeCustomerAccept(props.order)
+    scrollChatBottom(true)
+  } catch (e) {
+    ElMessage.error(e.message || '提醒失败')
+  } finally {
+    nudgingAccept.value = false
+  }
+}
+// 催款话术：老板、还欠款、没取消的项目才有
+const canDun = computed(() => isBoss.value && props.order?.status !== 'cancelled' && owed(props.order) > 0)
 const replyReady = computed(() => !replying.value && !draft.attachmentWaitList?.length && (replyText.value.trim() || replyFiles.value.length))
 function addReplyFiles(files) {
   replyUploadOpen.value = true
@@ -1034,6 +1075,9 @@ function dotColor(type) {
 .detail-handling { flex:none; padding:6px 16px; background:#f7f9fd; }
 .workspace-next { flex: 0 0 auto; margin: 12px 16px 0; }
 .chat-unbound { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: #fff7e8; color: #9a6a1c; font-size: 12px; line-height: 1.6; }
+/* 等客户验收的提示条：一句话 + 一个按钮 */
+.chat-await { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: #eef5ff; color: #33507a; font-size: 12px; line-height: 1.6; }
+.chat-await .el-button { flex: none; margin: 0; }
 .mention-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #8591a4; }
 .mention-chip { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 12px; border: 1px solid #d9e1ec; background: #fff; color: #4a5a75; cursor: pointer; }
 .mention-chip:hover { border-color: #165dff; color: #165dff; }

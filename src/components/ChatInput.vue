@@ -20,6 +20,8 @@
         <button class="custom" type="button" @click="customFiles.click()">选择自己的图片表情…</button>
       </div>
     </el-popover>
+    <!-- 表情按钮旁边的位置：项目详情里放「常用语」 -->
+    <slot name="extra" />
     <input ref="customFiles" type="file" accept="image/*" multiple hidden @change="onCustomFiles" />
   </div>
 </template>
@@ -86,6 +88,19 @@ function attachSticker({label, face, color}) {
   open.value = false
   field.value.focus()
 }
+// 把一句话填进输入框：空的就直接填，已经有字就接在后面；填完光标停在最后，改两个字就能发
+async function fill(text) {
+  if (props.busy || !text) return
+  const cur = model.value.replace(/\s+$/, '')
+  let value = cur ? cur + (/[，。！？、；：,.!?;:]$/.test(cur) ? '' : '，') + text : text
+  if (props.maxlength) value = value.slice(0, props.maxlength)
+  model.value = value
+  await nextTick()
+  const input = field.value?.textarea
+  input?.focus({preventScroll:true})
+  input?.setSelectionRange(value.length, value.length)
+}
+defineExpose({ fill })
 function onCustomFiles(event) {
   const files = Array.from(event.target.files)
   if (!props.busy && files.length) emit('files', files)

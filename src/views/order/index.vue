@@ -165,10 +165,12 @@
                 <button v-if="!selectionMode" type="button" class="project-title-button" :aria-label="'打开项目：' + element.title" @click.stop="openDetail(element)">{{ element.title }}</button>
                 <template v-else>{{ element.title }}</template>
               </div>
-              <div v-if="element.assignState === 'pending' || Number(element.pendingApprovals) > 0 || stalledOf(element)" class="card-flags">
+              <div v-if="element.assignState === 'pending' || Number(element.pendingApprovals) > 0 || stalledOf(element) || awaitingOf(element)" class="card-flags">
                 <span v-if="element.assignState === 'pending'" class="flag amber">{{ isBoss ? '等 ' + (memberMap[element.ownerId]?.name || '负责人') + ' 接收' : '待接收' }}</span>
                 <span v-if="Number(element.pendingApprovals) > 0" class="flag red">{{ element.pendingApprovals }} 条申请待批</span>
                 <span v-if="stalledOf(element)" class="flag amber">{{ stalledOf(element) }} 天没动静</span>
+                <!-- 交付了、客户一直没验收也没回话 -->
+                <span v-if="awaitingOf(element)" class="flag amber" title="已交付，客户还没验收，也没有新消息">等客户验收 · {{ awaitingOf(element) }} 天没动静</span>
               </div>
               <!-- 下一步：谁做什么、哪天前 -->
               <div v-if="element.nextStep" class="card-next" :class="nextDueState(element)" :title="element.nextStep">
@@ -420,7 +422,7 @@ import OrderDialog from './components/OrderDialog.vue'
 import OrderDetail from './components/OrderDetail.vue'
 import OrderMobileCard from './components/OrderMobileCard.vue'
 import DeliveryDialog from '@/components/DeliveryDialog.vue'
-import { isMyTodo, nextAction, nextDueState, shortDue, stalledDays } from '@/utils/workbench'
+import { isMyTodo, nextAction, nextDueState, shortDue, stalledDays, awaitingCustomerDays } from '@/utils/workbench'
 import NotebookDialog from '@/components/NotebookDialog.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
@@ -594,15 +596,18 @@ function matchesKeyword(order, term) {
     .join(' ').toLowerCase().includes(term)
 }
 
-function matchesGroup(order, key) {
-  if (key === 'all') return order.status !== 'pending'
+// 「全部」平时不含待确认（那一堆是还没接的单）；但在搜索时不分状态都算进来：
+// 以前在列表里搜一个待确认的项目，会显示「没有符合筛选条件的项目」，要自己去点「待确认」才找得到
+const searching = computed(() => !!filter.keyword.trim())
+function matchesGroup(order, key, anyStatus = searching.value) {
+  if (key === 'all') return anyStatus || order.status !== 'pending'
   if (key === 'overdue') return isOverdue(order)
   if (key === 'urgent') return !!order.urgentUntil
   if (key === 'owing') return payFilterOk(order, '0')
   return order.status === key
 }
-function groupRows(key, ownerId) {
-  return matchingOrders.value.filter(row => (!ownerId || row.ownerId === ownerId) && matchesGroup(row,key))
+function groupRows(key, ownerId, anyStatus = searching.value) {
+  return matchingOrders.value.filter(row => (!ownerId || row.ownerId === ownerId) && matchesGroup(row,key,anyStatus))
 }
 const filteredOrders = computed(() => prioritizeRows(groupRows(quick.value,filter.ownerId)))
 const focusScope = ref(null)
@@ -611,7 +616,8 @@ const focusMatches = computed(() => {
   const scope = focusScope.value
   if (!scope) return []
   const term = scope.keyword.trim().toLowerCase()
-  return groupRows(scope.key, scope.ownerId)
+  // 分组页自己的搜索框里有字时也一样：「全部」里能搜到待确认的项目
+  return groupRows(scope.key, scope.ownerId, searching.value || !!term)
     .filter(row => (!scope.extra || matchesGroup(row, scope.extra)) && matchesKeyword(row, term))
 })
 const needsAttention = row => hasReminder(row) || !!actionLabel(row)
@@ -854,6 +860,7 @@ async function changeStatus(row, status) {
 // 卡片上的协作信息：下一步交给谁、停滞了几天
 const nextWho = (o) => (o.nextOwnerId === currentMember.value.id ? '我' : o.nextOwnerName || memberMap[o.nextOwnerId]?.name || '负责人')
 const stalledOf = (o) => stalledDays(o, collab.stallDays)
+const awaitingOf = (o) => awaitingCustomerDays(o, collab.stallDays)
 
 // ---- 手机卡片上的“下一步”按钮：接收 / 开始做 / 完成 / 提交验收 / 验收通过 ----
 const actingId = ref(null)

@@ -32,6 +32,8 @@
                   <el-button v-else-if="t.kind === 'mention'" size="small" type="primary" plain @click="openDetail(t.order, 'internal')">查看</el-button>
                   <el-button v-else-if="t.kind === 'next' && isMyNext(t.order)" size="small" type="success" :loading="completing === t.order.id" :aria-label="'完成这一步：' + t.order.title" @click="quickCompleteNext(t.order)">完成这一步</el-button>
                   <el-button v-else-if="naOf(t.order)" size="small" type="primary" :loading="acting === t.order.id" :aria-label="naOf(t.order).label + '：' + t.order.title" @click="mobileNext(t.order)">{{ naOf(t.order).label }}</el-button>
+                  <!-- 交付了客户还没点验收：一键催 -->
+                  <el-button v-if="t.kind === 'review' && awaitingCustomer(t.order)" size="small" plain :loading="nudgingAccept === t.order.id" @click="quickAcceptNudge(t.order)">{{ acceptNudged(t.order) ? '今天已催' : '催客户验收' }}</el-button>
                   <AssignMenu v-if="isBoss" :order="t.order"/>
                 </template>
               </div>
@@ -125,6 +127,15 @@
                   :icon="Promotion"
                   @click.stop="quickNext(t.order)"
                 >{{ naOf(t.order).label }}</el-button>
+                <!-- 交付了客户还没点验收：一键催（客户沟通里留一条，同样的话复制好可以粘到微信） -->
+                <el-button
+                  v-if="t.kind === 'review' && awaitingCustomer(t.order)"
+                  size="small"
+                  plain
+                  :loading="nudgingAccept === t.order.id"
+                  :title="acceptNudged(t.order) ? '今天已经催过了，点一下再复制一遍，粘到微信发' : '在客户沟通里提醒客户验收，并把同样的话复制好'"
+                  @click.stop="quickAcceptNudge(t.order)"
+                >{{ acceptNudged(t.order) ? '今天已催' : '催客户验收' }}</el-button>
                 <AssignMenu v-if="isBoss" :order="t.order" />
               </template>
             </div>
@@ -321,6 +332,7 @@ import { statusMap, MEMBERS, memberMap } from '@/constants/options'
 import { isWaitingOther, nextAction, stalledDays, shortDue } from '@/utils/workbench'
 import { todoItems, todoOrderIds, isMyNextStep } from '@/utils/todos'
 import { owed, money } from '@/utils/payment'
+import { awaitingCustomer, nudgedToday, nudgeCustomerAccept, copyAcceptNudge } from '@/utils/customerNudge'
 import { todayStr as todayLocal } from '@/utils/date'
 
 const router = useRouter()
@@ -615,6 +627,23 @@ async function refreshAll() {
     ElMessage.error(e.message || '刷新失败')
   } finally {
     refreshing.value = false
+  }
+}
+// 待验收的项目：客户还没点验收时一键催；今天催过了就只把话再复制一遍，不往客户沟通里发第二条
+const nudgingAccept = ref(null)
+const justNudged = ref({})
+const acceptNudged = (o) => !!justNudged.value[o.id] || nudgedToday(o)
+async function quickAcceptNudge(o) {
+  if (acceptNudged(o)) return copyAcceptNudge(o)
+  if (nudgingAccept.value) return
+  nudgingAccept.value = o.id
+  try {
+    await nudgeCustomerAccept(o)
+    justNudged.value = { ...justNudged.value, [o.id]: true }
+  } catch (e) {
+    ElMessage.error(e.message || '提醒失败')
+  } finally {
+    nudgingAccept.value = null
   }
 }
 async function quickNudge(o) {

@@ -95,6 +95,7 @@ import QuickCapture from '@/components/QuickCapture.vue'
 import SettleDialog from '@/components/SettleDialog.vue'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
 import { orders, approvals, pendingApprovals, currentMember, isBoss, syncOrders, signOutDevice, loadCollabConfig } from '@/mock/store'
+import { applyPhraseConfig } from '@/utils/phrases'
 import { todoItems } from '@/utils/todos'
 import { hasBackgroundPush, showNotify } from '@/utils/notify'
 
@@ -156,7 +157,8 @@ function refreshWhenVisible() {
 
 onMounted(() => {
   refreshOrders(true)
-  loadCollabConfig()
+  // 同一份设置里还带着客户沟通的「常用语」，顺手读出来
+  loadCollabConfig().then(applyPhraseConfig)
   orderPoller = setInterval(refreshOrders, 10000)
   window.addEventListener('focus', refreshOrders)
   document.addEventListener('visibilitychange', refreshWhenVisible)

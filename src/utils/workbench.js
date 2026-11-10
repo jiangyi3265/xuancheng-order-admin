@@ -70,3 +70,11 @@ export function stalledDays(order, limit) {
   const days = Math.floor((Date.now() - t.getTime()) / 86400000)
   return days >= limit ? days : 0
 }
+// 待验收、已绑定客户账号的项目：交付后多少天没有任何动静（客户没验收、也没回话）。没到停滞天数返回 0
+export function awaitingCustomerDays(order, limit) {
+  if (!order || order.status !== 'review' || !order.customerAccount || !order.updateTime) return 0
+  const t = new Date(String(order.updateTime).replace(' ', 'T'))
+  if (Number.isNaN(t.getTime())) return 0
+  const days = Math.floor((Date.now() - t.getTime()) / 86400000)
+  return days >= limit ? days : 0
+}
