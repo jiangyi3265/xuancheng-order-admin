@@ -25,6 +25,28 @@ export function returnInfo(o) {
   return { who: e.user || m[1], action: m[2] === '拒绝了项目' ? '拒了这单' : '把这单交回了', why: m[3].trim() }
 }
 
+export function mentionText(sender, content) {
+  const text = String(content || '').trim()
+  const from = sender || '同事'
+  return text && text !== '（无文字）' ? from + '：' + text : from + ' 发来了图片 / 文件'
+}
+
+export function colleagueTask(o, me) {
+  const e = o.lastEvent || o.timeline?.at(-1)
+  const nudge = e?.type === 'note' && /^(.+?) 催了一下：/.exec(e.content || '')
+  if (nudge && o.unread?.includes(me) && e.user !== currentMember.value.name &&
+      (o.ownerId === me || isBoss.value && memberMap[o.ownerId]?.name === e.user)) {
+    return { kind: 'nudge', rank: 2, time: e.time, text: (e.user || nudge[1]) + ' 催你跟进这个项目' }
+  }
+  const m = o.myMention
+  if (!m) return null
+  return { kind: 'mention', rank: 3, time: m.time, text: mentionText(m.from, m.content) }
+}
+
+export function unreadNotes(order, me) {
+  return (order?.timeline || []).filter(row => row.mentions?.some(m => String(m.memberId) === String(me) && !m.read))
+}
+
 // 客户发来的消息还没人回：最后一条沟通是客户发的（两周内）
 export function waitingReply(o) {
   const last = o?.lastMessage
@@ -60,8 +82,9 @@ export function todoReason(o, me, boss, today = todayStr()) {
     const r = returnInfo(o)
     if (r) return { kind: 'returned', rank: 0, text: `${r.who} ${r.action}：${r.why || '没写原因'}` }
   }
+  const message = colleagueTask(o, me)
+  if (message) return message
   if (open && mine && o.urgentUntil && !o.handled) return { kind: 'urgent', rank: 2, text: '加急：' + o.urgentUntil + ' 前要处理' }
-  if (o.myMention) return { kind: 'mention', rank: 3, text: `${o.myMention.from} @了你：${o.myMention.content || ''}` }
   if (mine && waitingReply(o)) return { kind: 'reply', rank: 4, text: messageText(o.lastMessage) }
   if (!open) return null
   if (myNext && nextDueState(o)) return { kind: 'next', rank: 5, text: nextText(o) }
@@ -98,7 +121,7 @@ export const todoItems = computed(() => {
       list.push({ key: 'a' + a.id, kind: 'approval', rank: 1, text: a.summary || a.typeLabel || '项目变更申请', approval: a })
     }
   }
-  return list.sort((a, b) => a.rank - b.rank || sortKey(a).localeCompare(sortKey(b)))
+  return list.sort((a, b) => a.rank - b.rank || String(b.time || '').localeCompare(String(a.time || '')) || sortKey(a).localeCompare(sortKey(b)))
 })
 
 // 已经在清单里的项目，其他板块（快被忘了、我手上的）不再重复列

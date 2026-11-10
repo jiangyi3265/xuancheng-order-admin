@@ -22,6 +22,7 @@
             <el-badge
               v-if="badgeOf(r.path)"
               :value="badgeOf(r.path)"
+              :is-dot="r.path === 'messages'"
               :max="99"
               class="menu-badge"
               type="danger"
@@ -71,7 +72,7 @@
 
     <nav class="mobile-nav" aria-label="主导航">
       <router-link v-for="item in primaryNav" :key="item.path" :to="item.path" :class="{selected: route.path === item.path}" :aria-label="item.label">
-        <el-badge :is-dot="item.path === '/workbench' && todoCount > 0"><el-icon><component :is="route.path===item.path && item.icon==='House'?'HomeFilled':route.path===item.path && item.icon==='User'?'UserFilled':item.icon" /></el-icon></el-badge><span>{{ item.label }}</span>
+        <el-badge :is-dot="(item.path === '/workbench' && todoCount > 0) || (item.path === '/messages' && hasUnreadMessages)"><el-icon><component :is="route.path===item.path && item.icon==='House'?'HomeFilled':route.path===item.path && item.icon==='User'?'UserFilled':item.icon" /></el-icon></el-badge><span>{{ item.label }}</span>
       </router-link>
     </nav>
     <QuickCapture ref="quickCapture" :show-fab="false" />
@@ -96,9 +97,9 @@ import { menuRoutes } from '@/router'
 import QuickCapture from '@/components/QuickCapture.vue'
 import SettleDialog from '@/components/SettleDialog.vue'
 import ChangePasswordDialog from '@/components/ChangePasswordDialog.vue'
-import { orders, approvals, pendingApprovals, currentMember, isBoss, syncOrders, signOutDevice, loadCollabConfig } from '@/mock/store'
+import { orders, approvals, pendingApprovals, currentMember, isBoss, fetchOrderDetail, latestOrderVersion, syncOrders, signOutDevice, loadCollabConfig } from '@/mock/store'
 import { applyPhraseConfig } from '@/utils/phrases'
-import { todoItems } from '@/utils/todos'
+import { todoItems, colleagueTask, mentionText, unreadNotes } from '@/utils/todos'
 import { hasBackgroundPush, showNotify } from '@/utils/notify'
 
 // 浏览器标签页标题：有待办时前面带数字，切到别的标签也能看见
@@ -143,15 +144,19 @@ let alive = true
 // 第一次进入（force）一定拉一遍。
 // 页面在后台（切到别的标签 / 最小化）也要继续查：不然标签页上的数字和桌面提醒都更新不了。
 function refreshOrders(force = false) {
-  const quoteRefresh = syncQuotes().then(checkAttention).catch(()=>{})
-  const projectRefresh = syncOrders(force === true)
-    .then(checkAttention)
-    .catch((e) => {
-      if (force === true) ElMessage.error('加载项目失败：' + e.message)
-    })
-  if (searchLoading.value) {
-    Promise.all([quoteRefresh, projectRefresh]).then(() => { searchLoading.value = false })
-  }
+  const quoteRefresh = syncQuotes().then(checkAttention).catch(() => {})
+  const projectRefresh = syncOrders(force === true).then(() => {
+    if (!alive) return
+    const me = currentMember.value.id
+    if (me) {
+      const initial = colleagueOwner !== me
+      if (initial) closeColleagueNotices()
+      checkColleagueMessages(me, initial)
+      colleagueOwner = me
+    }
+    checkAttention()
+  }).catch(e => { if (force === true) ElMessage.error('加载项目失败：' + e.message) })
+  if (searchLoading.value) Promise.all([quoteRefresh, projectRefresh]).then(() => { searchLoading.value = false })
 }
 
 function refreshWhenVisible() {
@@ -171,6 +176,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   alive = false
   attnPrev = null
+  closeColleagueNotices()
   document.title = BASE_TITLE
   if (orderPoller) clearInterval(orderPoller)
   window.removeEventListener('focus', refreshOrders)
@@ -187,6 +193,7 @@ async function doLogout() {
   }
   // 退出登录：清掉提醒的记录，标签页标题也恢复原样
   attnPrev = null
+  closeColleagueNotices()
   document.title = BASE_TITLE
   try { await signOutDevice(); router.push('/login') }
   catch(e){ ElMessage.error(e.message || '退出未完成，请重试') }
@@ -222,6 +229,8 @@ watch(
 // 「等我处理的事」的清单，每一项是一个字符串键：
 //   老板：a:申请号（待批准的申请）、u:项目号（有新动态没看的项目）
 //   员工：p:项目号（老板派来、还没接收）、u:项目号（有新动态没看）、r:申请号:结果（我的申请有结果了）
+const hasUnreadMessages = computed(() => unreadQuotes.value.length > 0 || orders.some(o => o.myMention || o.unread?.includes(currentMember.value.id)) ||
+  approvals.some(a => a.status === 'pending' && (isBoss.value || a.requesterId === currentMember.value.id)))
 const attention = computed(() => {
   const me = currentMember.value.id
   const list = []
@@ -232,12 +241,12 @@ const attention = computed(() => {
       .forEach(q=>list.push('sent:'+q.id+':'+q.noticeVersion))
     pendingApprovals.value.forEach((a) => list.push('a:' + a.id))
     orders.forEach((o) => {
-      if (o.unread?.includes(me)) list.push('u:' + o.id + ':' + (o.bugCount || 0) + ':' + (o.messageCount || 0) + ':' + (o.actionBugCount || 0))
+      if (o.unread?.includes(me)) list.push('u:' + o.id + ':' + (o.bugCount || 0) + ':' + (o.messageCount || 0) + ':' + (o.actionBugCount || 0) + ':' + (o.lastEvent?.time || ''))
     })
   } else {
     orders.forEach((o) => {
       if (o.assignState === 'pending') list.push('p:' + o.id)
-      if (o.unread?.includes(me)) list.push('u:' + o.id + ':' + (o.bugCount || 0) + ':' + (o.messageCount || 0) + ':' + (o.actionBugCount || 0))
+      if (o.unread?.includes(me)) list.push('u:' + o.id + ':' + (o.bugCount || 0) + ':' + (o.messageCount || 0) + ':' + (o.actionBugCount || 0) + ':' + (o.lastEvent?.time || ''))
     })
     approvals.forEach((a) => {
       if (a.requesterId === me && (a.status === 'approved' || a.status === 'rejected')) {
@@ -254,6 +263,54 @@ let attnOwner = 0 // 上一次清单属于谁（换了人就当第一次）
 
 function notifyItem(title, body, path) {
   showNotify('玄成接单 · ' + title, body, 'xc-' + path + '-' + title, '/#' + path).catch(() => {})
+}
+
+let colleagueOwner = null
+const colleagueSnapshots = new Map()
+const colleagueNotices = new Map()
+function closeColleagueNotices() {
+  colleagueSnapshots.clear()
+  for (const notice of colleagueNotices.values()) notice.close()
+  colleagueNotices.clear()
+}
+
+// 列表上的时间只到分钟。用详情里的记录 ID 区分同一分钟、甚至文字相同的两条留言。
+function checkColleagueMessages(me, initial) {
+  const relevant = new Set()
+  for (const order of orders) {
+    const task = colleagueTask(order, me)
+    if (!task) continue
+    relevant.add(order.id)
+    const signature = JSON.stringify([latestOrderVersion(order), task.kind, task.text, order.lastEvent?.time])
+    const previous = colleagueSnapshots.get(order.id)
+    if (previous?.signature === signature) continue
+    const state = { signature, entry: previous?.entry, silent: initial }
+    colleagueSnapshots.set(order.id, state)
+    fetchOrderDetail(order.id).then(detail => {
+      if (!alive || !detail || currentMember.value.id !== me || colleagueSnapshots.get(order.id) !== state) return
+      const entry = task.kind === 'mention' ? unreadNotes(detail, me).at(-1) : detail.timeline?.at(-1)
+      if (!entry || (task.kind === 'nudge' && !entry.content?.startsWith(entry.user + ' 催了一下：'))) return
+      if (detail.unread && !detail.unread.includes(me) && task.kind === 'nudge') return
+      state.entry = entry.id
+      if (state.silent || state.entry === previous?.entry) return
+      const text = task.kind === 'nudge' ? task.text : mentionText(entry.user, entry.content)
+      const body = text.length > 100 ? text.slice(0, 100) + '…' : text
+      const path = '/order?id=' + order.id + '&tab=internal&entry=' + entry.id
+      if (!document.hidden) {
+        colleagueNotices.get(order.id)?.close()
+        const notice = ElNotification({ title: order.title, message: body, duration: 6000,
+          onClick() { router.push(path); notice.close() },
+          onClose() { if (colleagueNotices.get(order.id) === notice) colleagueNotices.delete(order.id) }
+        })
+        colleagueNotices.set(order.id, notice)
+      } else if (!hasBackgroundPush()) {
+        notifyItem(order.title, body, path)
+      }
+    }).catch(() => {
+      if (colleagueSnapshots.get(order.id) === state) colleagueSnapshots.delete(order.id)
+    })
+  }
+  for (const id of colleagueSnapshots.keys()) if (!relevant.has(id)) colleagueSnapshots.delete(id)
 }
 
 // 每次刷新完项目后对一下清单：
@@ -330,7 +387,7 @@ function checkAttention() {
     for (const key of added.filter(k => k.startsWith('u:'))) {
       const id = key.split(':')[1]
       const project = orders.find(o => String(o.id) === id)
-      if (project && !covered.has(id)) notifyItem('项目有新动态', project.title, '/order?id=' + id)
+      if (project && !covered.has(id) && !colleagueTask(project, me)) notifyItem('项目有新动态', project.title, '/order?id=' + id)
     }
   } catch (e) {
     // 提醒是锦上添花，出任何问题都不能影响页面
@@ -339,7 +396,7 @@ function checkAttention() {
 
 function badgeOf(path) {
   if(path==='quotes')return unreadQuotes.value.length
-  // 要处理的事都汇总在工作台「需要我处理」里：红点只挂在工作台；消息中心只是动态记录，不再挂一个几十的数字催人
+  if (path === 'messages') return hasUnreadMessages.value ? 1 : 0
   if (path === 'workbench') return todoCount.value
   return 0
 }
@@ -405,6 +462,7 @@ function badgeOf(path) {
   line-height: 16px;
   box-shadow: 0 2px 8px rgba(245, 108, 108, 0.24);
 }
+.menu-badge :deep(.el-badge__content.is-dot) { width: 8px; height: 8px; min-width: 0; padding: 0; }
 .header {
   height: 56px;
   display: flex;

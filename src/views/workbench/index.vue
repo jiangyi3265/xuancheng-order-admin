@@ -12,7 +12,7 @@
         <div class="board-section-title"><h2>需要我处理</h2><span class="section-actions"><button v-if="unreadCount" :disabled="marking" @click="readAll">全部已读</button><button v-if="todoItems.length > MOBILE_TODO_LIMIT" @click="todoExpanded=!todoExpanded">{{ todoExpanded ? '收起' : '全部 ' + todoItems.length + ' 条' }} <el-icon><component :is="todoExpanded ? 'ArrowUp' : 'ArrowDown'"/></el-icon></button><button v-else @click="router.push('/order')">查看项目 <el-icon><ArrowRight/></el-icon></button></span></div>
         <template v-for="t in mobileTodos" :key="t.key">
           <ApprovalItem v-if="t.kind === 'approval'" :a="t.approval"/>
-          <div v-else class="wb-todo" role="button" tabindex="0" @click="openDetail(t.order)" @keydown.enter.self="openDetail(t.order)">
+          <div v-else class="wb-todo" role="button" tabindex="0" @click="openTodo(t)" @keydown.enter.self="openTodo(t)">
             <span class="todo-symbol"><el-icon><component :is="todoIcon(t)"/></el-icon></span>
             <div>
               <h3>{{ t.order.title }}</h3>
@@ -30,7 +30,10 @@
                 <template v-else>
                   <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click="finishPending(t)">标为已处理</el-button>
                   <el-button v-else-if="t.kind === 'reply'" size="small" type="primary" @click="openDetail(t.order, 'chat')">回复</el-button>
-                  <el-button v-else-if="t.kind === 'mention'" size="small" type="primary" plain @click="openDetail(t.order, 'internal')">查看</el-button>
+                  <template v-else-if="t.kind === 'mention' || t.kind === 'nudge'">
+                    <el-button size="small" type="primary" plain @click.stop="openTodo(t)">{{ t.kind === 'mention' ? '查看' : '写进展' }}</el-button>
+                    <el-button size="small" :disabled="acknowledging.has(t.order.id)" @click.stop="acknowledge(t.order)">知道了</el-button>
+                  </template>
                   <el-button v-else-if="t.kind === 'next' && isMyNext(t.order)" size="small" type="success" :loading="completing === t.order.id" :aria-label="'完成这一步：' + t.order.title" @click="quickCompleteNext(t.order)">完成这一步</el-button>
                   <el-button v-else-if="naOf(t.order)" size="small" type="primary" :loading="acting === t.order.id" :aria-label="naOf(t.order).label + '：' + t.order.title" @click="mobileNext(t.order)">{{ naOf(t.order).label }}</el-button>
                   <!-- 交付了客户还没点验收：一键催 -->
@@ -89,7 +92,7 @@
     <div v-if="todoItems.length" class="cards">
       <template v-for="t in shownTodos" :key="t.key">
         <ApprovalItem v-if="t.kind === 'approval'" :a="t.approval" />
-        <div v-else class="row-card todo" :class="'todo-' + t.kind" @click="openDetail(t.order)">
+        <div v-else class="row-card todo" :class="'todo-' + t.kind" @click="openTodo(t)">
           <span v-if="isUnread(t.order)" class="new-badge">NEW</span>
           <div class="rc-main">
             <div class="rc-title">
@@ -112,7 +115,10 @@
               <template v-else>
                 <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click.stop="finishPending(t)">标为已处理</el-button>
                 <el-button v-else-if="t.kind === 'reply'" size="small" type="primary" :icon="ChatDotRound" @click.stop="openDetail(t.order, 'chat')">回复</el-button>
-                <el-button v-else-if="t.kind === 'mention'" size="small" type="primary" plain @click.stop="openDetail(t.order, 'internal')">查看</el-button>
+                <template v-else-if="t.kind === 'mention' || t.kind === 'nudge'">
+                    <el-button size="small" type="primary" plain @click.stop="openTodo(t)">{{ t.kind === 'mention' ? '查看' : '写进展' }}</el-button>
+                    <el-button size="small" :disabled="acknowledging.has(t.order.id)" @click.stop="acknowledge(t.order)">知道了</el-button>
+                  </template>
                 <el-button
                   v-else-if="t.kind === 'next' && isMyNext(t.order)"
                   size="small"
@@ -332,7 +338,7 @@ import { changeOrderStatus } from '@/utils/settle'
 import { useRouter } from 'vue-router'
 import {
   orders, approvals, pendingApprovals, getOrder, currentMember, isBoss, editOrder, createOrder, nudge,
-  acceptOrder, rejectOrder, syncOrders, loadApprovals, collab, setNextStep
+  markRead, colleagueSentHint, acceptOrder, rejectOrder, syncOrders, loadApprovals, collab, setNextStep
 } from '@/mock/store'
 import { statusMap, MEMBERS, memberMap } from '@/constants/options'
 import { isWaitingOther, nextAction, stalledDays, shortDue } from '@/utils/workbench'
@@ -653,7 +659,7 @@ async function quickAcceptNudge(o) {
 async function quickNudge(o) {
   try {
     await nudge(o.id)
-    ElMessage.success(`已催办「${o.title}」，对方会收到提醒`)
+    ElMessage.success(isBoss.value && memberMap[o.ownerId] ? colleagueSentHint([memberMap[o.ownerId]]) : `已催办「${o.title}」`)
   } catch (e) {
     ElMessage.error(e.message || '催办失败')
   }
@@ -674,6 +680,22 @@ function workbenchSequence(id) {
 }
 const { active, detailVisible, detailLoading, noticeTab: detailTab, noticeItem: detailIssueId,
   hasPrevious, hasNext, openDetail: routeToDetail, moveDetail } = useProjectDetail('/workbench', workbenchSequence)
+const acknowledging = ref(new Set())
+async function acknowledge(order) {
+  if (acknowledging.value.has(order.id)) return
+  acknowledging.value.add(order.id)
+  try {
+    await markRead(order.id, currentMember.value.id)
+  } catch (error) {
+    ElMessage.error(error.message || '标记失败，请重试')
+  } finally {
+    acknowledging.value.delete(order.id)
+  }
+}
+function openTodo(t) {
+  const tabs = { mention: 'internal', nudge: 'internal' }
+  openDetail(t.order, tabs[t.kind] || '')
+}
 function openDetail(order, tab = '') {
   routeToDetail(order, tab, tab === 'bugs' ? { todo: '1' } : {})
 }

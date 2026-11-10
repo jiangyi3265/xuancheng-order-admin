@@ -95,6 +95,7 @@ export function logout() {
   localStorage.removeItem('token')
   // 清掉内存里的身份和项目，避免同一浏览器换账号登录后看到上一个人的数据
   me.value = null
+  deliverySettings.value = null
   orders.splice(0, orders.length)
   ordersReady.value = false
   ordersError.value = ''
@@ -282,6 +283,9 @@ export const pendingApprovals = computed(() => approvals.filter((a) => a.status 
 const detailFields = new Set(['attachments', 'payments', 'collaborators', 'nextOwnerName', 'bugs', 'timeline'])
 const orderVersions = new WeakMap()
 const reminderVersions = new WeakMap()
+export function latestOrderVersion(order) {
+  return Math.max(Number(order.version || 0), orderVersions.get(order) || 0)
+}
 function mergeOrder(current, incoming, summary = false) {
   const { unread, myMention, version: rawVersion, ...fields } = incoming
   const version = Number(rawVersion || 0)
@@ -432,9 +436,13 @@ export async function changeMyPassword(oldPassword, newPassword) {
   })
 }
 
+export function fetchOrderDetail(id) {
+  return http(`${BASE}/${id}`)
+}
+
 export async function getOrder(id) {
   const session = token.value
-  const detail = await http(`${BASE}/${id}`)
+  const detail = await fetchOrderDetail(id)
   return session === token.value ? upsert(detail) : null
 }
 
@@ -613,7 +621,7 @@ export async function completeNextStep(id, next = {}) {
 export const collab = reactive({ stallDays: 3 })
 export async function loadCollabConfig() {
   try {
-    const cfg = await http('/jiedan/push/config')
+    const cfg = await getPushConfig()
     const n = Number(cfg['push.stallDays'])
     if (Number.isInteger(n) && n >= 1 && n <= 60) collab.stallDays = n
     return cfg
@@ -709,12 +717,52 @@ export async function nudge(id, urgency = null) {
   return vo
 }
 
+// 只缓存接收方式是否已填，不在组件或持久存储中保留推送凭据。
+export const deliverySettings = ref(null)
+function rememberDelivery(cfg, merge = false) {
+  const prior = merge ? deliverySettings.value : null
+  const channels = { ...prior?.channels }
+  for (const [key, value] of Object.entries(cfg || {})) {
+    if (/^push\.(wecom\.user|sendkey)\.\d+$/.test(key) || ['push.wecom.corpId', 'push.wecom.agentId', 'push.wecom.secret'].includes(key)) {
+      channels[key] = !!String(value || '').trim()
+    }
+  }
+  const enabled = cfg?.['push.enabled']
+  deliverySettings.value = { channels, enabled: enabled == null ? prior?.enabled ?? true : String(enabled) !== 'false' }
+}
+export function hasWechatChannel(id) {
+  const channels = deliverySettings.value?.channels
+  return !!(channels?.['push.wecom.user.' + id] || channels?.['push.sendkey.' + id])
+}
+export function colleagueSentHint(people) {
+  const sent = '已发给 ' + people.map(p => p.name).join('、')
+  const settings = deliverySettings.value
+  if (!isBoss.value || !settings) return sent
+  if (!settings.enabled) return sent + '。微信提醒没开，只能在系统里看到'
+  const missing = people.filter(p => !hasWechatChannel(p.id))
+  if (missing.length) {
+    const who = people.length === 1 ? 'TA' : missing.map(p => p.name).join('、')
+    return sent + '。' + who + ' 没填微信接收方式，只能在系统里看到'
+  }
+  const appReady = ['push.wecom.corpId', 'push.wecom.agentId', 'push.wecom.secret'].every(key => settings.channels[key])
+  const needApp = people.filter(p => !settings.channels['push.sendkey.' + p.id])
+  if (!appReady && needApp.length) {
+    const who = people.length === 1 ? 'TA' : needApp.map(p => p.name).join('、')
+    return sent + '。企业微信应用还没配好，' + who + ' 只能在系统里看到'
+  }
+  return sent + '，' + (people.length === 1 ? 'TA' : '他们') + ' 的微信也会收到'
+}
 export async function getPushConfig() {
-  return await http('/jiedan/push/config')
+  const session = token.value
+  const cfg = await http('/jiedan/push/config')
+  if (token.value === session && isBoss.value) rememberDelivery(cfg)
+  return cfg
 }
 
 export async function savePushConfig(cfg) {
+  const session = token.value
   await http('/jiedan/push/config', { method: 'POST', body: JSON.stringify(cfg) })
+  if (session === token.value && isBoss.value && deliverySettings.value) rememberDelivery(cfg, true)
 }
 
 export async function testPush(memberId) {

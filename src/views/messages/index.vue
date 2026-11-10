@@ -3,6 +3,7 @@
 <el-tabs v-model="tab"><el-tab-pane label="全部" name="all"/><el-tab-pane label="项目消息" name="projects"/><el-tab-pane label="审批提醒" name="approvals"/><el-tab-pane label="报价提醒" name="quotes"/></el-tabs>
 <div class="message-list"><button v-for="item in items" :key="item.key" class="message-card" @click="router.push(item.path)"><span class="message-symbol"><el-icon><component :is="item.icon" /></el-icon></span><div><strong>{{ item.title }}</strong><p>{{ item.text }}</p><span class="muted" :title="fmtTime(item.time)">{{ item.caption }}</span></div><i v-if="item.unread" class="unread-dot"></i><el-icon><ArrowRight /></el-icon></button></div><el-empty v-if="!items.length" description="暂无新消息，项目动态会出现在这里" /></div></template>
 <script setup>
+import { colleagueTask } from '@/utils/todos'
 import { money } from '@/utils/payment'
 import { friendlyTime, fmtTime } from '@/utils/time'
 import {quoteTodos, unreadQuotes, isQuoteUnread, markInboxRead} from '@/stores/quotes'
@@ -27,7 +28,8 @@ function projectLine(o){
  const pending=o.assignState==='pending'?{text:o.ownerId===me?'分配给你的新项目，等你接收':`等 ${memberMap[o.ownerId]?.name||'负责人'} 接收`,icon:'Document'}:null
  // 没有新动态、只是在等接收的，直接说等谁
  if(pending&&!o.unread?.includes(me))return pending
- if(o.myMention)return {text:`${o.myMention.from} @了你：${brief(o.myMention.content)}`,tab:'internal',time:o.myMention.time,icon:'ChatLineSquare'}
+ const task=colleagueTask(o,me)
+ if(task)return {text:brief(task.text),tab:'internal',time:task.time,icon:'ChatLineSquare'}
  if(o.ownerId===me&&Number(o.actionBugCount)>0)return {text:`${o.actionBugCount} 条问题需要你处理`,tab:'bugs',query:'&todo=1',icon:'Warning'}
  // 最近一条动态就是这次的新消息：谁说了什么、谁改了什么
  const e=o.lastEvent

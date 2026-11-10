@@ -9,7 +9,7 @@
     </div>
 
     <section class="staff-summary mobile-only"><div><el-icon><User/></el-icon><span><b>{{ MEMBERS.length }}</b> 位成员</span></div><div><el-icon><Folder/></el-icon><span><b>{{ MEMBERS.reduce((n,m)=>n+Number(m.unfinishedCount||0),0) }}</b> 个未完成项目</span></div></section>
-    <div class="entity-cards" v-loading="loading"><article v-for="row in MEMBERS" :key="row.id" class="entity-card"><div class="entity-card-head"><el-avatar :size="48">{{ row.name.slice(-1) }}</el-avatar><div><h3>{{ row.name }}</h3><p>{{ row.userName }}</p><p>负责 {{ row.orderCount || 0 }} 项 · 未完成 {{ row.unfinishedCount || 0 }} 项</p><p>企业微信：{{ wecomUsers[row.id] || '未填' }}</p></div><el-tag :type="row.status==='0'?'success':'warning'">{{ row.status==='0'?'正常':'已停用' }}</el-tag></div><div v-if="row.role!=='boss'" class="entity-actions"><el-button @click="selectedMember=row">管理</el-button></div><p v-else>此账号受保护</p></article></div>
+    <div class="entity-cards" v-loading="loading"><article v-for="row in MEMBERS" :key="row.id" class="entity-card"><div class="entity-card-head"><el-avatar :size="48">{{ row.name.slice(-1) }}</el-avatar><div><h3>{{ row.name }} <el-tag v-if="deliverySettings && !hasWechatChannel(row.id)" type="warning" size="small" effect="plain">收不到微信提醒</el-tag></h3><p>{{ row.userName }}</p><p>负责 {{ row.orderCount || 0 }} 项 · 未完成 {{ row.unfinishedCount || 0 }} 项</p><p>企业微信：{{ wecomUsers[row.id] || '未填' }}</p></div><el-tag :type="row.status==='0'?'success':'warning'">{{ row.status==='0'?'正常':'已停用' }}</el-tag></div><div v-if="row.role!=='boss'" class="entity-actions"><el-button @click="selectedMember=row">管理</el-button></div><p v-else>此账号受保护</p></article></div>
     <el-dialog :model-value="!!selectedMember" :close-on-click-modal="false" title="成员设置与权限" @close="selectedMember=null"><template v-if="selectedMember"><div class="board-account-profile"><el-avatar :size="58">{{ selectedMember.name.slice(-1) }}</el-avatar><h2>{{ selectedMember.name }}</h2></div><el-form label-position="top"><el-form-item label="登录账号"><el-input :model-value="selectedMember.userName" readonly/></el-form-item><el-form-item label="企业微信账号（填了才能在微信里收到提醒）"><InlineEdit :model-value="wecomUsers[selectedMember.id] || ''" placeholder="未填，点击填写" :maxlength="64" :save="(v) => saveWecom(selectedMember, v)" /></el-form-item></el-form><div class="board-account-actions"><el-button @click="doToggle(selectedMember)">{{ selectedMember.status==='0'?'停用账号':'启用账号' }}</el-button><el-button @click="doReset(selectedMember)">重置密码</el-button></div><table class="permission-table"><thead><tr><th>功能权限</th><th>{{ selectedMember.name }}</th></tr></thead><tbody><tr><td>管理自己的项目 / 客户</td><td>允许</td></tr><tr><td>提交验收 / 报价申请</td><td>允许</td></tr><tr><td>审批 / 完成 / 删除项目</td><td>需审批</td></tr><tr><td>成员管理 / 全局统计</td><td>不可访问</td></tr></tbody></table><p class="muted">权限按账号配置。停用账号后，该成员将无法登录。</p></template><template #footer><el-button type="danger" plain @click="doDelete(selectedMember)">删除成员</el-button><el-button type="primary" @click="selectedMember=null">完成</el-button></template></el-dialog>
     <el-table :data="MEMBERS" v-loading="loading" border stripe>
       <el-table-column label="姓名" min-width="130">
@@ -17,7 +17,7 @@
           <el-avatar :size="24" :style="{ background: row.color, fontSize: '12px', marginRight: '8px' }">
             {{ row.name.slice(-1) }}
           </el-avatar>
-          {{ row.name }}
+          {{ row.name }} <el-tag v-if="deliverySettings && !hasWechatChannel(row.id)" type="warning" size="small" effect="plain">收不到微信提醒</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="登录账号" prop="userName" min-width="120" />
@@ -100,7 +100,7 @@ import { ElMessageBox } from 'element-plus'
 import { toast as ElMessage } from '@/utils/toast'
 import { Plus } from '@element-plus/icons-vue'
 import { MEMBERS } from '@/constants/options'
-import { loadStaff, createStaff, resetStaffPwd, setStaffStatus, deleteStaff, getPushConfig, savePushConfig } from '@/mock/store'
+import { loadStaff, createStaff, resetStaffPwd, setStaffStatus, deleteStaff, deliverySettings, hasWechatChannel, getPushConfig, savePushConfig } from '@/mock/store'
 import { offerLoginInfo } from '@/utils/loginInfo'
 import { suggestPassword } from '@/utils/password'
 import { onEnter, focusField } from '@/utils/formKeys'

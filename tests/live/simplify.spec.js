@@ -45,7 +45,7 @@ test('real browser: fewer clicks on workbench and project detail', async ({ brow
       await employee.locator('.row-card.hands').filter({ hasText: title }).getByRole('button', { name: '写进展', exact: true }).click()
       await expect(employee.locator('.workspace')).toBeVisible()
       await expect(employee.locator('.workspace-tabs button[aria-pressed="true"]')).toHaveText('内部')
-      await expect.poll(() => employee.evaluate(() => document.activeElement?.placeholder || '')).toContain('记录内部进度')
+      await expect.poll(() => employee.evaluate(() => document.activeElement?.placeholder || '')).toContain('写给 ')
     })
 
     await test.step('order info is edited in place without the edit dialog', async () => {

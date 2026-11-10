@@ -364,11 +364,10 @@
                   type="textarea"
                   :rows="2"
                   resize="none"
-                  :placeholder="isMobile ? '记录内部进度、改稿点、注意事项...' : '记录内部进度、改稿点、注意事项...  Ctrl+Enter 记录'"
+                  :placeholder="notePlaceholder"
                   @keydown.enter.ctrl.prevent="addNote"
                   @keydown.enter.meta.prevent="addNote"
                 />
-                <!-- @ 同事：点一下就选上，对方会收到提醒，看过后这里显示“已读” -->
                 <div v-if="mentionPeople.length" class="mention-row">
                   <span class="mention-label">提醒谁看：</span>
                   <button
@@ -382,7 +381,7 @@
                   >@{{ p.name }}</button>
                 </div>
                 <AttachmentUploader v-model="noteFiles" compact class="note-upload" />
-                <el-button type="primary" plain size="small" :icon="Promotion" @click="addNote">{{ noteMentions.length ? '记录并提醒' : '记录' }}</el-button>
+                <el-button type="primary" plain size="small" :icon="Promotion" :loading="sendingNote" @click="addNote">{{ noteButton }}</el-button>
               </div>
 
               <el-timeline class="timeline">
@@ -390,13 +389,13 @@
                   v-for="(t, i) in shownRecords"
                   :key="t.id || i"
                   :data-notice-id="t.id"
-                  :class="{ 'notice-target': isNoticeItem('internal', t.id) }"
+                  :class="{ 'notice-target': isNoticeItem('internal', t.id), 'unread-note': highlightedNotes.has(t.id) }"
                   :title="fmtTime(t.time)" :timestamp="friendlyTime(t.time)"
                   :color="dotColor(t.type)"
                   placement="top"
                 >
                   <div>
-                    <span class="t-user">{{ t.user }}</span> <LinkText :text="recordText(t)" />
+                    <span v-if="highlightedNotes.has(t.id)" class="new-note-label">新</span> <span class="t-user">{{ t.user }}</span> <LinkText :text="recordText(t)" />
                   </div>
                   <div v-if="t.mentions && t.mentions.length" class="t-mentions">
                     <span v-for="m in t.mentions" :key="m.memberId" :class="{ read: m.read }">@{{ m.name }} · {{ m.read ? '已读' : '未读' }}</span>
@@ -535,10 +534,11 @@ import ReasonDialog from '@/components/ReasonDialog.vue'
 import ApprovalItem from '@/components/ApprovalItem.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
 import {
-  getOrder, getOrderVersion, addProgress, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate,
+  getOrder, getOrderVersion, addProgress, colleagueSentHint, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate,
   updateBugStatus, currentMember, isBoss, approvals, acceptOrder, rejectOrder, handbackOrder, returnOrder, editOrder
 } from '@/mock/store'
 import { STATUS, PRIORITY, statusMap, channelMap, priorityMap, memberMap } from '@/constants/options'
+import { colleagueTask, unreadNotes } from '@/utils/todos'
 import { nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
 import { changeOrderStatus } from '@/utils/settle'
@@ -574,7 +574,17 @@ const note = ref('')
 const noteFiles = ref([])
 // 内部记录 @ 谁：只能是这个项目的负责人 / 总管理员（后端给的 collaborators），不含自己
 const noteMentions = ref([])
-const mentionPeople = computed(() => (props.order?.collaborators || []).filter((p) => p.id !== currentMember.value.id))
+const mentionPeople = computed(() => (props.order?.collaborators || []).filter((p) => String(p.id) !== String(currentMember.value.id)))
+const sendingNote = ref(false)
+const recipients = computed(() => mentionPeople.value.filter(p => noteMentions.value.includes(p.id) || note.value.includes('@' + p.name)))
+const recipientNames = computed(() => recipients.value.map(p => p.name).join('、'))
+const noteButton = computed(() => recipientNames.value ? '发给 ' + recipientNames.value : mentionPeople.value.length ? '只记录' : '记录')
+const notePlaceholder = computed(() => recipientNames.value ? '写给 ' + recipientNames.value + '：进度、要改的地方…（TA 会在待办里看到）' :
+  '记录内部进度、改稿点、注意事项...' + (isMobile.value ? '' : '  Ctrl+Enter 记录'))
+function resetRecipients() {
+  noteMentions.value = mentionPeople.value.map(p => p.id)
+}
+watch(() => props.visible && [props.order?.id, ...mentionPeople.value.map(p => p.id)].join(','), resetRecipients, { immediate: true })
 function toggleMention(id) {
   noteMentions.value = noteMentions.value.includes(id) ? noteMentions.value.filter((x) => x !== id) : [...noteMentions.value, id]
 }
@@ -766,6 +776,8 @@ watch(() => processingBugs.value ? processingBug.value?.id ?? 'finished' : null,
   }
 }, {flush:'post'})
 
+const pendingNotes = computed(() => unreadNotes(props.order, currentMember.value.id))
+const highlightedNotes = ref(new Set())
 const drawerReady = ref(false)
 const workspaceBody = ref(null)
 const missingNoticeItem = computed(() => props.visible && !props.loading && props.noticeTab === 'bugs' &&
@@ -856,6 +868,7 @@ function startSync() {
 // 手机上默认打开最需要处理的那一栏（电脑上「全部」一屏都能看到，不用换）：
 // 客户的消息还没人回 → 沟通；有要我处理的问题 → 问题；其他 → 需求
 function defaultMobileTab() {
+  if (pendingNotes.value.length || props.order?.myMention) return 'internal'
   if (props.order?.ownerId !== currentMember.value.id) return 'overview'
   const lastChat = chatItems.value[chatItems.value.length - 1]
   const waiting = lastChat ? lastChat.type === 'message' : props.order?.lastMessage?.type === 'message'
@@ -879,6 +892,7 @@ function navigateByKey(event) {
 function onOpen() {
   window.addEventListener('keydown', navigateByKey)
   resetIssueFilters()
+  highlightedNotes.value = new Set()
   desktopTab.value = props.noticeTab || 'all'
   mobileTab.value = props.noticeTab === 'all' ? 'overview' : props.noticeTab || defaultMobileTab()
   syncNow(false)
@@ -904,13 +918,70 @@ watch(() => props.visible, visible => {
   else onClosed()
 }, { immediate: true })
 
-watch(() => props.visible && !props.loading && props.order?.id, id => {
-  if (id) markRead(id, currentMember.value.id).catch(() => {})
-}, { immediate: true })
-// 从工作台点「写进展」：打开「内部」，光标直接放进记录框
+// 抽屉打开动画和详情加载各自独立；等两者就绪再决定默认落点。
+watch(() => props.visible && drawerReady.value && !props.loading && props.order?.id, id => {
+  if (!id || props.noticeTab) return
+  if (pendingNotes.value.length || props.order?.myMention) {
+    mobileTab.value = 'internal'
+    desktopTab.value = 'internal'
+  }
+}, { immediate: true, flush: 'post' })
+
+const foreground = ref(!document.hidden)
+function updateForeground() { foreground.value = !document.hidden }
+document.addEventListener('visibilitychange', updateForeground)
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', updateForeground))
+const readRequests = new Set()
+const acknowledgedNotes = new Set()
+watch([drawerReady, foreground, () => props.visible && !props.loading && props.order?.id,
+  () => isMobile.value ? mobileTab.value : desktopTab.value, () => props.noticeTab, () => props.noticeItem,
+  () => pendingNotes.value.map(n => n.id).join(','), () => props.order?.myMention, () => props.order?.unread?.includes(currentMember.value.id)],
+async ([ready, visible, id, tab], _, onCleanup) => {
+  if (!ready || !visible || !id) return
+  const rows = pendingNotes.value
+  rows.forEach(n => highlightedNotes.value.add(n.id))
+  let cancelled = false
+  let observer
+  onCleanup(() => { cancelled = true; observer?.disconnect() })
+  const me = currentMember.value.id
+  const signature = id + ':' + rows.map(n => n.id).join(',')
+  const acknowledge = async () => {
+    if (cancelled || document.hidden || readRequests.has(signature) || (rows.length && rows.every(n => acknowledgedNotes.has(n.id)))) return
+    readRequests.add(signature)
+    try {
+      await markRead(id, me)
+      rows.forEach(n => acknowledgedNotes.add(n.id))
+    } catch { /* 下次打开、切页或同步时重试。 */ }
+    finally { readRequests.delete(signature) }
+  }
+  if (!rows.length) {
+    if (!props.order.myMention && props.order.unread?.includes(me) && colleagueTask(props.order, me)?.kind !== 'nudge') await acknowledge()
+    return
+  }
+  if (rows.every(n => acknowledgedNotes.has(n.id)) || !['all', 'internal'].includes(tab)) return
+  if (props.noticeTab && !['all', 'internal'].includes(props.noticeTab)) return
+  await nextTick()
+  if (cancelled) return
+  const panel = workspaceBody.value?.querySelector('.record-panel')
+  const target = panel?.querySelector('[data-notice-id="' + (props.noticeItem || rows.at(-1).id) + '"]')
+  if (!target || !target.getClientRects().length) return
+  if (tab === 'internal') target.scrollIntoView({ block: 'nearest' })
+  observer = new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting)) { observer.disconnect(); acknowledge() }
+  })
+  // 旧留言的明确链接仍定位到旧条目；只有新留言实际进入视野才提交回执。
+  for (const row of rows) {
+    const el = panel.querySelector('[data-notice-id="' + row.id + '"]')
+    if (el) observer.observe(el)
+  }
+}, { immediate: true, flush: 'post' })
+
 const noteInput = ref(null)
-watch(() => props.visible && !props.loading && props.noticeTab === 'internal' && !props.noticeItem && props.order?.id, id => {
-  if (id) setTimeout(() => noteInput.value?.focus?.(), 350)
+watch(() => props.visible && !props.loading && props.noticeTab === 'internal' && !isMobile.value &&
+  !props.noticeItem && !pendingNotes.value.length && !highlightedNotes.value.size && props.order?.id, (id, _, onCleanup) => {
+  if (!id) return
+  const timer = setTimeout(() => noteInput.value?.focus?.(), 350)
+  onCleanup(() => clearTimeout(timer))
 })
 // 从工作台点「回复」：打开「沟通」，光标直接放进回复框，不用再点一下
 // （手机上不自动弹键盘，免得挡住客户刚发的话；从某条消息通知点进来的也不抢光标）
@@ -963,7 +1034,8 @@ const nudgeLabel = computed(() => {
 async function doNudge() {
   try {
     await nudge(props.order.id)
-    ElMessage.success(props.order?.ownerId === currentMember.value.id ? '已提醒老板' : '已催办，对方会收到提醒')
+    const recipient = memberMap[props.order.ownerId]
+    ElMessage.success(isBoss.value && recipient && recipient.id !== currentMember.value.id ? colleagueSentHint([recipient]) : '已催办，对方会收到提醒')
   } catch (e) {
     ElMessage.error(e.message || '催办失败')
   }
@@ -996,18 +1068,19 @@ function onMore(cmd) {
   }
 }
 async function addNote() {
-  if (!note.value.trim() && !noteFiles.value.length) return
-  // 手打的「@名字」也算
-  const typed = mentionPeople.value.filter((p) => note.value.includes('@' + p.name)).map((p) => p.id)
-  const mentions = [...new Set([...noteMentions.value, ...typed])]
+  if (sendingNote.value || (!note.value.trim() && !noteFiles.value.length)) return
+  sendingNote.value = true
+  const people = [...recipients.value]
   try {
-    await addProgress(props.order.id, note.value.trim(), 'note', [...noteFiles.value], mentions)
+    await addProgress(props.order.id, note.value.trim(), 'note', [...noteFiles.value], people.map(p => p.id))
     note.value = ''
     noteFiles.value = []
-    noteMentions.value = []
-    if (mentions.length) ElMessage.success('已记录，并提醒了 ' + mentionPeople.value.filter((p) => mentions.includes(p.id)).map((p) => p.name).join('、'))
+    resetRecipients()
+    ElMessage.success(people.length ? colleagueSentHint(people) : '已记录')
   } catch (e) {
     ElMessage.error(e.message || '记录失败，内容已保留')
+  } finally {
+    sendingNote.value = false
   }
 }
 async function submitBug() {
@@ -1161,6 +1234,8 @@ function dotColor(type) {
 /* 等客户验收的提示条：一句话 + 一个按钮 */
 .chat-await { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: #eef5ff; color: #33507a; font-size: 12px; line-height: 1.6; }
 .chat-await .el-button { flex: none; margin: 0; }
+.timeline .unread-note { border-left: 3px solid #165dff; padding-left: 8px; }
+.new-note-label { color: #165dff; background: #edf3ff; border-radius: 4px; padding: 1px 5px; font-size: 12px; }
 .mention-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: #8591a4; }
 .mention-chip { font: inherit; font-size: 12px; padding: 2px 10px; border-radius: 12px; border: 1px solid #d9e1ec; background: #fff; color: #4a5a75; cursor: pointer; }
 .mention-chip:hover { border-color: #165dff; color: #165dff; }
