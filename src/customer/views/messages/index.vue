@@ -1,16 +1,80 @@
-<template><div class="customer-shell inbox-page"><div class="page-heading"><div><h1>消息中心</h1><p>与团队保持沟通，让需求顺利交付</p></div><el-button :loading="loading" @click="load">刷新</el-button></div><el-alert v-if="error" :title="error" type="error" :closable="false"/><div class="message-list" v-loading="loading"><button v-for="o in sorted" :key="o.id" class="message-card" @click="router.push('/projects/'+o.id+'?tab=chat')"><span class="message-symbol"><el-icon><ChatDotRound /></el-icon></span><div><strong>{{ o.title }}</strong><p>{{ lastText(o) }}</p><span class="muted">{{ o.lastMessage?.time ? String(o.lastMessage.time).slice(5, 16) + ' · ' : '' }}{{ o.messageCount || 0 }} 条沟通</span></div><i v-if="hasNewReply(o)" class="unread-dot" aria-hidden="true" title="团队有新回复"></i><el-icon><ArrowRight /></el-icon></button></div><el-empty v-if="!loading&&!items.length&&!error" description="暂无项目消息"/><AppTabBar active="messages"/></div></template>
+<template>
+  <div class="customer-shell inbox-page">
+    <header class="page-heading">
+      <h1>消息中心</h1>
+      <el-button :loading="refreshing" @click="load">刷新</el-button>
+    </header>
+    <el-alert v-if="error" :title="error" type="error" :closable="false" />
+    <div v-loading="loading" class="message-list">
+      <router-link v-for="message in entries" :key="message.key" class="message-card" :to="message.to">
+        <span class="message-symbol"><el-icon><component :is="message.kind==='chat' ? ChatDotRound : Document" /></el-icon></span>
+        <div class="message-body">
+          <strong>{{ message.title }} <small v-if="message.kind==='review'" class="review-label">等你确认</small></strong>
+          <p>{{ message.content }}</p>
+          <span class="muted">{{ message.meta }}</span>
+        </div>
+        <i v-if="message.unread" class="unread-dot" aria-label="未读" title="有新回复"></i>
+        <el-icon aria-hidden="true"><ArrowRight /></el-icon>
+      </router-link>
+    </div>
+    <el-empty v-if="!loading&&!entries.length&&!error" description="暂无项目消息" />
+  </div>
+</template>
+
 <script setup>
-import {ref,onMounted,onBeforeUnmount} from 'vue'
-import {useRouter} from 'vue-router'
-import {listMyOrders} from '@/customer/mock/store'
-import AppTabBar from '@/customer/components/AppTabBar.vue'
-import {computed} from 'vue'
-import {hasNewReply} from '@/customer/utils/seen'
-// 写清是谁说的；团队有新回复的排最前，其余按最近沟通时间
-const lastText=o=>{const m=o.lastMessage;if(!m)return '打开项目，开始沟通';const who=m.type==='message'?'我':'团队';return who+'：'+(m.content||(m.hasAttachments?'[图片 / 文件]':''))}
-const sorted=computed(()=>[...items.value].sort((a,b)=>(hasNewReply(b)-hasNewReply(a))||String(b.lastMessage?.time||'').localeCompare(String(a.lastMessage?.time||''))))
-const router=useRouter(),items=ref([]),loading=ref(false),error=ref('');let poller
-async function load(){if(loading.value)return;loading.value=true;error.value='';try{items.value=await listMyOrders()||[]}catch(e){error.value=e.message}finally{loading.value=false}}
-onMounted(()=>{load();poller=setInterval(()=>{if(!document.hidden)load()},15000)})
-onBeforeUnmount(()=>clearInterval(poller))
+import { computed } from 'vue'
+import { ArrowRight, ChatDotRound, Document } from '@element-plus/icons-vue'
+import { useCustomerOrders } from '@/customer/utils/useCustomerOrders'
+import { hasNewReply } from '@/customer/utils/seen'
+import { issueRoute, reviewRoute, replyText, replyTime } from '@/customer/utils/requirementReplies'
+
+const { orders, loading, refreshing, error, load } = useCustomerOrders()
+const entries = computed(() => {
+  const rows = []
+  for (const project of orders.value) {
+    const last = project.lastMessage
+    rows.push({
+      key:'chat-'+project.id, kind:'chat', title:project.title, unread:hasNewReply(project), time:last?.time || '',
+      content:last ? (last.type==='message' ? '我：' : '团队：') + replyText(last) : '打开项目，开始沟通',
+      meta:[replyTime(last?.time),(project.messageCount || 0)+' 条沟通'].filter(Boolean).join(' · '),
+      to:{path:'/projects/'+project.id,query:{tab:'chat'}}
+    })
+    for (const item of project.requirements || []) {
+      const reply = item.latestTeamReply
+      if (item.status === 'confirm' && item.reviewId) {
+        const sameReply = !!reply && String(reply.id) === String(item.reviewId)
+        rows.push({
+          key:'review-'+item.reviewId, kind:'review', title:item.title || '附件需求',
+          unread:sameReply && reply.unread, time:item.reviewTime || '',
+          content:sameReply && reply.content ? reply.content : '查看本次修改',
+          meta:[project.title,'需求 #'+item.id,replyTime(item.reviewTime)].filter(Boolean).join(' · '),
+          to:reviewRoute(project,item)
+        })
+        if (sameReply) continue
+      }
+      if (!reply?.id) continue
+      rows.push({
+        key:'issue-'+project.id+'-'+item.id, kind:'issue', title:item.title || '附件需求',
+        unread:!!reply.unread, time:reply.time || '', content:'团队：'+replyText(reply),
+        meta:[project.title,'需求 #'+item.id,replyTime(reply.time)].filter(Boolean).join(' · '),
+        to:issueRoute(project,item,reply.id)
+      })
+    }
+  }
+  return rows.sort((a,b) => {
+    const reviewA = a.kind === 'review'
+    const reviewB = b.kind === 'review'
+    if (reviewA !== reviewB) return reviewA ? -1 : 1
+    const byTime = b.time.localeCompare(a.time)
+    return reviewA ? byTime : Number(!!b.unread) - Number(!!a.unread) || byTime
+  })
+})
 </script>
+
+<style scoped>
+.inbox-page .page-heading {display:flex;align-items:center;justify-content:space-between;gap:12px}
+.message-card {text-decoration:none}.message-card:focus-visible {outline:2px solid #457ed7;outline-offset:1px}
+.message-body {flex:1;min-width:0}.message-body strong,.message-body .muted {overflow-wrap:anywhere}
+.message-body p {overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.review-label {display:inline-block;margin-left:4px;padding:2px 7px;border-radius:6px;color:#84500b;background:#fff1d4;font-size:12px;white-space:nowrap}
+</style>

@@ -199,7 +199,7 @@
                 </span>
               </div>
               </template>
-              <ProjectUrgency :order="element" :selecting="selectionMode" />
+              <ProjectUrgency :order="element" :selecting="selectionMode" compact />
               <button v-if="!selectionMode && hasActionBugs(element)" type="button" class="issue-shortcut"
                 @click.stop="openActionBugs(element)">处理问题（{{ element.actionBugCount }}）</button>
             </div>
@@ -1147,6 +1147,26 @@ function handleDelete(row) {
   border-left: 3px solid transparent;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   transition: box-shadow 0.15s, transform 0.15s;
+}
+@media (min-width: 769px) {
+  .kanban .card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    row-gap: 6px;
+    padding: 12px 14px;
+  }
+  .kanban .card > :is(.card-top, .card-title, .card-flags, .card-next, .card-customer, .issue-shortcut) {
+    margin-block: 0;
+  }
+  .kanban .card > .issue-shortcut {
+    justify-self: start;
+  }
+  .kanban .card-foot {
+    margin-top: 2px;
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
 }
 .card.unread {
   border-left-color: #f56c6c;

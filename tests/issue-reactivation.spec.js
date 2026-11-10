@@ -82,28 +82,43 @@ test('处理过程中同事重新激活的问题加入队列，继续处理时�
   expect(writes).toEqual([{id:4,status:'resolved'}])
 })
 
-test('客户重新激活已解决问题时发送明确的重开操作，失败保留原状态可重试', async ({page}) => {
+test('客户从项目清单继续调整原需求，发送失败时保留说明，重试后只重新打开一次', async ({page}) => {
   await fixture(page, 'customer')
   await page.addInitScript(() => localStorage.setItem('customerToken','fixture-customer'))
-  const bug = {...order.bugs[0], id:15, status:'resolved'}
-  const project = {...order, bugs:[bug]}
+  const bug = {...order.bugs[0], id:15, status:'resolved', progressStatus:'resolved', updates:[]}
+  const project = {...order, bugs:[bug], version:1}
   const writes = []
   await page.route('**/jiedan/portal/orders/1', r => r.fulfill({json:{code:200, data:project}}))
-  await page.route('**/jiedan/portal/bug/15/status', r => {
-    writes.push(r.request().postDataJSON())
+  await page.route('**/jiedan/portal/orders/1/version', r => r.fulfill({json:{code:200, data:{version:project.version}}}))
+  await page.route('**/jiedan/portal/bug/15/update', r => {
+    const payload = r.request().postDataJSON()
+    writes.push(payload)
     if (writes.length === 1) return r.fulfill({json:{code:503,msg:'暂时无法处理'}})
     bug.status = 'open'
+    bug.progressStatus = 'action'
+    bug.updates.push({id:32, senderKind:'customer', content:payload.content, attachments:[]})
+    project.version++
     return r.fulfill({json:{code:200, data:project}})
   })
-  await page.goto('/#/projects/1')
-  await page.getByRole('button', {name:'问题',exact:true}).click()
-  await page.getByRole('button', {name:'展开',exact:true}).click()
-  const card = page.locator('.bug-item').filter({hasText:bug.content})
-  const reopen = card.getByText('重新激活', {exact:true})
-  await reopen.click()
+  await page.goto('/#/projects/1?tab=bugs')
+  const card = page.locator('#requirement-15')
+  await card.getByRole('button', {name:'还要调整'}).click()
+  const composer = page.locator('.issue-composer')
+  const field = composer.getByRole('textbox', {name:'补充这条需求'})
+  const send = composer.getByRole('button', {name:'发送', exact:true})
+  const note = '图上的按钮还需要往上移'
+  await expect(page).toHaveURL(/issue=15/)
+  await expect(composer).toContainText('发送说明后将重新打开这条需求')
+  await field.fill(note)
+  await send.click()
   await expect(page.getByText('暂时无法处理')).toBeVisible()
-  await expect(card.getByRole('radio', {name:'已解决'})).toBeChecked()
-  await reopen.click()
-  await expect(card.getByRole('radio', {name:'未解决'})).toBeChecked()
-  expect(writes).toEqual([{status:'reopen'}, {status:'reopen'}])
+  await expect(card.locator('.requirement-status')).toHaveText('已解决')
+  await expect(field).toHaveValue(note)
+  await send.click()
+  await expect(card.locator('.requirement-status')).toHaveText('等团队处理')
+  await expect(card.locator('.bug-updates')).toContainText(note)
+  await expect(field).toHaveValue('')
+  expect(writes).toHaveLength(2)
+  expect(writes[0]).toMatchObject({reopen:true, content:note, requestKey:expect.any(String)})
+  expect(writes[1]).toEqual(writes[0])
 })

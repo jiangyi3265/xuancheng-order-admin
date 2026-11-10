@@ -5,7 +5,7 @@
       <MediaThumb
         v-for="(m, i) in mediaItems"
         :key="'m' + i"
-        :item="m"
+        :item="m" :siblings="mediaItems"
         :size="compact ? 56 : 84"
         removable
         @remove="removeItem(m)"
@@ -18,15 +18,16 @@
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
-        title="图片可直接 Ctrl+V 粘贴；视频/文件/压缩包点击或拖拽上传"
-        :aria-label="compact ? '添加附件' : undefined"
+        :title="imagesOnly ? '选择、粘贴或拖入图片' : '图片可直接 Ctrl+V 粘贴；视频/文件/压缩包点击或拖拽上传'"
+        :aria-label="imagesOnly ? '添加截图' : compact ? '添加附件' : undefined"
+        tabindex="0" @keydown.enter.prevent="pickFile" @keydown.space.prevent="pickFile"
         role="button"
       >
         <el-icon :size="20" :class="{ spin: uploadingCount > 0 }">
           <Loading v-if="uploadingCount > 0" />
           <Plus v-else />
         </el-icon>
-        <span class="az-text">{{ uploadingCount > 0 ? '上传中' : compact ? '附件' : '粘贴 / 点击' }}</span>
+        <span class="az-text">{{ uploadingCount > 0 ? '上传中' : imagesOnly ? '截图' : compact ? '附件' : '粘贴 / 点击' }}</span>
       </div>
     </div>
 
@@ -41,10 +42,10 @@
 
     <div v-if="!compact" class="hint">
       <el-icon><InfoFilled /></el-icon>
-      图片：截图后直接 <b>Ctrl+V</b> 粘贴；视频 / 文件 / 压缩包：点 + 或拖拽进来
+      <span class="hint-pc">图片：截图后直接 <b>Ctrl+V</b> 粘贴；视频 / 文件 / 压缩包：点 + 或拖拽进来</span><span class="hint-m">点 + 选图片、视频或文件</span>
     </div>
 
-    <input ref="fileInput" type="file" multiple class="hidden-input" @change="onFileChange" />
+    <input ref="fileInput" type="file" :multiple="limit > 1" :accept="imagesOnly ? 'image/*' : undefined" class="hidden-input" @change="onFileChange" />
   </div>
 </template>
 
@@ -69,6 +70,7 @@ const props = defineProps({
   // 紧凑模式：聊天 / 记录输入框下用，只留一个小「+ 附件」按钮，提示放到鼠标悬停里
   compact: Boolean,
   reliable: Boolean,
+  imagesOnly: Boolean,
   draft: Object
 })
 const emit = defineEmits(['update:modelValue'])
@@ -109,6 +111,11 @@ function emitValue() {
 }
 
 function addFiles(files) {
+  if (props.imagesOnly) {
+    const images = Array.from(files).filter(file => attType(file.type,file.name) === 'image')
+    if (images.length !== files.length) ElMessage.warning('请选择图片文件')
+    files = images
+  }
   const available = Math.max(0, props.limit - list.value.length - queue.tasks.length)
   if (files.length > available) ElMessage.warning(`最多 ${props.limit} 个附件`)
   return queue.add(Array.from(files).slice(0, available))
@@ -223,13 +230,23 @@ defineExpose({ addFiles, uploadingCount, failedCount })
 .f-del:hover {
   color: #f56c6c;
 }
+/* 提示是一句连着的话：不用 flex（以前窄屏上被拆成三列，读不通） */
 .hint {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   font-size: 12px;
+  line-height: 1.6;
   color: #909399;
   margin-top: 8px;
+}
+.hint .el-icon {
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+.hint-m {
+  display: none;
+}
+@media (max-width: 768px) {
+  .hint-pc { display: none; }
+  .hint-m { display: inline; }
 }
 .hint b {
   color: #409eff;

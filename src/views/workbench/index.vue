@@ -47,7 +47,7 @@
         <!-- 待接收的项目已经在上面「需要我处理」里，这里不再重复列一遍 -->
         <nav class="board-tabs"><button v-for="t in employeeTabs" :key="t.key" :class="{active:employeeTab===t.key}" @click="employeeTab=t.key">{{ t.label }} <b>{{ t.count }}</b></button></nav>
         <div class="board-section-title"><h2>{{ employeeTabs.find(t=>t.key===employeeTab)?.label }}项目（{{ employeeOrders.length }}）</h2></div>
-        <article v-for="o in employeeOrders" :key="o.id" class="employee-project"><ProjectCover :order="o" compact/><div class="employee-project-copy"><h3>{{ o.title }}</h3><p>客户：{{ o.customer || '未填写' }}</p><p class="two-lines">{{ o.requirement || '打开详情查看项目需求' }}</p><div class="employee-actions"><el-button @click="openDetail(o)">查看详情</el-button><el-button v-if="naOf(o)" type="primary" :loading="acting===o.id" :aria-label="naOf(o).label+'：'+o.title" @click="mobileNext(o)">{{ naOf(o).label }}</el-button></div></div></article>
+        <article v-for="o in employeeOrders" :key="o.id" class="employee-project"><ProjectCover :order="o" compact/><div class="employee-project-copy"><h3>{{ o.title }}</h3><!-- 截止日期直接写在卡片上（以前要点进详情才知道哪天交）；需求和项目名一样时不重复写 --><p>客户：{{ o.customer || '未填写' }}<template v-if="o.deadline"> · <span :class="{'due-late':isOverdue(o)}">{{ isOverdue(o) ? '已逾期（' + shortDue(o.deadline) + '）' : '截止 ' + shortDue(o.deadline) }}</span></template></p><p v-if="o.nextStep" class="two-lines">下一步<template v-if="memberMap[o.nextOwnerId] && o.nextOwnerId !== currentMember.id">（{{ memberMap[o.nextOwnerId].name }}）</template>：{{ o.nextStep }}<template v-if="o.nextDue"> · {{ shortDue(o.nextDue) }}前</template></p><p v-else-if="cardDesc(o)" class="two-lines">{{ cardDesc(o) }}</p><div class="employee-actions"><el-button @click="openDetail(o)">查看详情</el-button><el-button v-if="naOf(o)" type="primary" :loading="acting===o.id" :aria-label="naOf(o).label+'：'+o.title" @click="mobileNext(o)">{{ naOf(o).label }}</el-button></div></div></article>
         <el-empty v-if="!employeeOrders.length" :description="todoItems.length ? '没有别的项目了，要处理的都在上面' : '暂无项目'" :image-size="72"/>
         <section v-if="myRequests.length" class="employee-requests"><div class="board-section-title"><h2>我的申请</h2><button @click="router.push('/approvals')">查看全部 <el-icon><ArrowRight/></el-icon></button></div><ApprovalItem v-for="a in myRequests.slice(0,2)" :key="a.id" :a="a"/></section>
       </template>
@@ -318,7 +318,7 @@ import {
   acceptOrder, rejectOrder, syncOrders, loadApprovals, collab, completeNextStep, setNextStep, completePendingItem
 } from '@/mock/store'
 import { statusMap, MEMBERS, memberMap } from '@/constants/options'
-import { isWaitingOther, nextAction, stalledDays } from '@/utils/workbench'
+import { isWaitingOther, nextAction, stalledDays, shortDue } from '@/utils/workbench'
 import { todoItems, todoOrderIds, isMyNextStep } from '@/utils/todos'
 import { owed, money } from '@/utils/payment'
 import { todayStr as todayLocal } from '@/utils/date'
@@ -461,6 +461,8 @@ const employeeTabs=computed(()=>[
  {key:'doing',label:'手上的',count:orders.filter(o=>inHand(o)&&notInTodo(o)).length},
  {key:'review',label:'待验收',count:orders.filter(o=>o.status==='review'&&notInTodo(o)).length}
 ])
+// 卡片上的需求摘要：和项目名一模一样就不重复写了
+const cardDesc=(o)=>{const r=String(o.requirement||'').trim();return r?(r===String(o.title||'').trim()?'':r):'打开详情查看项目需求'}
 const employeeOrders=computed(()=>orders.filter(o=>notInTodo(o)&&(employeeTab.value==='doing'?inHand(o):o.status==='review')))
 // 手机待办默认显示 6 条，「全部 N 条」原地展开
 const MOBILE_TODO_LIMIT=6
@@ -1035,7 +1037,11 @@ function handleDelete(row) {
 .quick-entries-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .wb-shortcuts-5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .wb-shortcuts-5 button { min-width: 0; white-space: nowrap; }
-.wb-todo { cursor: pointer; }
+.wb-todo { cursor: pointer; position: relative; }
+.employee-project .due-late { color: #e5484d; font-weight: 600; }
+/* 手机待办卡片：状态标签挪到标题右边，「为什么要处理」那行占满整行（以前被标签挤成两行，一屏看不了几条） */
+.wb-todo > .el-tag { position: absolute; top: 17px; right: 12px; }
+.wb-todo h3 { padding-right: 60px; overflow-wrap: anywhere; }
 .wb-todo-actions {
   display: flex;
   justify-content: flex-start;

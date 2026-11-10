@@ -9,6 +9,7 @@
     <div class="quick-design-body" data-paste-zone="极速建单">
       <label class="design-field-label">粘贴需求内容 <em>*</em></label>
       <el-input ref="textRef" v-model="text" type="textarea" :rows="5" resize="none" placeholder="例如：做个餐饮点餐小程序，要堂食和外卖，预算 5000……（直接粘贴客户消息）"/>
+      <p v-if="titlePreview" class="qc-title">项目名：<b>{{ titlePreview }}</b><span>（自动取自第一句话，建好后可以改）</span></p>
       <div class="quick-suggestions"><h3>快速建议 <small>（可编辑）</small></h3><div class="quick-suggestion-fields"><label><el-icon><PriceTag/></el-icon><span>报价</span><el-input-number v-model="amount" :min="0" :step="100" :controls="false"/></label><label><el-date-picker v-model="deadline" type="date" value-format="YYYY-MM-DD" placeholder="截止日期"/></label></div><DeadlineChips v-model="deadline" :clearable="false" class="qc-deadline-chips"/><p v-if="autoHint" class="qc-auto">{{ autoHint }}</p></div>
       <div class="qc-media"><label class="design-field-label">上传截图 <small>（可选）</small></label><AttachmentUploader v-model="media"/></div>
       <div class="qc-row"><span class="qc-label"><el-icon><User/></el-icon> 客户</span><el-autocomplete v-model="customer" :fetch-suggestions="suggestCustomers" :debounce="100" clearable placeholder="选填：客户名 / 旺旺号，可选以前的客户" @select="onPickCustomer"><template #default="{ item }"><span class="qc-sug-name">{{ item.value }}</span><span v-if="item.account" class="qc-sug-account">客户账号 {{ item.account }}</span></template></el-autocomplete></div>
@@ -37,7 +38,7 @@ import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import DeadlineChips from '@/components/DeadlineChips.vue'
 import { createOrder, currentMember, isBoss, orders, listCustomers } from '@/mock/store'
 import { CHANNEL, MEMBERS, memberMap } from '@/constants/options'
-import { parseOrderHints } from '@/utils/parse'
+import { parseOrderHints, titleFromText } from '@/utils/parse'
 
 const props=defineProps({showFab:{type:Boolean,default:true},shortcut:{type:Boolean,default:true}})
 const open = ref(false)
@@ -70,13 +71,23 @@ const notifyHint = computed(() => {
   return `建单后自动通知 ${ownerName.value}`
 })
 
-// 粘贴/输入文本时，智能识别报价与截止（仅在用户未手动填时）
+// 粘贴/输入文本时，自动识别报价、截止、客户称呼、联系方式（只填还空着的，手动填过的不动）
+// 识别到的都列在「已识别」一行里，一眼能核对；截止日期带上星期几
+let autoParts = {}
+const WEEK = '日一二三四五六'
+function dueLabel(d) {
+  const [y, m, dd] = d.split('-').map(Number)
+  return `${m}月${dd}日（周${WEEK[new Date(y, m - 1, dd).getDay()]}）`
+}
 watch(text, (val) => {
   const h = parseOrderHints(val)
-  const hits = []
-  if (h.amount != null && !amount.value) { amount.value = h.amount; hits.push('报价 ¥' + h.amount) }
-  if (h.deadline && !deadline.value) { deadline.value = h.deadline; hits.push('截止 ' + h.deadline) }
-  if (hits.length) autoHint.value = '已识别：' + hits.join('、')
+  if (h.amount != null && !amount.value) { amount.value = h.amount; autoParts.amount = '报价 ¥' + h.amount }
+  if (h.deadline && !deadline.value) { deadline.value = h.deadline; autoParts.deadline = '截止 ' + dueLabel(h.deadline) }
+  // 只填客户称呼，不自动绑定客户账号：同名客户很常见，绑错了别人会看到这个项目
+  if (h.customer && !customer.value) { customer.value = h.customer; autoParts.customer = '客户 ' + h.customer }
+  if (h.contact && !contact.value) { contact.value = h.contact; autoParts.contact = '联系方式 ' + h.contact }
+  const parts = Object.values(autoParts)
+  if (parts.length) autoHint.value = '已识别：' + parts.join('、')
 })
 
 function onOpen() {
@@ -159,12 +170,15 @@ function reset() {
   amount.value = 0
   deadline.value = ''
   autoHint.value = ''
+  autoParts = {}
   // 保留 channel / ownerId（记住上次）
 }
 
+const titlePreview = computed(() => titleFromText(text.value))
+// 项目名：取需求的第一句话，去掉「张总：」「你好，我们想做一个」这类开头
 function deriveTitle() {
-  const firstLine = (text.value || '').split('\n').map((s) => s.trim()).find((s) => s)
-  if (firstLine) return firstLine.length > 30 ? firstLine.slice(0, 30) + '…' : firstLine
+  const title = titleFromText(text.value)
+  if (title) return title
   if (media.value.length) return '图片/视频需求'
   return ''
 }
@@ -221,6 +235,9 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
 
 <style scoped>
 .qc-deadline-chips { margin-top: 10px; }
+.qc-title { margin: 8px 0 0; font-size: 13px; color: #6f7d96; line-height: 1.5; overflow-wrap: anywhere; }
+.qc-title b { color: #17233b; font-weight: 600; }
+.qc-title span { font-size: 12px; color: #9aa6b8; }
 .qc-sug-name { margin-right: 8px; }
 .qc-sug-account { font-size: 12px; color: #2f8a4f; background: #edf8f1; border-radius: 4px; padding: 1px 6px; }
 .qc-bound { margin: -4px 0 10px 94px; font-size: 12px; color: #2f8a4f; line-height: 1.6; }

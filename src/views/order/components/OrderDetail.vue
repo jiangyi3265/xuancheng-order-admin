@@ -20,7 +20,7 @@
             <span class="order-no">{{ order.orderNo }}</span>
             <el-tag v-if="isMobile" class="detail-title-status" :class="'project-status-'+order.status" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag>
           </div>
-          <p v-if="isMobile" class="detail-subtitle">{{ order.requirement?.split('\n')[0] || order.orderNo }}</p>
+          <p v-if="isMobile" class="detail-subtitle">{{ mobileSubtitle }}</p>
           <ProjectUrgency v-if="isMobile && visible" :key="order.id" :order="order" />
           <div v-if="!isMobile" class="head-tags">
             <el-tag size="small" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag>
@@ -183,8 +183,9 @@
             <section class="panel bug-panel" data-paste-zone="问题清单" data-paste-open @paste-open="bugOpen = true">
               <div class="section-head">
                 <div>
-                  <h3>问题清单</h3>
-                  <button v-if="!processingBugs && bugItems.length > 1" type="button" class="bug-fold-all"
+                  <!-- 这张清单客户在自己的页面也看得到，提醒一句，免得把只给自己人看的话记到这里 -->
+                  <h3 :title="order.customerAccount ? '客户在自己的页面也能看到这里的问题；只给自己人看的，请写到「内部记录」' : undefined">问题清单 <small v-if="order.customerAccount" class="head-note">客户也能看到</small></h3>
+                  <button v-if="!processingBugs && filteredBugs.length > 1" type="button" class="bug-fold-all"
                     @click="setAllIssuesExpanded(!anyIssueExpanded)">{{ anyIssueExpanded ? '全部收起' : '全部展开' }}</button>
                 </div>
                 <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
@@ -192,9 +193,22 @@
                 </el-button>
               </div>
 
+              <div v-if="bugItems.length && !processingBugs" class="issue-filters">
+                <div role="group" aria-label="按提交时间筛选" class="issue-filter-row">
+                  <span>提交时间</span>
+                  <button v-for="option in issueTimeOptions" :key="option.days" type="button"
+                    :aria-pressed="issueDays === option.days" @click="issueDays = option.days">{{ option.label }}</button>
+                </div>
+                <div role="group" aria-label="按解决状态筛选" class="issue-filter-row">
+                  <span>问题状态</span>
+                  <button v-for="option in issueStateOptions" :key="option.value" type="button"
+                    :aria-pressed="issueState === option.value" @click="issueState = option.value">{{ option.label }}</button>
+                </div>
+              </div>
+
               <div v-if="processingBugs || actionableBugs.length" ref="bugNavigator" class="bug-navigator" tabindex="-1" aria-label="逐条处理问题">
                 <template v-if="processingBugs">
-                  <strong role="status">{{ actionableBugs.length ? '剩余 ' + actionableBugs.length + ' 条需处理' : '本项目当前没有需处理的问题' }}</strong>
+                  <strong role="status">{{ actionableBugs.length ? '剩余 ' + actionableBugs.length + ' 条需处理' : (hasIssueFilters ? '当前筛选没有需处理的问题' : '本项目当前没有需处理的问题') }}</strong>
                   <template v-if="actionableBugs.length > 1">
                     <button type="button" :disabled="processingIndex === 0 || issueNavigationLocked" @click="moveIssue(-1)">上一条</button>
                     <button type="button" :disabled="processingIndex >= actionableBugs.length - 1 || issueNavigationLocked" @click="moveIssue(1)">下一条</button>
@@ -234,27 +248,30 @@
                     (isBugResolved(bug) || (!isBugExpanded(bug) && bugStatus(bug) === 'open'))"
                     type="button" class="bug-reactivate" :disabled="!!statusUpdatingBugId"
                     @click="changeBugStatus(bug, 'action')">{{ isBugResolved(bug) ? '重新激活' : '加入逐条处理' }}</button>
-                  <div v-if="!isBugExpanded(bug) && (bug.attachments?.length || bug.updates?.length)" class="bug-summary-counts">
+                  <div v-if="!isBugExpanded(bug) && (bug.time || bug.attachments?.length || bug.updates?.length)" class="bug-summary-counts">
+                    <!-- 收起时也写上是谁提的（以前只有时间，分不清是客户提的还是自己人记的，得一条条点开） -->
+                    <span class="bug-summary-who">{{ bug.createdBy || '客户' }}</span>
+                    <time v-if="bug.time" :datetime="bug.time.replace(' ', 'T')">{{ bug.time }} 提交</time>
                     <span v-if="bug.attachments?.length">{{ bug.attachments.length }} 个附件</span>
                     <span v-if="bug.updates?.length">{{ bug.updates.length }} 条补充</span>
                   </div>
                   <div v-if="!isBugExpanded(bug) && issueImages.get(bug.id).length" class="bug-summary-previews">
                     <MediaThumb v-for="(image, i) in issueImages.get(bug.id).slice(0, previewLimit)"
-                      :key="i" :item="image" :size="56" />
+                      :key="i" :item="image" :size="56" :gallery="problemImages" />
                     <button v-if="issueImages.get(bug.id).length > previewLimit" type="button"
                       :aria-label="'展开查看其余 ' + (issueImages.get(bug.id).length - previewLimit) + ' 张图片'"
                       @click="toggleBugExpanded(bug)">+{{ issueImages.get(bug.id).length - previewLimit }} 张</button>
                   </div>
                   <div v-if="isBugExpanded(bug)" :id="bugDetailsId(bug)" class="bug-details">
                     <div class="bug-body">
-                      <AttachmentView v-if="bug.attachments && bug.attachments.length" :items="bug.attachments" :size="64" />
+                      <AttachmentView v-if="bug.attachments && bug.attachments.length" :items="bug.attachments" :gallery="problemImages" :size="64" />
                       <div class="bug-meta">{{ bug.createdBy || '客户' }} · {{ bug.time }}</div>
 
                       <div v-if="bug.updates && bug.updates.length" class="bug-updates">
                         <div v-for="u in bug.updates" :key="u.id" class="bug-update">
                           <div class="update-meta">补充说明 · {{ u.createdBy || '客户' }} · {{ u.time }}</div>
                           <p>{{ u.content || '只有附件' }}</p>
-                          <AttachmentView v-if="u.attachments && u.attachments.length" :items="u.attachments" :size="64" />
+                          <AttachmentView v-if="u.attachments && u.attachments.length" :items="u.attachments" :gallery="problemImages" :size="64" />
                         </div>
                       </div>
 
@@ -280,6 +297,7 @@
                         @click="resolveCurrentIssue(bug, $event)">
                         {{ actionableBugs.length > 1 ? '解决并继续' : '解决最后一条' }}
                       </el-button>
+                      <span v-else-if="bug.status==='confirm'" class="issue-awaiting">等客户确认</span>
                       <el-radio-group v-else
                         :key="statusUpdatingBugId === bug.id"
                         :model-value="bugStatus(bug)"
@@ -292,6 +310,8 @@
                         <el-radio-button v-if="!isBugResolved(bug)" value="action" :disabled="['done','cancelled'].includes(order.status)">需处理</el-radio-button>
                         <el-radio-button value="resolved">已解决</el-radio-button>
                       </el-radio-group>
+                      <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && bug.status!=='confirm'"
+                        type="primary" plain size="small" :disabled="!!statusUpdatingBugId || !!deletingBugId" @click="reviewBugId=bug.id">请客户确认</el-button>
                       <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
                         {{ activeUpdateBugId === bug.id ? '收起' : '补充说明' }}
                       </el-button>
@@ -307,7 +327,10 @@
                     </div>
                   </div>
                 </div>
-                <div v-if="!processingBugs && !bugItems.length" class="empty">暂无问题</div>
+                <div v-if="!processingBugs && !filteredBugs.length" class="empty" role="status">
+                  {{ bugItems.length ? '没有符合筛选条件的问题' : '暂无问题' }}
+                  <button v-if="bugItems.length" type="button" class="clear-issue-filters" @click="resetIssueFilters">清除筛选</button>
+                </div>
               </div>
             </section>
 
@@ -421,6 +444,7 @@
       </div>
     </div>
     <DeliveryDialog v-model:visible="deliveryVisible" :order="order" :target="na?.to"/>
+    <IssueReviewRequest v-if="visible && reviewTarget" :key="reviewTarget.id" :order="order" :bug="reviewTarget" @close="reviewBugId=null" />
     <PaymentDialog v-model:visible="payVisible" :order="order" />
     <ReasonDialog :order="order"
       v-model:visible="returnVisible"
@@ -470,8 +494,11 @@ import NextStepBar from '@/components/NextStepBar.vue'
 import InlineEdit from '@/components/InlineEdit.vue'
 import AssignMenu from '@/components/AssignMenu.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
+import { issueGallery } from '@/utils/imagePreview'
+import { issueStateOptions, issueTimeOptions, matchesIssueFilters, newestIssueFirst } from '@/utils/issueFilters'
 import MediaThumb from '@/components/MediaThumb.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
+import IssueReviewRequest from './IssueReviewRequest.vue'
 import ReasonDialog from '@/components/ReasonDialog.vue'
 import ApprovalItem from '@/components/ApprovalItem.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
@@ -523,8 +550,17 @@ const updateReady = computed(() => {
   const draft = updateDraft.value
   return draft && !updateSubmittingId.value && !draft.sending && !draft.attachmentWaitList.length && (draft.text.trim() || draft.files.length)
 })
+const reviewBugId = ref(null)
+const reviewTarget = computed(() => props.order?.bugs?.find(bug => bug.id === reviewBugId.value))
+watch([() => props.order?.id, () => props.visible], () => { reviewBugId.value = null })
 const statusModel = ref('')
 const payVisible = ref(false)
+
+// 手机标题下面那行小字：需求的第一行；和项目名一样就改显示单号，不把同一句话写两遍
+const mobileSubtitle = computed(() => {
+  const first = String(props.order?.requirement || '').split('\n')[0].trim()
+  return first && first !== String(props.order?.title || '').trim() ? first : props.order?.orderNo
+})
 
 // ---- 流转：接收 / 拒绝 / 交回 / 退回返工 / 申请 ----
 const accepting = ref(false)
@@ -583,13 +619,25 @@ let poller = null
 const chatTypes = ['message', 'reply']
 const chatItems = computed(() => (props.order?.timeline || []).filter((t) => chatTypes.includes(t.type)))
 const recordItems = computed(() => (props.order?.timeline || []).filter((t) => !chatTypes.includes(t.type)))
-const bugItems = computed(() => [...(props.order?.bugs || [])].sort((a, b) => Number(b.status === 'action') - Number(a.status === 'action')))
+const issueDays = ref(0)
+const issueState = ref('all')
+const currentMinute = ref(Math.floor(Date.now() / 60000))
+const hasIssueFilters = computed(() => issueDays.value !== 0 || issueState.value !== 'all')
+
+const bugItems = computed(() => [...(props.order?.bugs || [])].sort(newestIssueFirst))
+const filteredBugs = computed(() => hasIssueFilters.value
+  ? bugItems.value.filter(bug => matchesIssueFilters(bug, issueDays.value, issueState.value, currentMinute.value))
+  : bugItems.value)
+function resetIssueFilters() {
+  issueDays.value = 0
+  issueState.value = 'all'
+}
 const previewLimit = 3
 const issueImages = computed(() => new Map(bugItems.value.map(bug => {
   const attachments = [...(bug.attachments || []), ...(bug.updates || []).flatMap(update => update.attachments || [])]
   return [bug.id, attachments.filter(file => file?.type === 'image' && file.url)]
 })))
-watch(bugItems, items => {
+watch(filteredBugs, items => {
   if (activeUpdateBugId.value && !items.some(bug => bug.id === activeUpdateBugId.value)) activeUpdateBugId.value = null
 })
 
@@ -597,7 +645,7 @@ const processingBugs = ref(false)
 const processingBugId = ref(null)
 const bugNavigator = ref(null)
 const bugExpansion = ref(new Map())
-const bugStatusLabels = { open: '未标记', action: '需处理', resolved: '已解决' }
+const bugStatusLabels = { open: '未标记', action: '需处理', confirm:'等客户确认', resolved: '已解决' }
 const bugDetailsId = bug => `issue-details-${props.order.id}-${bug.id}`
 function isBugExpanded(bug) {
   return bugExpansion.value.get(String(bug.id)) ?? (bugStatus(bug) === 'action')
@@ -608,19 +656,20 @@ function toggleBugExpanded(bug) {
   if (!expanded && activeUpdateBugId.value === bug.id) activeUpdateBugId.value = null
 }
 
-const anyIssueExpanded = computed(() => bugItems.value.some(isBugExpanded))
+const anyIssueExpanded = computed(() => filteredBugs.value.some(isBugExpanded))
 function setAllIssuesExpanded(expanded) {
-  for (const bug of bugItems.value) bugExpansion.value.set(String(bug.id), expanded)
+  for (const bug of filteredBugs.value) bugExpansion.value.set(String(bug.id), expanded)
   if (!expanded) activeUpdateBugId.value = null
 }
 
-const actionableBugs = computed(() => bugItems.value.filter(bug => bug.status === 'action'))
+const actionableBugs = computed(() => filteredBugs.value.filter(bug => bug.status === 'action'))
 const processingIndex = computed(() => Math.max(0, actionableBugs.value.findIndex(bug => bug.id === processingBugId.value)))
 const processingBug = computed(() => actionableBugs.value[processingIndex.value])
 const visibleBugs = computed(() => {
-  if (!processingBugs.value) return bugItems.value
+  if (!processingBugs.value) return filteredBugs.value
   return processingBug.value ? [processingBug.value] : []
 })
+const problemImages = computed(() => issueGallery(visibleBugs.value))
 const issueNavigationLocked = computed(() =>
   !!statusUpdatingBugId.value || !!deletingBugId.value || (!!activeUpdateBugId.value && activeUpdateBugId.value === processingBug.value?.id)
 )
@@ -676,7 +725,10 @@ watch([drawerReady, () => props.visible, () => props.loading, () => props.order?
   let cancelled = false
   onCleanup(() => { cancelled = true })
   // An explicit notification still opens its exact item, including historical issues.
-  if (props.noticeTab === 'bugs' && props.noticeItem) bugExpansion.value.set(props.noticeItem, true)
+  if (props.noticeTab === 'bugs' && props.noticeItem) {
+    if (!filteredBugs.value.some(bug => String(bug.id) === props.noticeItem)) resetIssueFilters()
+    bugExpansion.value.set(props.noticeItem, true)
+  }
   if (processingBugs.value && props.noticeTab === 'bugs' && props.noticeItem) {
     const target = actionableBugs.value.find(bug => String(bug.id) === props.noticeItem)
     if (target) processingBugId.value = target.id
@@ -692,7 +744,7 @@ watch([drawerReady, () => props.visible, () => props.loading, () => props.order?
 }, { flush: 'post' })
 
 function bugStatus(bug) {
-  return ['resolved', 'action'].includes(bug?.status) ? bug.status : 'open'
+  return ['resolved', 'action', 'confirm'].includes(bug?.status) ? bug.status : 'open'
 }
 
 function isBugResolved(bug) {
@@ -715,6 +767,7 @@ function scrollChatBottom(smooth = false) {
 }
 
 async function syncNow(force = false) {
+  currentMinute.value = Math.floor(Date.now() / 60000)
   if (!props.visible || !props.order || props.loading || syncing.value || document.visibilityState !== 'visible') return
   if (replying.value || bugSubmitting.value || deletingBugId.value || statusUpdatingBugId.value || updateSubmittingId.value) return
   syncing.value = true
@@ -750,6 +803,7 @@ function defaultMobileTab() {
 }
 
 function onOpen() {
+  resetIssueFilters()
   desktopTab.value = props.noticeTab || 'all'
   mobileTab.value = props.noticeTab || defaultMobileTab()
   syncNow(false)
@@ -882,6 +936,9 @@ async function submitBug() {
     bugText.value = ''
     bugFiles.value = []
     bugOpen.value = false
+    if (issueState.value === 'resolved') issueState.value = 'all'
+    processingBugs.value = false
+    currentMinute.value = Math.floor(Date.now() / 60000)
     ElMessage.success('问题已记下')
   } catch (e) {
     ElMessage.error(e.message || '创建失败')
@@ -973,6 +1030,7 @@ function dotColor(type) {
 </script>
 
 <style scoped>
+.issue-awaiting,.bug-summary-status.status-confirm {color:#865500;background:#fff1d8;border-radius:6px;padding:3px 7px;font-size:12px}
 .detail-handling { flex:none; padding:6px 16px; background:#f7f9fd; }
 .workspace-next { flex: 0 0 auto; margin: 12px 16px 0; }
 .chat-unbound { margin: 0 0 8px; padding: 8px 10px; border-radius: 8px; background: #fff7e8; color: #9a6a1c; font-size: 12px; line-height: 1.6; }
@@ -1257,8 +1315,10 @@ function dotColor(type) {
   padding: 9px 11px;
   color: #303133;
 }
+/* 自己人发的消息：蓝底白字（以前这里是浅蓝底，和全局样式的白字叠在一起，自己发的话几乎看不见） */
 .chat-row.team .bubble {
-  background: #ecf5ff;
+  background: #165dff;
+  color: #fff;
 }
 .bubble p {
   margin: 0 0 6px;
@@ -1303,6 +1363,21 @@ function dotColor(type) {
 .bug-navigator .begin-processing { color: #1454bb; background: #eef5ff; border-color: #c6dafa; }
 .bug-navigator button:disabled { color: #8491a0; cursor: default; opacity: .65; }
 .bug-panel .section-head > div:first-child { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+.issue-filters {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 12px;
+}
+.issue-filter-row { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.issue-filter-row > span { margin-right: 3px; color: #606e82; font-size: 12px; }
+.issue-filter-row button, .clear-issue-filters {
+  border: 0; border-radius: 7px; background: transparent; color: #465872;
+  min-height: 30px; padding: 4px 9px; font: inherit; font-size: 13px; cursor: pointer;
+}
+.issue-filter-row button:hover, .clear-issue-filters { background: #f0f5ff; color: #2158b1; }
+.issue-filter-row button[aria-pressed=true] { background: #e5eeff; color: #164db1; font-weight: 650; }
+.issue-filter-row button:focus-visible, .clear-issue-filters:focus-visible { outline: 2px solid #3976dc; outline-offset: 1px; }
+.bug-summary-counts time { font-variant-numeric: tabular-nums; }
 .bug-fold-all { border: 0; background: none; padding: 4px; color: var(--el-color-primary); font: inherit; font-size: 13px; cursor: pointer }
 .bug-reactivate { padding: 3px 8px; margin-block: 2px 4px; border-radius: 6px; border: 1px solid #b8cbea; background: white; color: #235ca6; font: inherit; font-size: 13px; cursor: pointer }
 .bug-reactivate:disabled { opacity: .6; cursor: default }

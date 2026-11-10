@@ -41,7 +41,19 @@ export function pendingItems(orders) {
   groups.urgent.sort(dueFirst)
   groups.next.sort(dueFirst)
   groups.bug.sort((a, b) => (b.bugId || 0) - (a.bugId || 0))
-  return [...groups.urgent, ...groups.bug, ...groups.next, ...groups.manual].map(item => {
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date())
+  const dueNow = item => item.due && item.due.slice(0, 10) <= today
+  const dated = [...groups.urgent, ...groups.next]
+  const byDeadline = (a, b) => {
+    const minute = date => date.length === 10 ? date + ' 23:59' : date
+    return minute(a.due).localeCompare(minute(b.due)) || b.id - a.id
+  }
+  const ordered = [
+    ...dated.filter(dueNow).sort(byDeadline),
+    ...groups.urgent.filter(item => !dueNow(item)), ...groups.bug,
+    ...groups.next.filter(item => !dueNow(item)), ...groups.manual
+  ]
+  return ordered.map(item => {
     const key = item.kind === 'bug' ? (item.bugId ? 'bug-' + item.bugId : 'bugs') : item.kind
     return { ...item, receipt: item.order.reminderReceipts?.[key] }
   })

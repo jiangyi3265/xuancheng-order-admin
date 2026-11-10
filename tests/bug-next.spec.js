@@ -35,9 +35,9 @@ for (const width of [375,1366]) {
       project.version++
       await ok(route,project)
     })
-    await panel.getByRole('button',{name:'上一条',exact:true}).click()
-    await expect(panel.locator('.bug-item')).toContainText('问题 22')
     await panel.getByRole('button',{name:'下一条',exact:true}).click()
+    await expect(panel.locator('.bug-item')).toContainText('问题 22')
+    await panel.getByRole('button',{name:'上一条',exact:true}).click()
     await expect(panel.locator('.bug-item')).toContainText('问题 33')
     expect(writes).toHaveLength(0)
     const resolve=panel.getByRole('button',{name:'解决并继续'})

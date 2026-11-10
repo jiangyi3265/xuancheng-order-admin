@@ -140,9 +140,10 @@ test('real browser: quick create links the customer, who sees progress; inbox sh
 
     await test.step('customer sees the project with progress and an unpriced label', async () => {
       await login(client, cust, pw)
-      const card = client.locator('.card').filter({ hasText: title2 })
-      await expect(card.locator('.ps-step.current')).toContainText('确认需求')
-      await card.getByRole('button', { name: '查看详情', exact: true }).click()
+      // 客户首页改版后进度条在项目详情里：从首页点「项目详情」进去看
+      await client.getByRole('link', { name: '项目详情' }).click()
+      await expect(client.locator('.topbar')).toContainText(title2)
+      await expect(client.locator('.ps-step.current')).toContainText('确认需求')
       await expect(client.locator('.customer-project-summary')).toContainText('待报价')
       await expect(client.locator('.ps-hint')).toContainText('团队正在确认需求')
       await client.getByRole('button', { name: '沟通', exact: true }).click()

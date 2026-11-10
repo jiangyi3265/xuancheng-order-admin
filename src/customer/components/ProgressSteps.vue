@@ -38,7 +38,7 @@ const hint = computed(() => {
   return {
     pending: '团队正在确认需求，确认后开始制作',
     doing: '正在制作' + by,
-    review: '已经做完，团队正在做最后检查',
+    review: '团队已经做完，等你验收',
     done: '项目已完成，有问题可以随时反馈'
   }[props.status] || ''
 })

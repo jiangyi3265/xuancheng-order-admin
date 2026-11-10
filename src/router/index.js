@@ -66,12 +66,19 @@ const routes = [
     component: () => import('@/views/login/index.vue')
   },
   { path: '/customer-login', redirect: to => ({ path: '/login', query: to.query }) },
-  { path: '/projects', component: () => import('@/customer/views/projects/index.vue'), meta: { customer: true } },
-  { path: '/projects/:id', component: () => import('@/customer/views/projects/detail.vue'), meta: { customer: true } },
-  { path: '/intake', component: () => import('@/customer/views/intake/index.vue'), meta: { customer: true } },
-  { path: '/customer/messages', component: () => import('@/customer/views/messages/index.vue'), meta: { customer: true } },
-  { path: '/customer/mine', component: () => import('@/views/mine/index.vue'), meta: { customer: true } },
-  { path: '/customer/security', component: () => import('@/views/security/index.vue'), meta: { customer: true } },
+  {
+    path: '/projects',
+    component: () => import('@/customer/Layout.vue'),
+    meta: { customer: true },
+    children: [
+      { path: '', component: () => import('@/customer/views/projects/index.vue'), meta: { customerTab: 'projects' } },
+      { path: ':id', component: () => import('@/customer/views/projects/detail.vue'), meta: { customerTab: 'projects' } },
+      { path: '/intake', component: () => import('@/customer/views/intake/index.vue'), meta: { customerTab: 'intake' } },
+      { path: '/customer/messages', component: () => import('@/customer/views/messages/index.vue'), meta: { customerTab: 'messages' } },
+      { path: '/customer/mine', component: () => import('@/views/mine/index.vue'), meta: { customerTab: 'mine' } },
+      { path: '/customer/security', component: () => import('@/views/security/index.vue'), meta: { customerTab: 'mine' } }
+    ]
+  },
   {
     path: '/',
     component: Layout,

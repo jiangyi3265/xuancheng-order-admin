@@ -81,6 +81,8 @@ for (const {device,viewport,touch} of [
     test.use({viewport,hasTouch:touch})
     test('问题长图能看全、放大滚到右下圈注并点击返回', async ({page,browserName})=>{
       const {thumb,dialog,image,stage} = await openIssueImage(page)
+      await expect.poll(()=>stage.evaluate(el=>el.scrollHeight-el.clientHeight)).toBeLessThanOrEqual(1)
+      await dialog.getByRole('button',{name:'适应宽度'}).click()
       await expect.poll(()=>stage.evaluate(el=>el.scrollHeight/el.clientHeight)).toBeGreaterThan(2)
       expect(await stage.evaluate(el=>el.scrollTop)).toBe(0)
       if (touch && browserName==='chromium') await swipeUp(page,stage)

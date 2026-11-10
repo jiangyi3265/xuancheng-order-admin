@@ -1,7 +1,7 @@
 <template>
   <div class="att-view">
     <div v-if="mediaItems.length" class="thumbs">
-      <MediaThumb v-for="(m, i) in mediaItems" :key="'m' + i" :item="m" :size="size" />
+      <MediaThumb v-for="(m, i) in mediaItems" :key="'m' + i" :item="m" :size="size" :gallery="gallery" :siblings="mediaItems" />
     </div>
     <div v-if="audioItems.length" class="audio-list">
       <div v-for="(a, i) in audioItems" :key="'a' + i" class="audio-row">
@@ -10,12 +10,12 @@
       </div>
     </div>
     <div v-if="fileItems.length" class="file-list">
-      <div v-for="(f, i) in fileItems" :key="'f' + i" class="file-row" :title="'下载 ' + f.name" @click="downloadAttachment(f)">
+      <button type="button" v-for="(f, i) in fileItems" :key="'f' + i" class="file-row" :title="'下载 ' + f.name" @click="downloadAttachment(f)">
         <el-icon class="f-ico"><component :is="fileIcon(f.name)" /></el-icon>
         <span class="f-name">{{ f.name }}</span>
         <span class="f-size">{{ fmtSize(f.size) }}</span>
         <el-icon class="f-dl"><Download /></el-icon>
-      </div>
+      </button>
     </div>
   </div>
 </template>
@@ -27,6 +27,7 @@ import MediaThumb from './MediaThumb.vue'
 import { fmtSize, fileIcon, downloadAttachment } from '@/customer/utils/file'
 
 const props = defineProps({
+  gallery: Array,
   items: { type: Array, default: () => [] },
   size: { type: Number, default: 84 }
 })
@@ -59,6 +60,7 @@ const fileItems = computed(() => props.items.filter((x) => !['image', 'video', '
   color: #e6a23c;
 }
 .audio-row audio {
+  max-width: 100%;
   height: 36px;
 }
 .file-list {
@@ -68,6 +70,11 @@ const fileItems = computed(() => props.items.filter((x) => !['image', 'video', '
   gap: 6px;
 }
 .file-row {
+  border: 0;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 8px;

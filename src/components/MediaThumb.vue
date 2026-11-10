@@ -5,11 +5,12 @@
       <span class="play-badge"><el-icon :size="Math.round(size / 3)"><VideoPlay /></el-icon></span>
     </div>
     <button v-else type="button" class="thumb-open" :aria-label="'放大' + (item.name || '图片')"
-      @click.stop="openImage(item.url,item.name,item)" @keydown.enter.stop @keydown.space.stop>
-      <el-image :src="item.url" alt="" fit="cover" class="m-el">
+      @click.stop="openImage(item.url, item.name, item, gallery || imageEntries(siblings))" @keydown.enter.stop @keydown.space.stop>
+      <el-image :src="item.url" alt="" fit="contain" class="m-el">
         <template #placeholder><span class="thumb-status">加载中</span></template>
         <template #error><span class="thumb-status">加载失败</span></template>
       </el-image>
+      <span v-if="item.annotated === true" class="mark-label">已圈注</span>
     </button>
 
     <span v-if="removable" class="m-del" @click.stop="$emit('remove')">
@@ -32,13 +33,15 @@
 </template>
 
 <script setup>
-import { openImage } from '@/utils/imagePreview'
+import { imageEntries, openImage } from '@/utils/imagePreview'
 import { ref, computed } from 'vue'
 import { fmtSize, downloadAttachment } from '@/utils/file'
 import { VideoPlay, Close, Document } from '@element-plus/icons-vue'
 
 const props = defineProps({
   item: { type: Object, required: true },
+  gallery: Array,
+  siblings: Array,
   size: { type: Number, default: 84 },
   removable: { type: Boolean, default: false }
 })
@@ -77,6 +80,17 @@ const isVideo = computed(
 }
 .thumb-open:focus-visible { outline: 2px solid #326abd; outline-offset: -2px }
 .thumb-open .m-el { background: transparent }
+.mark-label {
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: #fff3f2;
+  color: #a7253b;
+  font: 600 10px/1.4 system-ui, sans-serif;
+  pointer-events: none;
+}
 .thumb-open :deep(.el-image__wrapper) { pointer-events: none }
 .thumb-open :deep(.el-image__inner.is-loading) { opacity: 1 }
 .thumb-status {

@@ -1,7 +1,7 @@
 <template>
   <div class="att-view">
     <div v-if="mediaItems.length" class="thumbs">
-      <MediaThumb v-for="(m, i) in mediaItems" :key="'m' + i" :item="m" :size="size" />
+      <MediaThumb v-for="(m, i) in mediaItems" :key="'m' + i" :item="m" :size="size" :gallery="gallery" :siblings="mediaItems" />
     </div>
     <div v-if="audioItems.length" class="audio-list">
       <div v-for="(a, i) in audioItems" :key="'a' + i" class="audio-row">
@@ -27,6 +27,7 @@ import MediaThumb from './MediaThumb.vue'
 import { fmtSize, fileIcon, downloadAttachment } from '@/utils/file'
 
 const props = defineProps({
+  gallery: Array,
   items: { type: Array, default: () => [] },
   size: { type: Number, default: 84 }
 })

@@ -17,7 +17,7 @@
         <div v-if="item.content" class="text">{{ item.content }}</div>
 
         <div v-if="mediaItems.length" class="media">
-          <MediaThumb v-for="(m, i) in mediaItems" :key="'m' + i" :item="m" :size="120" />
+          <MediaThumb v-for="(m, i) in mediaItems" :key="'m' + i" :item="m" :siblings="mediaItems" :size="120" />
         </div>
 
         <div v-for="(a, i) in audioItems" :key="'a' + i" class="audio">

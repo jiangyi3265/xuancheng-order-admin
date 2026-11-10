@@ -1,30 +1,30 @@
 <template>
   <div ref="uploaderEl" class="att-uploader">
+    <UploadFeedback :queue="queue" />
     <div class="thumbs">
-      <MediaThumb
+      <DraftMediaThumb
         v-for="(m, i) in mediaItems"
         :key="'m' + i"
-        :item="m"
+        :draft="draft" :item="m" :siblings="mediaItems"
         :size="84"
-        removable
         @remove="removeItem(m)"
       />
-      <div
-        v-if="list.length < limit"
+      <button
+        type="button" aria-label="添加图片或文件" :disabled="draft.sending"
         class="add-zone"
-        :class="{ over: dragOver, uploading: uploadingCount > 0 }"
+        :class="{ over: dragOver, uploading: queue.uploadingCount > 0 }"
         @click="pickFile"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
         title="图片可直接 Ctrl+V 粘贴；视频/文件/压缩包点击或拖拽上传"
       >
-        <el-icon :size="20" :class="{ spin: uploadingCount > 0 }">
-          <Loading v-if="uploadingCount > 0" />
+        <el-icon :size="20" :class="{ spin: queue.uploadingCount > 0 }">
+          <Loading v-if="queue.uploadingCount > 0" />
           <Plus v-else />
         </el-icon>
-        <span class="az-text">{{ uploadingCount > 0 ? '上传中' : '粘贴 / 点击' }}</span>
-      </div>
+        <span class="az-text">{{ queue.uploadingCount > 0 ? '上传中' : chooseLabel }}</span>
+      </button>
     </div>
 
     <div v-if="fileItems.length" class="file-list">
@@ -32,13 +32,13 @@
         <el-icon class="f-ico"><component :is="fileIcon(f.name)" /></el-icon>
         <span class="f-name" :title="f.name">{{ f.name }}</span>
         <span class="f-size">{{ fmtSize(f.size) }}</span>
-        <el-icon class="f-del" @click="removeItem(f)"><Close /></el-icon>
+        <button type="button" class="f-del" :disabled="draft.sending" :aria-label="'移除 ' + f.name" @click="removeItem(f)"><el-icon><Close /></el-icon></button>
       </div>
     </div>
 
     <div class="hint">
-      <el-icon><InfoFilled /></el-icon>
-      图片：截图后直接 <b>Ctrl+V</b> 粘贴；视频 / 文件 / 压缩包：点 + 或拖拽进来
+      <slot name="hint"><el-icon><InfoFilled /></el-icon>
+      <span class="hint-pc">图片：截图后直接 <b>Ctrl+V</b> 粘贴；视频 / 文件 / 压缩包：点 + 或拖拽进来</span><span class="hint-m">点 + 选图片、视频或文件</span></slot>
     </div>
 
     <input ref="fileInput" type="file" multiple class="hidden-input" @change="onFileChange" />
@@ -46,73 +46,29 @@
 </template>
 
 <script setup>
-import { ref, watch, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { Plus, InfoFilled, Close, Loading } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
-import MediaThumb from './MediaThumb.vue'
-import { attType, extOf, fmtSize, fileIcon } from '@/customer/utils/file'
-import { uploadAttachment } from '@/customer/utils/upload'
-
+import DraftMediaThumb from './DraftMediaThumb.vue'
+import UploadFeedback from '@/components/UploadFeedback.vue'
+import { fmtSize, fileIcon } from '@/customer/utils/file'
+import { chatAttachmentQueue } from '@/utils/attachmentQueue'
 import { registerPasteTarget } from '@/utils/paste'
-const uploaderEl = ref(null)
-let unregisterPaste = () => {}
 
 const props = defineProps({
-  modelValue: { type: Array, default: () => [] },
-  // 默认不限张数；个别地方真需要上限时再传
-  limit: { type: Number, default: Infinity }
+  draft: { type: Object, required: true },
+  chooseLabel: { type: String, default: '粘贴 / 点击' }
 })
-const emit = defineEmits(['update:modelValue'])
-
-const list = ref([])
+const queue = chatAttachmentQueue(props.draft, true)
+const mediaItems = computed(() => props.draft.files.filter(item => ['image', 'video'].includes(item.type)))
+const fileItems = computed(() => props.draft.files.filter(item => !['image', 'video'].includes(item.type)))
 const fileInput = ref(null)
+const uploaderEl = ref(null)
 const dragOver = ref(false)
-const uploadingCount = ref(0)
+let unregisterPaste = () => {}
 
-const mediaItems = computed(() => list.value.filter((x) => x.type === 'image' || x.type === 'video'))
-const fileItems = computed(() => list.value.filter((x) => x.type === 'file'))
-
-watch(
-  () => props.modelValue,
-  (v) => {
-    list.value = (v || []).map((x) => ({ ...x }))
-  },
-  { immediate: true }
-)
-
-function emitValue() {
-  emit('update:modelValue', list.value.map((x) => ({ ...x })))
+function addFiles(files) {
+  return queue.add(files)
 }
-
-// 张数不限；一次并发传 3 个，比一张张排队快，传完按选择的顺序放回
-const UPLOAD_CONCURRENCY = 3
-async function addFiles(files) {
-  const queue = []
-  for (const f of files) {
-    if (list.value.length + uploadingCount.value + queue.length >= props.limit) {
-      ElMessage.warning(`最多 ${props.limit} 个附件`)
-      break
-    }
-    if (f.size > 50 * 1024 * 1024) {
-      ElMessage.warning(`「${f.name}」不能超过 50MB`)
-      continue
-    }
-    queue.push(f)
-  }
-  for (let i = 0; i < queue.length; i += UPLOAD_CONCURRENCY) {
-    const batch = queue.slice(i, i + UPLOAD_CONCURRENCY)
-    uploadingCount.value += batch.length
-    const results = await Promise.allSettled(batch.map((f) => uploadAttachment(f)))
-    uploadingCount.value -= batch.length
-    results.forEach((r, j) => {
-      const f = batch[j]
-      if (r.status === 'fulfilled') list.value.push({ ...r.value, type: attType(f.type, f.name), ext: extOf(f.name) || r.value.ext })
-      else ElMessage.error(r.reason?.message || '附件上传失败')
-    })
-    emitValue()
-  }
-}
-
 function onDrop(e) {
   dragOver.value = false
   const fs = Array.from((e.dataTransfer && e.dataTransfer.files) || [])
@@ -127,11 +83,9 @@ function onFileChange(e) {
   e.target.value = ''
 }
 function removeItem(item) {
-  const idx = list.value.indexOf(item)
-  if (idx > -1) {
-    list.value.splice(idx, 1)
-    emitValue()
-  }
+  if (props.draft.sending || props.draft.annotating) return
+  const index = props.draft.files.indexOf(item)
+  if (index >= 0) props.draft.files.splice(index, 1)
 }
 
 // 粘贴由 utils/paste.js 统一分发：鼠标所在区域 / 光标所在区域的图片、文件会交给这里
@@ -148,6 +102,8 @@ defineExpose({ addFiles })
   gap: 8px;
 }
 .add-zone {
+  background: transparent;
+  font: inherit;
   width: 84px;
   height: 84px;
   border: 1px dashed #c0c4cc;
@@ -168,7 +124,6 @@ defineExpose({ addFiles })
   background: #ecf5ff;
 }
 .add-zone.uploading {
-  pointer-events: none;
   border-color: #409eff;
   color: #409eff;
   background: #ecf5ff;
@@ -213,19 +168,32 @@ defineExpose({ addFiles })
   font-size: 12px;
 }
 .f-del {
-  color: #c0c4cc;
+  border: 0;
+  background: transparent;
+  padding: 6px;
+  color: #63738b;
   cursor: pointer;
 }
 .f-del:hover {
   color: #f56c6c;
 }
+/* 提示是一句连着的话：不用 flex（以前窄屏上被拆成三列，读不通） */
 .hint {
-  display: flex;
-  align-items: center;
-  gap: 4px;
   font-size: 12px;
+  line-height: 1.6;
   color: #909399;
   margin-top: 8px;
+}
+.hint .el-icon {
+  vertical-align: -2px;
+  margin-right: 4px;
+}
+.hint-m {
+  display: none;
+}
+@media (max-width: 768px) {
+  .hint-pc { display: none; }
+  .hint-m { display: inline; }
 }
 .hint b {
   color: #409eff;

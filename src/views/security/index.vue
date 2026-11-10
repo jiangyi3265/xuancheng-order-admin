@@ -7,7 +7,6 @@
     <el-form-item label="确认新密码" prop="confirm"><el-input v-model="form.confirm" type="password" show-password autocomplete="new-password" /></el-form-item>
     <p class="muted">新密码为 5–20 位，不能与原密码或账号相同。</p><el-button type="primary" native-type="submit" :loading="saving" class="wide-button">保存修改</el-button>
   </el-form></section><el-alert title="修改密码后，其他设备需要重新登录。" type="info" :closable="false" show-icon />
-  <AppTabBar v-if="customer" active="mine" />
 </div></template>
 <script setup>
 import BoardAvatar from '@/components/board/BoardAvatar.vue'
@@ -17,7 +16,6 @@ import {ArrowLeft} from '@element-plus/icons-vue'
 import {ElMessage} from 'element-plus'
 import {currentMember,customerName,changeMyPassword,isBoss} from '@/mock/store'
 import {changeMyPassword as changeCustomerPassword} from '@/customer/mock/store'
-import AppTabBar from '@/customer/components/AppTabBar.vue'
 const route=useRoute(),router=useRouter(),formRef=ref(),saving=ref(false)
 const customer=computed(()=>!!route.meta.customer),name=computed(()=>customer.value?customerName.value:currentMember.value.name)
 const form=reactive({oldPassword:'',newPassword:'',confirm:''})

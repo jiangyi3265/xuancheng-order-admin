@@ -4,7 +4,7 @@ import { token, customerToken } from '@/mock/store'
 const expiredDrafts = new WeakSet()
 
 function emptyDraft() {
-  return { text: '', files: [], attachmentWaitList: [], sending: false, uploading: 0, retry: null }
+  return { text: '', files: [], attachmentWaitList: [], sending: false, annotating: false, uploading: 0, retry: null }
 }
 
 function snapshot(draft) {
@@ -18,6 +18,25 @@ function snapshot(draft) {
     attachmentWaitList: waiting,
     retry: typeof draft.retry?.key === 'string' && typeof draft.retry?.fingerprint === 'string' ? draft.retry : null
   }
+}
+
+const messageDraft = {
+  empty: emptyDraft,
+  snapshot,
+  hasContent: value => !!(value.text || value.files.length || value.attachmentWaitList.length)
+}
+
+const intakeDraft = {
+  empty: () => ({ ...emptyDraft(), title: '', customer: null, contact: null, amount: 0, submissionKey: null }),
+  snapshot: draft => ({
+    ...snapshot(draft),
+    submissionKey: typeof draft.submissionKey === 'string' ? draft.submissionKey : null,
+    title: typeof draft.title === 'string' ? draft.title : '',
+    customer: typeof draft.customer === 'string' ? draft.customer : null,
+    contact: typeof draft.contact === 'string' ? draft.contact : null,
+    amount: Number.isFinite(draft.amount) && draft.amount >= 0 ? draft.amount : 0
+  }),
+  hasContent: value => messageDraft.hasContent(value) || !!(value.submissionKey || value.title || value.amount || value.customer !== null || value.contact !== null)
 }
 
 function draftStore(session, tokenKey) {
@@ -40,9 +59,9 @@ function draftStore(session, tokenKey) {
     generation++
     effects.stop()
     effects = effectScope(true)
-    for (const draft of rooms.values()) {
+    for (const {draft, schema} of rooms.values()) {
       expiredDrafts.add(draft)
-      Object.assign(draft, emptyDraft())
+      Object.assign(draft, schema.empty())
     }
     rooms.clear()
     ready = null
@@ -80,25 +99,25 @@ function draftStore(session, tokenKey) {
     return ready
   }
 
-  function get(kind, id, participant) {
+  function get(kind, id, participant, schema = messageDraft) {
     const key = prefix + JSON.stringify([kind, String(id), String(participant)])
-    if (rooms.has(key)) return rooms.get(key)
-    const draft = reactive(emptyDraft())
+    if (rooms.has(key)) return rooms.get(key).draft
+    const draft = reactive(schema.empty())
     if (!id) return draft
     if (!session.value || localStorage.getItem(tokenKey) !== session.value) {
       expiredDrafts.add(draft)
       return draft
     }
-    rooms.set(key, draft)
+    rooms.set(key, {draft, schema})
     if (!persisted) return draft
     try {
       const saved = JSON.parse(sessionStorage.getItem(key))
-      if (saved && typeof saved === 'object') Object.assign(draft, snapshot(saved))
+      if (saved && typeof saved === 'object') Object.assign(draft, schema.snapshot(saved))
     } catch { /* Ignore an invalid or unreadable draft. */ }
     // The watcher also survives the originating panel closing during delivery.
-    effects.run(() => watch(() => snapshot(draft), saved => {
+    effects.run(() => watch(() => schema.snapshot(draft), saved => {
       try {
-        if (saved.text || saved.files.length || saved.attachmentWaitList.length) {
+        if (schema.hasContent(saved)) {
           sessionStorage.setItem(key, JSON.stringify(saved))
         } else {
           sessionStorage.removeItem(key)
@@ -119,13 +138,19 @@ const customers = draftStore(customerToken, 'customerToken')
 export function prepareChatDraftSession() {
   return Promise.all([staff.prepare(), customers.prepare()])
 }
+export function customerIntakeDraft(projectId = 'new') {
+  return customers.get('intake', projectId, '', intakeDraft)
+}
+export function clearCustomerIntakeDraft(draft) {
+  Object.assign(draft, intakeDraft.empty())
+}
 export function chatDraft(kind, id, participant = '') {
   return (kind === 'customer' ? customers : staff).get(kind, id, participant)
 }
 
 export async function sendDraft(draft, submit) {
   if (expiredDrafts.has(draft)) throw new Error('登录账号已变更，请刷新页面后再发送')
-  if (draft.sending || draft.uploading || draft.attachmentWaitList.length || !(draft.text.trim() || draft.files.length)) return
+  if (draft.sending || draft.annotating || draft.uploading || draft.attachmentWaitList.length || !(draft.text.trim() || draft.files.length)) return
   const text = draft.text
   const files = [...draft.files]
   draft.sending = true

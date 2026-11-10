@@ -78,6 +78,7 @@ export async function login(username, password, captcha, rememberDevice=inWeChat
     customerName.value = identity.user?.nickName || username
     localStorage.setItem('customerToken', nextToken)
     localStorage.setItem('customerName', customerName.value)
+    localStorage.setItem('customerAccount', identity.user?.userName || username)
     return 'customer'
   }
   token.value = nextToken
@@ -104,6 +105,7 @@ export async function customerLogin(username, password, captcha) {
   customerName.value = username
   localStorage.setItem('customerToken', nextToken)
   localStorage.setItem('customerName', username)
+  localStorage.setItem('customerAccount', username)
   return true
 }
 
@@ -112,11 +114,15 @@ export function customerLogout() {
   customerName.value = ''
   localStorage.removeItem('customerToken')
   localStorage.removeItem('customerName')
+  localStorage.removeItem('customerAccount')
 }
 
 async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, redirectHash = '#/login') {
   const { headers: h, retry = true, redirectOnExpiry = true, timeoutMs = REQUEST_TIMEOUT, ...rest } = opts
   const requestToken = tokenRef.value
+  const sessionMatches = () => requestToken === tokenRef.value &&
+    (tokenRef !== customerToken || requestToken === localStorage.getItem('customerToken'))
+  if (tokenRef === customerToken && !sessionMatches()) throw new Error('登录账号已变更，请刷新页面')
   const method = String(rest.method || 'GET').toUpperCase()
   if (!['GET', 'HEAD'].includes(method) && hasPendingUploads()) {
     throw new Error('附件正在上传，请稍候')
@@ -154,6 +160,7 @@ async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, 
     if (lastError?.name === 'AbortError') throw new Error('加载超时，请检查网络后重试')
     throw new Error(lastError?.message || '网络连接失败，请稍后重试')
   }
+  if (tokenRef === customerToken && !sessionMatches()) throw new Error('登录账号已变更，请刷新页面')
   if (json.code === 401) {
     if (requestToken && requestToken === tokenRef.value) {
       onExpired()
@@ -528,6 +535,11 @@ export async function appendBugUpdate(id, content, attachments = []) {
   return vo
 }
 
+export async function requestIssueReview(id, payload) {
+  const order = await http(`${BASE}/bug/${id}/review`, {method:'POST',body:JSON.stringify(payload)})
+  return upsert(order)
+}
+
 export async function updateBugStatus(id, status) {
   const vo = await http(`${BASE}/bug/${id}/status`, {
     method: 'PUT',
@@ -576,10 +588,10 @@ export async function loadCollabConfig() {
   }
 }
 
-export async function setProjectUrgency(id, urgentUntil, previousUntil) {
+export async function setProjectUrgency(id, urgentUntil, previousUntil, reopenVersion) {
   const updated = await http(`${BASE}/${id}/urgency`, {
     method: 'PUT',
-    body: JSON.stringify({ urgentUntil, previousUntil })
+    body: JSON.stringify({ urgentUntil, previousUntil, reopenVersion })
   })
   return upsert(updated)
 }

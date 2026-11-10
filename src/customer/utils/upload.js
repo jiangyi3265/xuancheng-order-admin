@@ -12,7 +12,8 @@ export async function uploadAttachment(file, { blockOtherForms = true } = {}) {
 
   const form = new FormData()
   form.append('file', file, file.name || 'attachment')
-  const token = localStorage.getItem('customerToken') || localStorage.getItem('token') || ''
+  const token = localStorage.getItem('customerToken')
+  if (!token) throw new Error('请重新登录客户账号后上传附件')
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 60000)
   if (blockOtherForms) pendingUploadCount.value += 1

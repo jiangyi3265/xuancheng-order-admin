@@ -193,5 +193,8 @@ async function complete() {
   .ns-actions { margin-left: auto; }
   .ns-owner-select, .ns-date { width: calc(50% - 5px) !important; }
   .ns-form-actions { width: 100%; justify-content: flex-end; }
+  /* 手机上填写时表单单独占一整行（以前和「下一步」三个字挤在同一行，输入框只剩半截，提示语都显示不全） */
+  .next-step.editing .ns-form { flex: 1 1 100%; }
+  .ns-input { flex: 1 1 100%; }
 }
 </style>

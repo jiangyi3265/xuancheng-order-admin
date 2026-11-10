@@ -14,6 +14,7 @@ async function fixture(page,role='boss'){
  else if(path==='/jiedan/order/list')body.data=[order,{...order,id:2,title:'餐饮点餐小程序',status:'review',unread:[]},{...order,id:3,title:'商城会员系统',status:'pending',assignState:'pending',unread:[]}];
  else if(path==='/jiedan/order/1'||path==='/jiedan/order/read')body.data=order;
  else if(path==='/jiedan/order/1/version'||path==='/jiedan/portal/orders/1/version')body.data={version:1};
+ else if(path==='/jiedan/order/intake')body.data={id:1,bugId:11,title:order.title,orderNo:order.orderNo,createTime:'2026-11-08 12:00'};
  else if(path==='/jiedan/portal/orders')body.data=[{...order,receivedAmount:undefined,payments:undefined,timeline:order.timeline.filter(t=>t.type==='reply')}];
  else if(path==='/jiedan/portal/orders/1')body.data={...order,receivedAmount:undefined,payments:undefined,timeline:order.timeline.filter(t=>t.type==='reply')};
  else if(path==='/jiedan/approval/list')body.data=[{id:1,orderId:1,orderTitle:order.title,type:'amount',typeLabel:'报价调整',status:'pending',statusLabel:'待审批',requesterId:2,requesterName:'小陈',reason:'新增英文页面',summary:'报价 ¥8,800 → ¥9,800',createTime:'2026-11-05 10:00'}];

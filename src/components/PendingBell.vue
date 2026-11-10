@@ -19,7 +19,9 @@
             <span class="item-text">{{ item.text }}</span>
             <span v-if="item.meta" class="meta">{{ item.meta }}</span>
           </router-link>
-          <button v-if="item.kind !== 'bug' || item.bugId" class="complete" type="button"
+          <button v-if="item.kind === 'urgent' && !isBoss && item.order.assignState === 'pending'" class="complete"
+            type="button" @click="open = false; router.push(pendingDestination(item))">去接单</button>
+          <button v-else-if="item.kind !== 'bug' || item.bugId" class="complete" type="button"
             :disabled="loading || !!loadError || busy.has(item.id)" :aria-label="'标为已处理，' + actionTitle(item)" :title="actionTitle(item)" @click="finish(item)">
             {{ busy.get(item.id) === item.key ? '处理中…' : '标为已处理' }}
           </button>
@@ -31,14 +33,15 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { Bell } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { completePendingItem, loadOrders, me, orders } from '@/mock/store'
+import { completePendingItem, loadOrders, me, orders, isBoss } from '@/mock/store'
 import { pendingItems, pendingLabels, pendingDestination } from '@/utils/pendingItems'
 import { isMobile } from '@/utils/useMobile'
 
 const route = useRoute()
+const router = useRouter()
 const open = ref(false)
 const drawerMounted = ref(false)
 const loading = ref(false)

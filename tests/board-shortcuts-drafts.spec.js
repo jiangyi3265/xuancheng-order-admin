@@ -9,7 +9,7 @@ async function setup(page,role='boss') {
     localStorage.setItem('xc.orderView','kanban')
   },role)
 }
-for(const width of [390,1366])test('看板处理入口直接定位，返回保留原列，多个问题优先显示 · '+width,async({page})=>{
+for(const width of [390,1366])test('看板处理入口直接定位，返回保留原列，新提交的问题排在前面 · '+width,async({page})=>{
   await setup(page)
   await page.setViewportSize({width,height:760})
   const bugs=[{...order.bugs[0],id:4},{...order.bugs[0],id:7,status:'action',content:'等我处理'}]
@@ -32,7 +32,8 @@ for(const width of [390,1366])test('看板处理入口直接定位，返回保�
   // A second issue was assigned after the last list snapshot.
   bugs.push({...bugs[1],id:8,content:'第二件待办'});row.actionBugCount=2
   await focus.locator('.issue-shortcut').click()
-  await expect(panel.locator('.bug-item').nth(1)).toContainText('第二件待办')
+  await expect(panel.locator('.bug-item').first()).toContainText('第二件待办')
+  await expect(panel.locator('.bug-item').nth(1)).toContainText('等我处理')
   await expect(panel.locator('.notice-target')).toHaveCount(0)
   await close.click()
   await expect(focus.locator('.issue-shortcut')).toHaveText('处理问题（2）')
@@ -69,7 +70,7 @@ test('客户切换栏目或项目时保留草稿，发出后不再恢复',async(
   await page.goto('/#/projects/1?tab=chat')
   const field=page.getByRole('textbox',{name:'项目沟通消息'})
   await field.fill('客户留给一期的回复')
-  await page.getByRole('button',{name:'需求',exact:true}).click()
+  await page.getByRole('button',{name:'项目概况',exact:true}).click()
   await page.getByRole('button',{name:'沟通',exact:true}).click()
   await expect(field).toHaveValue('客户留给一期的回复')
   await nav(page,'/projects/2?tab=chat')
