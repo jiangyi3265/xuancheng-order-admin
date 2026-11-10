@@ -10,7 +10,7 @@
     @opened="drawerReady = true"
     @close="drawerReady = false"
   >
-    <div v-if="order" v-loading="loading" class="workspace" :class="{'chat-workspace': isMobile && mobileTab==='chat'}">
+    <div v-if="order" v-loading="loading" class="workspace" :class="{'chat-workspace': isMobile && mobileTab==='chat', 'chat-roomy': isMobile && mobileTab==='chat' && !pendingAccept}">
       <header class="workspace-head">
         <button v-if="isMobile" class="board-detail-close icon-button" aria-label="关闭项目详情" @click="emit('update:visible',false)"><el-icon><ArrowLeft/></el-icon></button>
         <div class="title-block">
@@ -378,7 +378,7 @@
 
               <el-timeline class="timeline">
                 <el-timeline-item
-                  v-for="(t, i) in recordItems"
+                  v-for="(t, i) in shownRecords"
                   :key="t.id || i"
                   :data-notice-id="t.id"
                   :class="{ 'notice-target': isNoticeItem('internal', t.id) }"
@@ -636,6 +636,9 @@ let poller = null
 const chatTypes = ['message', 'reply']
 const chatItems = computed(() => (props.order?.timeline || []).filter((t) => chatTypes.includes(t.type)))
 const recordItems = computed(() => (props.order?.timeline || []).filter((t) => !chatTypes.includes(t.type)))
+// 内部记录最新的排最上面（输入框就在上面）：刚写的那条紧跟在输入框下面，打开项目先看到的也是最新进展。
+// 以前最早的在最上面，记录一多，新写的一条落在最底下，写完看不到，得往下翻才知道记上了没有
+const shownRecords = computed(() => [...recordItems.value].reverse())
 const issueDays = ref(0)
 const issueState = ref('all')
 const currentMinute = ref(Math.floor(Date.now() / 60000))
@@ -782,6 +785,12 @@ function scrollChatBottom(smooth = false) {
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: smooth ? 'smooth' : 'auto' })
   })
 }
+// 项目详情加载完、或者切到「沟通」页签时，对话停在最新一条。
+// 以前只在抽屉刚打开、消息还没加载出来时滚过一次：对话一长，每次打开看到的都是最早的几条，要自己往下翻。
+// 从某条消息的通知点进来的不滚（那时要停在那一条上）
+watch([() => props.visible && !props.loading && props.order?.id, () => mobileTab.value, () => desktopTab.value], ([ready]) => {
+  if (ready && !(props.noticeTab === 'chat' && props.noticeItem)) scrollChatBottom()
+}, { flush: 'post' })
 
 async function syncNow(force = false) {
   currentMinute.value = Math.floor(Date.now() / 60000)
@@ -1787,6 +1796,16 @@ function dotColor(type) {
   .workspace.chat-workspace{overflow:hidden}
   .workspace.chat-workspace .workspace-body{display:flex;flex:1!important;min-height:0;overflow:hidden!important}
   .workspace.chat-workspace .chat-list{min-height:0;max-height:none}
+  /* 手机「沟通」页把屏幕留给对话：标题收成一行，「下一步」条和底部操作栏先收起（切到别的页签就回来）。
+     以前这几栏占掉大半屏，小屏手机 / 微信里打开时对话只剩一条缝，发送按钮还被底栏挡住。
+     员工还没接收的项目不收（底栏里是「接收 / 拒绝」，得先处理） */
+  .workspace.chat-roomy{padding-bottom:env(safe-area-inset-bottom)}
+  .workspace.chat-roomy .workspace-next,.workspace.chat-roomy .head-actions-m,.workspace.chat-roomy .detail-subtitle,
+  .workspace.chat-roomy .title-block :deep(.urgency-actions){display:none!important}
+  .workspace.chat-roomy .workspace-head{padding:12px 18px 10px!important}
+  .workspace.chat-roomy .workspace-head .title-line{align-items:center}
+  .workspace.chat-roomy .workspace-head .title-line h2{font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .workspace.chat-roomy .chat-panel{margin-bottom:0}
 }
 .board-composer .reply-input {flex:1;min-width:0}
 .workspace-tabs{display:flex;gap:6px;padding:5px 16px;background:white;border-bottom:1px solid #e4ebf5}.workspace-tabs button{border:0;border-radius:8px;background:transparent;padding:5px 14px;color:#526783;cursor:pointer}.workspace-tabs [aria-pressed=true]{color:#165dff;background:#edf3ff;font-weight:650}

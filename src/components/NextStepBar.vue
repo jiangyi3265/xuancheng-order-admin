@@ -184,14 +184,15 @@ async function complete() {
 .ns-form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; flex: 1; min-width: 0; }
 .ns-input { flex: 1 1 260px; min-width: 0; }
 .ns-owner-select { width: 150px; }
-.ns-date { width: 140px !important; }
+/* 日期框的根节点拿不到本组件的作用域标记，要用 :deep 才管得到（以前这两条宽度都没生效，手机上日期框单独占了一行） */
+.ns-form :deep(.ns-date) { width: 140px !important; }
 .ns-form-actions { display: inline-flex; gap: 6px; margin-left: auto; }
 .ns-form-actions .el-button + .el-button { margin-left: 0; }
 @media (max-width: 768px) {
   .next-step { margin: 10px 16px; }
   .ns-content { flex-basis: 100%; white-space: normal; }
   .ns-actions { margin-left: auto; }
-  .ns-owner-select, .ns-date { width: calc(50% - 5px) !important; }
+  .ns-owner-select, .ns-form :deep(.ns-date) { width: calc(50% - 5px) !important; }
   .ns-form-actions { width: 100%; justify-content: flex-end; }
   /* 手机上填写时表单单独占一整行（以前和「下一步」三个字挤在同一行，输入框只剩半截，提示语都显示不全） */
   .next-step.editing .ns-form { flex: 1 1 100%; }
