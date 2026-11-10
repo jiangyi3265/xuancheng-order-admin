@@ -22,7 +22,8 @@
       <el-tabs v-model="tab"><el-tab-pane label="收款流水" name="history"/><el-tab-pane :label="isBoss ? '登记收款' : '申请收款'" name="entry"/></el-tabs>
       <el-form v-show="tab==='entry'" label-width="52px" class="pay-form" @submit.prevent>
         <el-form-item label="收到">
-          <el-input-number v-model="form.amount" :min="0" :precision="2" :step="100" controls-position="right" style="width: 170px" />
+          <!-- 光标一打开就在这里并且全选：金额对就按回车，不对直接打新数字 -->
+          <el-input-number ref="amountInput" v-model="form.amount" :min="0" :precision="2" :step="100" controls-position="right" style="width: 170px" @keydown.enter.prevent="submitFromAmount" />
           <el-button v-if="owedNow > 0" link type="primary" class="fill-btn" @click="form.amount = owedNow">
             收清 {{ money(owedNow) }}
           </el-button>
@@ -79,11 +80,12 @@
 
 <script setup>
 import ProjectCover from '@/components/ProjectCover.vue'
-import { ref, reactive, computed } from 'vue'
+import { ref, reactive, computed, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { getOrder, addPayment, removePayment, requestApproval, approvals, isBoss } from '@/mock/store'
 import { owed, money, payState } from '@/utils/payment'
 import { todayStr } from '@/utils/date'
+import { isMobile } from '@/utils/useMobile'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -107,6 +109,26 @@ const waiting = computed(() =>
 )
 const afterToday = (d) => d.getTime() > Date.now() + 24 * 3600 * 1000
 
+// 到登记页时光标直接停在金额上并全选（手机上不自动弹键盘）
+const amountInput = ref(null)
+function focusAmount() {
+  if (isMobile.value || tab.value !== 'entry') return
+  setTimeout(() => {
+    if (!props.visible || tab.value !== 'entry') return
+    const input = amountInput.value?.$el?.querySelector('input')
+    input?.focus()
+    input?.select()
+  }, 300)
+}
+watch(tab, () => { if (props.visible) focusAmount() })
+// 在金额里按回车 = 点「记这一笔」。输入框失焦时才把刚打的数字交出来，所以先让它失焦
+async function submitFromAmount(e) {
+  if (e.isComposing) return
+  e.target?.blur?.()
+  await nextTick()
+  submit()
+}
+
 async function onOpen() {
   // 点「记收款」就是要记一笔：直接到登记页，金额已经按还欠的填好（以前先进流水页，还得再点一下）。
   // 已经收清的才先看流水
@@ -115,7 +137,7 @@ async function onOpen() {
   form.payDate = todayStr()
   form.note = ''
   form.amount = owed(props.order)
-  if (!props.order?.id) return
+  if (!props.order?.id) return focusAmount()
   loading.value = true
   try {
     // 列表里的项目不带收款明细，打开时取一次完整详情
@@ -125,10 +147,12 @@ async function onOpen() {
     ElMessage.error('加载收款记录失败：' + e.message)
   } finally {
     loading.value = false
+    focusAmount()
   }
 }
 
 async function submit() {
+  if (saving.value) return
   const amount = Number(form.amount) || 0
   if (amount <= 0) {
     ElMessage.warning('先填一下这次收到多少钱')

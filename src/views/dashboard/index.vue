@@ -384,6 +384,11 @@ const memberBar = computed(() => {
 .alert-tag {
   margin-left: 6px;
 }
+/* 欠款 / 逾期名单：默认的浅橙、浅红小字在浅底上几乎看不清，把字加深、描上边 */
+.overdue-alert.el-alert--warning :deep(.el-alert__title) { color: #8a5200; }
+.overdue-alert.el-alert--warning .alert-tag { color: #8a5200; border: 1px solid #f0c78a; }
+.overdue-alert.el-alert--error :deep(.el-alert__title) { color: #b3261e; }
+.overdue-alert.el-alert--error .alert-tag { color: #b3261e; border: 1px solid #f3b4ae; }
 .more {
   margin-left: 8px;
   color: #909399;

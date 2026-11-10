@@ -100,7 +100,7 @@ async function fill(text) {
   input?.focus({preventScroll:true})
   input?.setSelectionRange(value.length, value.length)
 }
-defineExpose({ fill })
+defineExpose({ fill, focus: () => field.value?.textarea?.focus({ preventScroll: true }) })
 function onCustomFiles(event) {
   const files = Array.from(event.target.files)
   if (!props.busy && files.length) emit('files', files)

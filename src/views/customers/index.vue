@@ -46,17 +46,18 @@
 
     <el-dialog :model-value="!!selectedCustomer" title="客户信息" @close="selectedCustomer=null"><template v-if="selectedCustomer"><div class="board-account-profile"><el-avatar :size="58">{{ (selectedCustomer.nickName||selectedCustomer.userName).slice(-1) }}</el-avatar><h2>{{ selectedCustomer.nickName || selectedCustomer.userName }}</h2><p>客户账号</p></div><el-form label-position="top"><el-form-item label="登录账号"><el-input :model-value="selectedCustomer.userName" readonly/></el-form-item><el-form-item label="客户名称"><el-input :model-value="selectedCustomer.nickName" readonly/></el-form-item><el-form-item label="所属负责人"><el-input :model-value="selectedCustomer.ownerName || currentMember.name" readonly/></el-form-item></el-form><p class="muted">转交负责人仅影响后续提交的需求，现有项目负责人保持不变。</p><div class="board-account-actions"><el-button v-if="isBoss" @click="openTransfer(selectedCustomer)">转交负责人</el-button><el-button @click="doReset(selectedCustomer)">重置密码</el-button><el-button type="danger" plain @click="doDelete(selectedCustomer)">删除客户账号</el-button></div></template><template #footer><el-button type="primary" @click="selectedCustomer=null">完成</el-button></template></el-dialog>
     <!-- 新建账号 -->
-    <el-dialog v-model="createVisible" title="新建客户账号" width="440px">
-      <el-form ref="formRef" :model="createForm" :rules="rules" label-width="72px">
+    <!-- 打开光标就在「账号」里，填完按回车就创建 -->
+    <el-dialog v-model="createVisible" title="新建客户账号" width="440px" @opened="focusField(accountInput)">
+      <el-form ref="formRef" :model="createForm" :rules="rules" label-width="72px" @submit.prevent>
         <el-form-item label="账号" prop="userName">
-          <el-input v-model="createForm.userName" placeholder="客户登录用，字母/数字" />
+          <el-input ref="accountInput" v-model="createForm.userName" placeholder="客户登录用，字母/数字" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item label="昵称" prop="nickName">
-          <el-input v-model="createForm.nickName" placeholder="选填，如公司/称呼" />
+          <el-input v-model="createForm.nickName" placeholder="选填，如公司/称呼" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item label="密码" prop="password">
           <!-- 先给一个随机密码，不用自己想；建好后会连同账号一起整理成一段话供复制 -->
-          <el-input v-model="createForm.password" placeholder="5-20 位" />
+          <el-input v-model="createForm.password" placeholder="5-20 位" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item v-if="isBoss" label="负责人">
           <el-select v-model="createForm.ownerId" style="width: 100%">
@@ -101,6 +102,7 @@ import {
 } from '@/mock/store'
 import { offerLoginInfo } from '@/utils/loginInfo'
 import { suggestPassword } from '@/utils/password'
+import { onEnter, focusField } from '@/utils/formKeys'
 import { fmtTime } from '@/utils/time'
 
 const list = ref([])
@@ -110,6 +112,7 @@ const loading = ref(false)
 const saving = ref(false)
 const createVisible = ref(false)
 const formRef = ref()
+const accountInput = ref(null)
 const createForm = reactive({ userName: '', nickName: '', password: '', ownerId: null })
 // 可以当客户负责人的人：总管理员自己 + 未停用的下属
 const assignable = computed(() => MEMBERS.filter((m) => m.status === '0'))
@@ -172,8 +175,9 @@ async function submitTransfer() {
 }
 
 function submitCreate() {
+  if (saving.value) return
   formRef.value.validate(async (ok) => {
-    if (!ok) return
+    if (!ok || saving.value) return
     saving.value = true
     try {
       const info = { name: createForm.nickName.trim(), userName: createForm.userName.trim(), password: createForm.password }
@@ -189,6 +193,8 @@ function submitCreate() {
     }
   })
 }
+
+const enterCreate = onEnter(submitCreate)
 
 async function doReset(row) {
   try {

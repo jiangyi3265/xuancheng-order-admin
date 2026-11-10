@@ -6,10 +6,11 @@
     class="design-order-dialog"
     @update:model-value="(v) => emit('update:visible', v)"
     @open="onOpen"
+    @opened="onOpened"
   >
     <template #header="{ titleId }"><div class="design-form-heading"><h2 :id="titleId" :aria-label="form.id ? '编辑项目' : '新建项目'">{{ form.id ? '编辑项目' : '完整建单' }}</h2><p>完善项目信息，规范管理与交付</p></div></template>
     <el-form ref="formRef" :model="form" :rules="rules" label-width="84px" class="design-order-form" data-paste-zone="新建项目">
-      <el-form-item class="field-title" label="项目名" prop="title"><el-input v-model="form.title" placeholder="一句话写清做什么，比如：餐饮点餐小程序" /></el-form-item>
+      <el-form-item class="field-title" label="项目名" prop="title"><el-input ref="titleInput" v-model="form.title" placeholder="一句话写清做什么，比如：餐饮点餐小程序" /></el-form-item>
       <el-form-item class="field-customer" label="客户 / 联系方式"><div class="customer-inline"><el-input v-model="form.customer" placeholder="客户称呼"/><el-input v-model="form.contact" placeholder="微信/旺旺号，选填"/></div></el-form-item>
       <el-form-item class="field-account" label="客户账号"><div class="cust-account"><el-select v-model="form.customerAccount" filterable clearable placeholder="选择绑定客户"><el-option v-for="c in customers" :key="c.userId" :label="`${c.userName}（${c.nickName}）`" :value="c.userName"/></el-select><el-button :icon="Plus" aria-label="新建账号" title="新建账号" @click="openQuickCreate"/></div></el-form-item>
       <el-form-item class="field-owner" label="负责人"><el-select v-model="form.ownerId" :disabled="!isBoss"><el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" :disabled="m.status !== '0'"/></el-select></el-form-item>
@@ -28,16 +29,17 @@
     </template>
 
     <!-- 快捷新建客户账号 -->
-    <el-dialog v-model="quickVisible" title="新建客户账号" width="420px" append-to-body>
-      <el-form ref="qFormRef" :model="quickForm" :rules="quickRules" label-width="64px">
+    <!-- 昵称按上面填的客户称呼带过来、密码先给一个随机的，只用填账号；打开光标就在「账号」里，回车创建 -->
+    <el-dialog v-model="quickVisible" title="新建客户账号" width="420px" append-to-body @opened="focusField(quickAccountInput)">
+      <el-form ref="qFormRef" :model="quickForm" :rules="quickRules" label-width="64px" @submit.prevent>
         <el-form-item label="账号" prop="userName">
-          <el-input v-model="quickForm.userName" placeholder="客户登录用，字母/数字" />
+          <el-input ref="quickAccountInput" v-model="quickForm.userName" placeholder="客户登录用，字母/数字" @keydown.enter="enterQuickCreate" />
         </el-form-item>
         <el-form-item label="昵称" prop="nickName">
-          <el-input v-model="quickForm.nickName" placeholder="选填，如公司/称呼" />
+          <el-input v-model="quickForm.nickName" placeholder="选填，如公司/称呼" @keydown.enter="enterQuickCreate" />
         </el-form-item>
         <el-form-item label="密码" prop="password">
-          <el-input v-model="quickForm.password" placeholder="5-20 位" show-password />
+          <el-input v-model="quickForm.password" placeholder="5-20 位" @keydown.enter="enterQuickCreate" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -57,6 +59,8 @@ import DeadlineChips from '@/components/DeadlineChips.vue'
 import { CHANNEL, PRIORITY, STATUS, MEMBERS } from '@/constants/options'
 import { listCustomers, createCustomer, currentMember, isBoss } from '@/mock/store'
 import { offerLoginInfo } from '@/utils/loginInfo'
+import { suggestPassword } from '@/utils/password'
+import { onEnter, focusField } from '@/utils/formKeys'
 
 const props = defineProps({
   visible: { type: Boolean, default: false },
@@ -65,6 +69,8 @@ const props = defineProps({
 const emit = defineEmits(['update:visible', 'save'])
 
 const formRef = ref()
+const titleInput = ref(null)
+const quickAccountInput = ref(null)
 // 员工不能自己把项目标成“已完成 / 已取消”（走提交验收 / 申请）
 const statusOpts = computed(() =>
   STATUS.filter((s) => isBoss.value || ['pending', 'doing', 'review'].includes(s.value) || s.value === form.status)
@@ -97,15 +103,17 @@ async function loadCustomers() {
 
 function openQuickCreate() {
   quickForm.userName = ''
-  quickForm.nickName = ''
-  quickForm.password = ''
+  // 昵称先按上面填的客户称呼带过来，密码先给一个随机的（建好后会连同账号整理成一段话供复制），都可以改
+  quickForm.nickName = String(form.customer || '').trim().slice(0, 30)
+  quickForm.password = suggestPassword()
   quickVisible.value = true
   qFormRef.value?.clearValidate()
 }
 
 function submitQuickCreate() {
+  if (quickSaving.value) return
   qFormRef.value.validate(async (ok) => {
-    if (!ok) return
+    if (!ok || quickSaving.value) return
     quickSaving.value = true
     try {
       await createCustomer({ ...quickForm })
@@ -121,6 +129,7 @@ function submitQuickCreate() {
     }
   })
 }
+const enterQuickCreate = onEnter(submitQuickCreate)
 const blank = () => ({
   title: '',
   channel: 'wechat',
@@ -146,6 +155,11 @@ function onOpen() {
   Object.assign(form, blank(), props.data || {})
   formRef.value?.clearValidate()
   loadCustomers()
+}
+
+// 新建时光标直接放进「项目名」；编辑时不抢（多半只是来改某一栏）
+function onOpened() {
+  if (!form.id) focusField(titleInput)
 }
 
 function submit() {

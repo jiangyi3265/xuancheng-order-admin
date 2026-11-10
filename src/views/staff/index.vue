@@ -66,20 +66,21 @@
       要把客户转交给其他成员：在「客户账号」里点“转交”。名下还有项目或客户的成员不能删除，请先转派，或直接停用。
     </el-alert>
 
-    <el-dialog v-model="createVisible" title="新增成员" width="440px">
-      <el-form ref="formRef" :model="createForm" :rules="rules" label-width="82px">
+    <!-- 打开光标就在「登录账号」里，填完按回车就创建 -->
+    <el-dialog v-model="createVisible" title="新增成员" width="440px" @opened="focusField(accountInput)">
+      <el-form ref="formRef" :model="createForm" :rules="rules" label-width="82px" @submit.prevent>
         <el-form-item label="登录账号" prop="userName">
-          <el-input v-model="createForm.userName" placeholder="登录用，字母/数字/下划线" />
+          <el-input ref="accountInput" v-model="createForm.userName" placeholder="登录用，字母/数字/下划线" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item label="姓名" prop="nickName">
-          <el-input v-model="createForm.nickName" placeholder="显示在项目负责人处，如 费鹏飞" />
+          <el-input v-model="createForm.nickName" placeholder="显示在项目负责人处，如 费鹏飞" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item label="初始密码" prop="password">
           <!-- 先给一个随机密码，不用自己想；建好后会连同账号一起整理成一段话供复制 -->
-          <el-input v-model="createForm.password" placeholder="5-20 位" />
+          <el-input v-model="createForm.password" placeholder="5-20 位" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item label="企业微信" prop="wecom">
-          <el-input v-model="createForm.wecom" placeholder="选填：通讯录里的「账号」，填了能收到微信提醒" clearable />
+          <el-input v-model="createForm.wecom" placeholder="选填：通讯录里的「账号」，填了能收到微信提醒" clearable @keydown.enter="enterCreate" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -100,6 +101,7 @@ import { MEMBERS } from '@/constants/options'
 import { loadStaff, createStaff, resetStaffPwd, setStaffStatus, deleteStaff, getPushConfig, savePushConfig } from '@/mock/store'
 import { offerLoginInfo } from '@/utils/loginInfo'
 import { suggestPassword } from '@/utils/password'
+import { onEnter, focusField } from '@/utils/formKeys'
 import { fmtTime } from '@/utils/time'
 import InlineEdit from '@/components/InlineEdit.vue'
 
@@ -107,6 +109,7 @@ const loading = ref(false)
 const saving = ref(false)
 const createVisible = ref(false)
 const formRef = ref()
+const accountInput = ref(null)
 const createForm = reactive({ userName: '', nickName: '', password: '', wecom: '' })
 
 // 企业微信账号：以前要另外去「通知设置」里填，现在建成员时、成员列表里直接填（存的是同一项设置）
@@ -162,8 +165,9 @@ function openCreate() {
 }
 
 function submitCreate() {
+  if (saving.value) return
   formRef.value.validate(async (ok) => {
-    if (!ok) return
+    if (!ok || saving.value) return
     saving.value = true
     try {
       const info = { name: createForm.nickName.trim(), userName: createForm.userName.trim(), password: createForm.password }
@@ -192,6 +196,8 @@ function submitCreate() {
     }
   })
 }
+
+const enterCreate = onEnter(submitCreate)
 
 async function doReset(row) {
   try {

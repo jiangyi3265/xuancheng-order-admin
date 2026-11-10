@@ -225,6 +225,7 @@
 
               <div v-if="bugOpen" class="bug-form">
                 <el-input
+                  ref="bugInput"
                   v-model="bugText"
                   type="textarea"
                   :rows="2"
@@ -551,6 +552,9 @@ function toggleMention(id) {
 const draft = chatDraft('project', props.order?.id)
 const { text: replyText, files: replyFiles, sending: replying } = toRefs(draft)
 const bugOpen = ref(false)
+// 点「记一条问题」：光标直接在输入框里
+const bugInput = ref(null)
+watch(bugOpen, (open) => { if (open) nextTick(() => bugInput.value?.focus?.()) })
 const bugText = ref('')
 const bugFiles = ref([])
 const bugSubmitting = ref(false)
@@ -848,6 +852,11 @@ watch(() => props.visible && !props.loading && props.order?.id, id => {
 const noteInput = ref(null)
 watch(() => props.visible && !props.loading && props.noticeTab === 'internal' && !props.noticeItem && props.order?.id, id => {
   if (id) setTimeout(() => noteInput.value?.focus?.(), 350)
+})
+// 从工作台点「回复」：打开「沟通」，光标直接放进回复框，不用再点一下
+// （手机上不自动弹键盘，免得挡住客户刚发的话；从某条消息通知点进来的也不抢光标）
+watch(() => props.visible && !props.loading && props.noticeTab === 'chat' && !props.noticeItem && !isMobile.value && props.order?.id, id => {
+  if (id) setTimeout(() => replyInput.value?.focus?.(), 350)
 })
 onBeforeUnmount(onClosed)
 

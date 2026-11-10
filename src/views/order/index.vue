@@ -110,6 +110,15 @@
         <span role="status">已选 {{ selectedIds.length }} 项</span>
         <el-select v-model="batchStatus" placeholder="选择目标状态" :disabled="batchBusy" aria-label="批量目标状态" style="width:140px"><el-option v-for="st in batchStatuses" :key="st.value" :value="st.value" :label="st.label"/></el-select>
         <el-button type="primary" :disabled="!selectedIds.length || !batchStatus" :loading="batchBusy" @click="applyBatchStatus">批量修改状态</el-button>
+        <!-- 批量改派：有人忙不过来 / 要停用账号时，把选中的单子一次转给另一个人（以前只能一单一单点） -->
+        <el-dropdown v-if="isBoss && MEMBERS.length > 1" trigger="click" max-height="320" :disabled="!selectedIds.length || batchBusy" @command="applyBatchAssign">
+          <el-button :disabled="!selectedIds.length || batchBusy" :loading="batchBusy && batchAssigning">批量派给…</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="m in assignTargets" :key="m.id" :command="m.id">{{ m.id === currentMember.id ? '我自己' : m.name }}</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <el-button v-if="isBoss" type="danger" plain :disabled="!selectedIds.length || batchBusy" @click="applyBatchDelete">批量删除</el-button>
       </template>
       <p v-if="batchErrors.length" class="batch-errors" role="alert">{{ batchErrors.join('；') }}</p>
@@ -259,9 +268,11 @@
             <span v-else class="unpriced">-</span>
           </template>
         </el-table-column>
-        <el-table-column v-if="!selectionMode" label="操作" width="160" fixed="right">
+        <el-table-column v-if="!selectionMode" label="操作" :width="showDun ? 204 : 160" fixed="right">
           <template #default="{ row }">
             <el-button link type="success" @click.stop="openPay(row)">收款</el-button>
+            <!-- 看「还欠款」时每行直接催：点一下就把「总价、已收、还差多少」复制好，粘到微信发（以前要点进项目才有） -->
+            <el-button v-if="showDun" link type="warning" title="生成一段催款的话并复制，粘到微信发给客户" @click.stop="copyDunning(row)">催款</el-button>
             <el-button
               v-if="canFinish(row)"
               link
@@ -426,6 +437,7 @@ import PaymentDialog from '@/components/PaymentDialog.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
 import AssignMenu from '@/components/AssignMenu.vue'
 import { changeOrderStatus } from '@/utils/settle'
+import { copyDunning } from '@/utils/customerNudge'
 import {
   orders, getOrder, createOrder, editOrder, removeOrder, currentMember, isBoss, exportOrders, setStatus, acceptOrder, collab
 } from '@/mock/store'
@@ -782,6 +794,35 @@ async function applyBatchStatus() {
   finally { batchBusy.value = false }
 }
 
+// 批量改派：和单个改派走同一个接口，对方照样要接收；已完成 / 已取消、本来就在 TA 名下的不动
+const assignTargets = computed(() => MEMBERS.filter((m) => m.status === '0'))
+const batchAssigning = ref(false)
+async function applyBatchAssign(ownerId) {
+  if (!isBoss.value || batchBusy.value || !selectedIds.value.length) return
+  const rows = visibleSelectionOrders.value.filter(o => selectedIds.value.includes(o.id)).map(o => ({...o}))
+  if (!rows.length) return
+  const name = ownerId === currentMember.value.id ? '我自己' : memberMap[ownerId]?.name || '对方'
+  const movable = rows.filter(row => !['done','cancelled'].includes(row.status) && row.ownerId !== ownerId)
+  if (!movable.length) { ElMessage.info(`选中的项目已经在「${name}」名下，或者已经结束，不用改派`); return }
+  const skipped = rows.length - movable.length
+  batchBusy.value = true
+  try {
+    await ElMessageBox.confirm(`把选中的 ${movable.length} 个项目派给「${name}」${ownerId === currentMember.value.id ? '。' : '，TA 接收后开工。'}${skipped ? `另外 ${skipped} 个已经结束或本来就在 TA 名下，不动。` : ''}`, '批量改派', {confirmButtonText:'确认改派',cancelButtonText:'取消',type:'warning'})
+    batchAssigning.value = true
+    let success = 0
+    const failures = []
+    batchErrors.value = []
+    for (const row of movable) {
+      try { await editOrder({ id: row.id, ownerId }); success++ }
+      catch(e) { failures.push(row.id); batchErrors.value.push(`${row.title}：${e.message || '改派失败'}`) }
+    }
+    selectedIds.value = failures
+    if (failures.length) ElMessage.warning(`已改派 ${success} 项，${failures.length} 项未成功，请查看原因`)
+    else ElMessage.success(`已把 ${success} 个项目派给「${name}」`)
+  } catch(e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e.message || '改派失败') }
+  finally { batchBusy.value = false; batchAssigning.value = false }
+}
+
 async function applyBatchDelete() {
   if (!isBoss.value || batchBusy.value || !selectedIds.value.length) return
   const rows = visibleSelectionOrders.value.filter(o => selectedIds.value.includes(o.id)).map(o => ({...o}))
@@ -812,7 +853,8 @@ function exportParams() {
     ownerId: filter.ownerId,
     status: quick.value === 'urgent' ? '' : filter.status,
     urgentOnly: quick.value === 'urgent' ? '1' : '',
-    confirmedOnly: quick.value === 'all' ? '1' : '',
+    // 搜索时「全部」里也有待确认的项目（见 searching），导出要和屏幕上一致
+    confirmedOnly: quick.value === 'all' && !searching.value ? '1' : '',
     paid: filter.paid,
     overdue: filter.overdueOnly ? '1' : '',
     createFrom: createRange.value?.[0] || '',
@@ -917,6 +959,9 @@ const canFinish = (row) => {
 const reqVisible = ref(false)
 const reqOrder = ref(null)
 const reqType = ref('amount')
+
+// 「还欠款」列表里，老板每行多一个「催款」
+const showDun = computed(() => isBoss.value && quick.value === 'owing')
 
 // 收款
 const payVisible = ref(false)
