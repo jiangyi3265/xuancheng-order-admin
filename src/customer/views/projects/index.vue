@@ -80,7 +80,7 @@
             <span>{{ previewing===item.id ? '加载中' : item.imageCount+' 张' }}</span>
           </button>
           <div class="request-content">
-            <router-link class="request-row" :to="item.status==='confirm' ? reviewRoute(project,item) : issueRoute(project,item)">
+            <router-link class="request-row" :to="item.status==='confirm' && item.reviewId ? reviewRoute(project,item) : issueRoute(project,item)">
               <span class="request-main"><IssueNumber :id="item.id" /> <b>{{ item.title || (item.firstImage ? '截图需求' : '附件需求') }}</b></span>
               <RequirementStatus :status="item.status" />
               <el-icon class="chevron" aria-hidden="true"><ArrowRight /></el-icon>

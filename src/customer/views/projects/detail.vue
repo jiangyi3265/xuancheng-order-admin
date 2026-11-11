@@ -17,7 +17,7 @@
         :loading="syncing"
         @click="syncNow"
       >重新连接</el-button>
-      <el-button v-if="order && order.channel === 'form' && order.status === 'pending' && !order.bugs?.length" text type="danger" @click="removeOrder">撤回</el-button>
+      <el-button v-if="order && order.isPrimaryCustomer !== false && order.channel === 'form' && order.status === 'pending' && !order.bugs?.length" text type="danger" @click="removeOrder">撤回</el-button>
     </header>
 
     <section v-if="order && detailTab==='overview'" class="customer-project-summary">
@@ -112,9 +112,9 @@
                   </div>
                   <div class="bug-actions">
                     <el-button v-if="!issueId && isPendingReview(bug)" type="primary" plain size="small" @click="viewLatest(bug)">查看本次修改</el-button>
-                    <el-button v-if="!isPendingReview(bug) && !staleReviewLink && !isBugResolved(bug)" plain size="small" :disabled="!!statusUpdatingBugId || !!updateDraft?.sending"
+                    <el-button v-if="bug.canManageIssue !== false && bug.progressStatus !== 'confirm_other' && !isPendingReview(bug) && !staleReviewLink && !isBugResolved(bug)" plain size="small" :disabled="!!statusUpdatingBugId || !!updateDraft?.sending"
                       :loading="statusUpdatingBugId===bug.id" @click="changeBugStatus(bug, 'resolved')">确认已解决</el-button>
-                    <el-button v-if="!isPendingReview(bug) && !staleReviewLink && (issueId || isBugResolved(bug))" text type="primary" :icon="CirclePlus"
+                    <el-button v-if="bug.canManageIssue !== false && bug.progressStatus !== 'confirm_other' && !isPendingReview(bug) && !staleReviewLink && (issueId || isBugResolved(bug))" text type="primary" :icon="CirclePlus"
                       :disabled="!!statusUpdatingBugId || !!updateDraft?.sending || (isBugResolved(bug) && projectClosed)"
                       @click="startAdjustment(bug)">还要调整</el-button>
                     <el-button v-if="!issueId" text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
@@ -126,7 +126,7 @@
                         <el-dropdown-menu>
                           <el-dropdown-item v-if="issueId && isPendingReview(bug) && !staleReviewLink && !showIssueComposer" @click="openOrdinaryComposer">补充说明</el-dropdown-item>
                           <el-dropdown-item @click="copyIssueLink(bug)">复制需求链接</el-dropdown-item>
-                          <el-dropdown-item divided :disabled="!!deletingBugId" @click="removeBug(bug)">删除需求</el-dropdown-item>
+                          <el-dropdown-item v-if="bug.canManageIssue !== false" divided :disabled="!!deletingBugId" @click="removeBug(bug)">删除需求</el-dropdown-item>
                         </el-dropdown-menu>
                       </template>
                     </el-dropdown>
@@ -164,7 +164,7 @@
           <div v-if="day" class="chat-day">{{ day }}</div>
           <ChatMessage :show-meta="meta"
             :item="t"
-            :mine="t.type === 'message'"
+            :mine="t.type === 'message' && t.mine !== false"
           />
           </template>
           <div v-if="!chatItems.length" class="empty-chat">
@@ -327,7 +327,7 @@ async function openOrdinaryComposer() {
 }
 const targetUpdateId = computed(() => issueId.value ? String(route.query.update || '') : '')
 const projectClosed = computed(() => ['done','cancelled'].includes(order.value?.status))
-const adjusting = computed(() => !!focusedBug.value && !isPendingReview(focusedBug.value) && route.query.adjust === '1' && !projectClosed.value)
+const adjusting = computed(() => !!focusedBug.value && focusedBug.value.canManageIssue !== false && !isPendingReview(focusedBug.value) && route.query.adjust === '1' && !projectClosed.value)
 const reviewAdjusting = computed(() => route.query.adjust === 'review' && !!linkedReview.value && !staleReviewLink.value && isPendingReview(focusedBug.value) && !projectClosed.value)
 const showIssueComposer = computed(() => !!focusedBug.value && !staleReviewLink.value && (route.query.adjust === 'review' ? reviewAdjusting.value : !isPendingReview(focusedBug.value) || route.query.compose==='1'))
 const updateDraft = computed(() => {
@@ -415,7 +415,10 @@ async function load(scroll = true, silent = false) {
     syncState.value = 'online'
     if (scroll) scrollBottom()
   } catch (e) {
-    if (silent) {
+    if (e.code === 403) {
+      order.value = null
+      loadError.value = e.message
+    } else if (silent) {
       syncState.value = 'reconnecting'
     } else {
       loadError.value = e.message || '网络连接失败，请稍后重试'
@@ -438,7 +441,10 @@ async function syncNow() {
       syncState.value = 'online'
     }
   } catch (e) {
-    syncState.value = 'reconnecting'
+    if (e.code === 403) {
+      order.value = null
+      loadError.value = e.message
+    } else syncState.value = 'reconnecting'
   } finally {
     syncing.value = false
   }

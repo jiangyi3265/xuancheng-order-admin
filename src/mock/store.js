@@ -196,7 +196,7 @@ async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, 
     }
     throw new Error('登录已过期，请重新登录')
   }
-  if (json.code !== 200) throw new Error(friendlyMessage(json.msg))
+  if (json.code !== 200) throw Object.assign(new Error(friendlyMessage(json.msg)), { code: json.code })
   return json.data
 }
 

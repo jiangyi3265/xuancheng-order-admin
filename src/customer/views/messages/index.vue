@@ -46,7 +46,7 @@ const entries = computed(() => {
     const last = project.lastMessage
     rows.push({
       key:'chat-'+project.id, kind:'chat', title:project.title, unread:hasNewReply(project), time:last?.time || '',
-      content:last ? (last.type==='message' ? '我：' : '团队：') + replyText(last) : '打开项目，开始沟通',
+      content:last ? (last.type==='message' ? (last.mine === false ? (last.user || '客户') + '：' : '我：') : '团队：') + replyText(last) : '打开项目，开始沟通',
       meta:[replyTime(last?.time),(project.messageCount || 0)+' 条沟通'].filter(Boolean).join(' · '),
       to:{path:'/projects/'+project.id,query:{tab:'chat'}}
     })

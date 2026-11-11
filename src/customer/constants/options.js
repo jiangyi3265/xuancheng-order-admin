@@ -21,5 +21,5 @@ export const TEAM_NAME = '玄成团队'
 export const SYSTEM_TYPES = ['create', 'status']
 
 export function progressLabel(status) {
-  return {open:'等团队处理', action:'等团队处理', confirm:'等你确认', resolved:'已解决'}[status] || '等团队处理'
+  return {open:'等团队处理', action:'等团队处理', confirm:'等你确认', confirm_other:'待主账号确认', resolved:'已解决'}[status] || '等团队处理'
 }

@@ -13,8 +13,18 @@
     <el-form ref="formRef" :model="form" :rules="rules" label-width="84px" class="design-order-form" data-paste-zone="新建项目">
       <el-form-item class="field-title" label="项目名" prop="title"><el-input ref="titleInput" v-model="form.title" placeholder="一句话写清做什么，比如：餐饮点餐小程序" /></el-form-item>
       <el-form-item class="field-customer" label="客户 / 联系方式"><div class="customer-inline"><el-input v-model="form.customer" placeholder="客户称呼"/><el-input v-model="form.contact" placeholder="微信/旺旺号，选填"/></div></el-form-item>
-      <el-form-item class="field-account" label="客户账号"><div class="cust-account"><el-select v-model="form.customerAccount" filterable clearable placeholder="选择绑定客户"><el-option v-for="c in customers" :key="c.userId" :label="`${c.userName}（${c.nickName}）`" :value="c.userName"/></el-select><el-button :icon="Plus" aria-label="新建账号" title="新建账号" @click="openQuickCreate"/></div></el-form-item>
+      <el-form-item class="field-account" label="客户账号"><div class="cust-account"><el-select v-model="form.customerAccount" @change="form.testerIds = []" filterable clearable placeholder="选择绑定客户"><el-option v-for="c in customers" :key="c.userId" :label="`${c.userName}（${c.nickName}）`" :value="c.userName"/></el-select><el-button :icon="Plus" aria-label="新建账号" title="新建账号" @click="openQuickCreate(false)"/></div></el-form-item>
       <el-form-item class="field-owner" label="负责人"><el-select v-model="form.ownerId" :disabled="!isBoss"><el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" :disabled="m.status !== '0'"/></el-select></el-form-item>
+      <el-form-item v-if="form.customerAccount" class="field-testers" label="测试账号">
+        <div class="cust-account">
+          <el-select v-model="form.testerIds" multiple filterable clearable aria-label="项目测试账号" placeholder="选择一起测试的客户账号（可多选）">
+            <el-option v-for="c in customers.filter(c => c.userName !== form.customerAccount)" :key="c.userId"
+              :label="`${c.nickName || c.userName}（${c.userName}）`" :value="Number(c.userId)" :disabled="c.status === '1'" />
+          </el-select>
+          <el-button :icon="Plus" aria-label="新建测试账号" title="新建测试账号" @click="openQuickCreate(true)" />
+        </div>
+        <small class="tester-help">绑定后可查看本项目、提交问题和确认整体验收。</small>
+      </el-form-item>
       <el-form-item class="field-amount" label="报价(元)"><el-input-number v-model="form.amount" :min="0" :step="100" :controls="false" :disabled="!!form.id && !isBoss"/><div v-if="!!form.id && !isBoss" class="amount-hint">改报价请在项目详情申请</div></el-form-item>
       <el-form-item class="field-channel" label="来源渠道" prop="channel"><el-select v-model="form.channel"><el-option v-for="c in CHANNEL" :key="c.value" :label="c.label" :value="c.value"/></el-select></el-form-item>
       <el-form-item class="field-priority" label="优先级"><el-select v-model="form.priority"><el-option v-for="p in PRIORITY" :key="p.value" :label="p.label" :value="p.value"/></el-select></el-form-item>
@@ -110,10 +120,12 @@ async function loadCustomers() {
   }
 }
 
-function openQuickCreate() {
+let creatingTester = false
+function openQuickCreate(tester) {
+  creatingTester = tester
   quickForm.userName = ''
   // 昵称先按上面填的客户称呼带过来，密码先给一个随机的（建好后会连同账号整理成一段话供复制），都可以改
-  quickForm.nickName = String(form.customer || '').trim().slice(0, 30)
+  quickForm.nickName = tester ? '' : String(form.customer || '').trim().slice(0, 30)
   quickForm.password = suggestPassword()
   initialQuick = JSON.stringify(quickForm)
   quickVisible.value = true
@@ -126,11 +138,18 @@ function submitQuickCreate() {
     if (!ok || quickSaving.value) return
     quickSaving.value = true
     try {
-      await createCustomer({ ...quickForm })
-      ElMessage.success('账号已创建并绑定到本项目')
+      const account = await createCustomer({ ...quickForm })
+      ElMessage.success('账号已创建，保存项目后生效')
       offerLoginInfo({ name: quickForm.nickName, userName: quickForm.userName, password: quickForm.password, who: 'customer' })
       await loadCustomers()
-      form.customerAccount = quickForm.userName
+      if (creatingTester) {
+        const id = Number(account?.userId || customers.value.find(c => c.userName === quickForm.userName)?.userId)
+        if (id) form.testerIds = [...new Set([...form.testerIds, id])]
+        else ElMessage.warning('账号已创建，请重新打开项目选择测试账号')
+      } else {
+        form.customerAccount = quickForm.userName
+        form.testerIds = []
+      }
       quickVisible.value = false
     } catch (e) {
       ElMessage.error(e.message || '创建失败')
@@ -146,6 +165,7 @@ const blank = () => ({
   ownerId: currentMember.value.id,
   customer: '',
   customerAccount: '',
+  testerIds: [],
   contact: '',
   amount: 0,
   priority: 'medium',
@@ -208,7 +228,19 @@ async function submit() {
   saving.value = true
   try {
     if (!await formRef.value.validate().catch(() => false)) return
-    if (await props.save({ ...form })) {
+    const payload = { ...form }
+    if (form.id) {
+      const previous = JSON.parse(initial)
+      const ids = values => [...values].sort((a,b) => a-b).join(',')
+      if ((previous.customerAccount || '') === (form.customerAccount || '') && ids(previous.testerIds) === ids(form.testerIds)) {
+        delete payload.testerIds
+        delete payload.customerAccount
+      } else {
+        payload.previousTesterIds = previous.testerIds
+        payload.previousCustomerAccount = previous.customerAccount || ''
+      }
+    }
+    if (await props.save(payload)) {
       if (!form.id) clearDraft()
       emit('update:visible', false)
     }
@@ -217,6 +249,8 @@ async function submit() {
 </script>
 
 <style scoped>
+.tester-help { color: #58677e; font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.field-testers { grid-column: 1 / -1; }
 .draft-banner { margin: 0 0 12px; color: #546981; font-size: 13px; }
 .deadline-box { display: flex; flex-direction: column; gap: 8px; width: 100%; }
 
