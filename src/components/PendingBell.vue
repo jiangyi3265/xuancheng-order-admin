@@ -15,15 +15,17 @@
       <ul v-if="items.length">
         <li v-for="item in items" :key="item.key">
           <router-link :to="pendingDestination(item, route.path === '/order' ? route.query : {})" @click="open = false">
-            <span class="item-head"><small :class="item.kind">{{ pendingLabels[item.kind] }}</small><strong>{{ item.title }}</strong></span>
+            <span class="item-head"><small :class="item.kind">{{ (pendingLabels[item.kind] || reviewLabels[item.kind]) }}</small><strong>{{ item.title }}</strong></span>
             <span class="item-text">{{ item.text }}</span>
             <span v-if="item.meta" class="meta">{{ item.meta }}</span>
           </router-link>
-          <button v-if="item.kind === 'urgent' && !isBoss && item.order.assignState === 'pending'" class="complete"
+          <UrgentReviewActions v-if="item.kind === 'urgentReview'" :order="item.order" />
+          <button v-else-if="reviewLabels[item.kind]" class="complete" @click="open = false; router.push(pendingDestination(item))">查看验收</button>
+          <button v-else-if="item.kind === 'urgent' && !isBoss && item.order.assignState === 'pending'" class="complete"
             type="button" @click="open = false; router.push(pendingDestination(item))">去接单</button>
           <button v-else-if="!item.fresh && (item.kind !== 'bug' || item.bugId)" class="complete" type="button"
-            :disabled="loading || !!loadError || busy.has(item.id)" :aria-label="'标为已处理，' + actionTitle(item)" :title="actionTitle(item)" @click="finish(item)">
-            {{ busy.get(item.id) === item.key ? '处理中…' : '标为已处理' }}
+            :disabled="loading || !!loadError || busy.has(item.id)" :aria-label="finishLabel(item) + '，' + actionTitle(item)" :title="actionTitle(item)" @click="finish(item)">
+            {{ busy.get(item.id) === item.key ? '处理中…' : finishLabel(item) }}
           </button>
         </li>
       </ul>
@@ -33,6 +35,8 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
+import UrgentReviewActions from './UrgentReviewActions.vue'
+import { reviewItems, reviewLabels } from '@/utils/handoffs'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell } from '@element-plus/icons-vue'
 import { toast as ElMessage } from '@/utils/toast'
@@ -51,8 +55,14 @@ const busy = reactive(new Map())
 const items = computed(() => {
   const memberId = me.value?.id
   if (memberId == null) return []
-  return pendingItems(orders).filter(item => item.recipientId != null && String(item.recipientId) === String(memberId))
+  return [...reviewItems(orders, memberId, isBoss.value),
+    ...pendingItems(orders).filter(item => item.recipientId != null && String(item.recipientId) === String(memberId))]
+
 })
+
+function finishLabel(item) {
+  return item.kind === 'urgent' && item.order.urgentHandoff ? '提交确认' : '标为已处理'
+}
 
 function actionTitle(item) {
   const actions = { bug: '解决问题', next: '完成下一步', urgent: '结束本次加急', manual: '将项目标为已处理' }
@@ -78,7 +88,7 @@ async function finish(item) {
   if (busy.has(item.id)) return
   busy.set(item.id, item.key)
   try {
-    await finishPendingWithUndo(item.order, item.kind, item.bugId, '已处理：' + item.title + ' · ' + pendingLabels[item.kind])
+    await finishPendingWithUndo(item.order, item.kind, item.bugId, '已处理：' + item.title + ' · ' + (pendingLabels[item.kind] || reviewLabels[item.kind]))
   } catch (err) {
     ElMessage.error(err.message || '标记失败，请重试')
     await refresh()

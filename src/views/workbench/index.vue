@@ -7,6 +7,7 @@
         <section class="wb-stat-panel"><button v-for="(s,i) in overview" :key="s.label" :class="'tone-'+i" @click="router.push(s.path)"><span class="stat-symbol"><el-icon><component :is="s.icon"/></el-icon></span><div><small>{{ s.label }}</small><strong>{{ s.value }}</strong></div></button></section>
         <section class="wb-shortcuts wb-shortcuts-5"><button @click="openDialog()"><span><el-icon><Plus/></el-icon></span>新建项目</button><button @click="router.push('/quotes')"><span><el-icon><PriceTag/></el-icon><i v-if="unreadQuotes.length" class="shortcut-badge">{{ unreadQuotes.length }}</i></span>报价中心</button><button @click="router.push('/approvals')"><span><el-icon><Finished/></el-icon><i v-if="pendingApprovals.length" class="shortcut-badge">{{ pendingApprovals.length }}</i></span>审批中心</button><button @click="router.push('/customers')"><span><el-icon><User/></el-icon></span>客户账号</button><button @click="router.push('/dashboard')"><span><el-icon><DataLine/></el-icon></span>数据统计</button></section>
       </template>
+      <ProjectHandoffs @open="openDetail" @delivery="reviewDelivery" />
       <!-- 需要我处理：老板和员工同一份清单（审批、拒单、客户消息、下一步、验收……），每条直接带处理按钮 -->
       <section class="wb-todos">
         <div class="board-section-title"><h2>需要我处理</h2><span class="section-actions"><button v-if="unreadCount" :disabled="marking" @click="readAll">全部已读</button><button v-if="todoItems.length > MOBILE_TODO_LIMIT" @click="todoExpanded=!todoExpanded">{{ todoExpanded ? '收起' : '全部 ' + todoItems.length + ' 条' }} <el-icon><component :is="todoExpanded ? 'ArrowUp' : 'ArrowDown'"/></el-icon></button><button v-else @click="router.push('/order')">查看项目 <el-icon><ArrowRight/></el-icon></button></span></div>
@@ -32,7 +33,7 @@
                   <el-button size="small" :loading="acting === t.order.id" @click="doMyself(t.order)">我自己做</el-button>
                 </template>
                 <template v-else>
-                  <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click="finishPending(t)">标为已处理</el-button>
+                  <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click="finishPending(t)">{{ t.kind === 'urgent' && t.order.urgentHandoff ? '提交确认' : '标为已处理' }}</el-button>
                   <el-button v-else-if="t.kind === 'reply'" size="small" type="primary" @click="openDetail(t.order, 'chat')">回复</el-button>
                   <template v-else-if="t.kind === 'mention' || t.kind === 'nudge'">
                     <el-button size="small" type="primary" plain @click.stop="openTodo(t)">{{ t.kind === 'mention' ? '查看' : '写进展' }}</el-button>
@@ -73,6 +74,7 @@
       <el-button type="primary" size="large" :icon="Plus" class="overview-create" @click="openDialog()">新建项目</el-button>
     </div>
 
+    <ProjectHandoffs @open="openDetail" @delivery="reviewDelivery" />
     <!-- 员工：还在等老板批的申请（批完的结果会发消息，不在这里堆着） -->
     <template v-if="!isBoss && myRequests.length">
       <div class="section-title gray-bar">
@@ -121,7 +123,7 @@
                 <el-button size="small" :loading="acting === t.order.id" @click.stop="doMyself(t.order)">我自己做</el-button>
               </template>
               <template v-else>
-                <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click.stop="finishPending(t)">标为已处理</el-button>
+                <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click.stop="finishPending(t)">{{ t.kind === 'urgent' && t.order.urgentHandoff ? '提交确认' : '标为已处理' }}</el-button>
                 <el-button v-else-if="t.kind === 'reply'" size="small" type="primary" :icon="ChatDotRound" @click.stop="openDetail(t.order, 'chat')">回复</el-button>
                 <template v-else-if="t.kind === 'mention' || t.kind === 'nudge'">
                     <el-button size="small" type="primary" plain @click.stop="openTodo(t)">{{ t.kind === 'mention' ? '查看' : '写进展' }}</el-button>
@@ -320,6 +322,7 @@
 </template>
 
 <script setup>
+import ProjectHandoffs from '@/components/ProjectHandoffs.vue'
 import OrdersLoading from '@/components/OrdersLoading.vue'
 import { ordersReady } from '@/mock/store'
 import QuotePanel from '@/views/quotes/index.vue'
@@ -602,6 +605,18 @@ const acting = ref(null)
 const deliveryVisible = ref(false)
 const deliveryOrder = ref(null)
 const deliveryTarget = ref('')
+async function reviewDelivery(o) {
+  if (acting.value) return
+  acting.value = o.id
+  try {
+    const current = await getOrder(o.id)
+    if (current.status !== 'review') return ElMessage.info('项目验收状态已更新')
+    deliveryOrder.value = current
+    deliveryTarget.value = 'done'
+    deliveryVisible.value = true
+  } catch (e) { ElMessage.error(e.message || '读取交付内容失败') }
+  finally { acting.value = null }
+}
 async function mobileNext(o) {
   const na = naOf(o)
   if (!na || acting.value) return

@@ -337,6 +337,8 @@
                         <el-radio-button v-if="!isBugResolved(bug)" value="action" :disabled="['done','cancelled'].includes(order.status)">需处理</el-radio-button>
                         <el-radio-button value="resolved">已解决</el-radio-button>
                       </el-radio-group>
+                      <el-button v-if="!isBoss && !pendingAccept && !['done','cancelled'].includes(order.status) && ['open','action'].includes(bugStatus(bug))"
+                        size="small" type="primary" plain :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'submitReview')">提交内部验收</el-button>
                       <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && !['confirm','ai_review'].includes(bug.status)"
                         type="primary" plain size="small" :disabled="!!statusUpdatingBugId || !!deletingBugId" @click="reviewBugId=bug.id">请客户确认</el-button>
                       <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
@@ -1169,7 +1171,7 @@ async function changeBugStatus(bug, status) {
   try {
     await updateBugStatus(bug.id, status)
     if (reactivating) bugExpansion.value.set(String(bug.id), true)
-    ElMessage.success(reactivating ? '已重新激活，加入逐条处理' : { resolved: '已解决', action: '已标记需处理', open: '已取消处理标记' }[status])
+    ElMessage.success(reactivating ? '已重新激活，加入逐条处理' : { resolved: '已解决', action: '已标记需处理', open: '已取消处理标记', submitReview: '已提交，等待内部验收' }[status])
     return true
   } catch (e) {
     ElMessage.error(e.message || '状态更新失败')

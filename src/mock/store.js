@@ -657,6 +657,12 @@ export async function setProjectUrgency(id, urgentUntil, previousUntil, reopenVe
   return upsert(updated)
 }
 
+export async function reviewUrgency(id, version, decision, note) {
+  return upsert(await http(`${BASE}/${id}/urgent-review`, {
+    method: 'POST', body: JSON.stringify({ version, decision, note })
+  }))
+}
+
 export async function setOrderHandled(order, handled) {
   const version = orderVersions.get(order) ?? order.version
   const updated = await http(`${BASE}/${order.id}/handling`, {

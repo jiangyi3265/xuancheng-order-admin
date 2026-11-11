@@ -67,7 +67,7 @@ export function pendingItems(orders) {
 export function pendingDestination(item, currentQuery = {}) {
   const query = { ...currentQuery, id: String(item.id) }
   for (const key of ['tab', 'entry', 'bug', 'todo', 'followup', 'create', 't']) delete query[key]
-  if (item.kind === 'bug') {
+  if (item.kind === 'bug' || item.kind === 'issueReview') {
     query.tab = 'bugs'
     if (item.bugId) query.bug = String(item.bugId)
     else query.todo = '1'

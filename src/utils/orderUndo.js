@@ -1,5 +1,6 @@
 import { completeNextStep, completePendingItem, editOrder, getOrder, loadOrders, removeOrder, restoreOrder,
   setNextStep, setOrderHandled, setProjectUrgency, token, updateBugStatus } from '@/mock/store'
+import { toast } from '@/utils/toast'
 import { undoToast } from '@/utils/undoToast'
 
 // Check the affected field just before undoing. Other people may have worked on the project meanwhile.
@@ -53,6 +54,10 @@ export async function finishPendingWithUndo(order, kind, bugId, message) {
   const id = order.id
   const updated = await completePendingItem(order, kind, bugId)
   const markedAt = updated.handledTime
+  if (updated.urgentHandoff?.submittedAt && (kind === 'urgent' || kind === 'manual')) {
+    toast.success('已提交加急结果，等' + (updated.urgentHandoff.requesterName || '发起人') + '确认')
+    return
+  }
   switch (kind) {
     case 'next':
       return offerOrderUndo(id, kind, message, cur => !cur.nextStep, () => setNextStep(id, previous))
