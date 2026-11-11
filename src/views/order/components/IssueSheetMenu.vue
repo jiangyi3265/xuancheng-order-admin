@@ -1,6 +1,6 @@
 <template>
   <div class="sheet-menu">
-    <span :title="count ? '复制待处理的问题和附件' : '没有待处理的问题'">
+    <span :title="count ? '复制全部 ' + count + ' 条待处理需求及其附件' : '没有待处理的问题'">
       <el-button class="copy-sheet" size="small" :disabled="!count" @click="copySheet">复制给 AI</el-button>
     </span>
     <el-dropdown trigger="click" @command="choose">
@@ -17,7 +17,8 @@
       append-to-body destroy-on-close :close-on-click-modal="false" :show-close="!saving" :close-on-press-escape="!saving">
       <div class="sheet-link-dialog">
         <strong>{{ project.title }}</strong>
-        <p>拿到这个链接的人不用登录就能看到这个项目的问题和图片，只交给你自己的 AI 工具。</p>
+        <p><b>待处理 {{ count }} 条</b>（未标记、需处理）。把一个链接发给 Codex，就能按需求编号查看每条的原图、补充说明和附件。新需求也会显示在同一链接里。</p>
+        <p class="sheet-note">持有链接即可查看，无需登录。</p>
         <p v-if="loading && !info" role="status">正在读取链接状态…</p>
         <div v-if="error" class="sheet-error" role="alert">
           {{ error }} <el-button link type="primary" :disabled="loading || saving" @click="refresh">重试</el-button>
@@ -31,6 +32,7 @@
           <label for="new-issue-sheet-url">关闭前请复制并保存链接</label>
           <input id="new-issue-sheet-url" :value="freshUrl" readonly @focus="$event.target.select()">
           <el-button size="small" type="primary" :disabled="saving || verifying" :loading="verifying" @click="copyLink">复制链接</el-button>
+          <a class="sheet-preview" :href="freshUrl" target="_blank" rel="noopener noreferrer">打开预览，查看问题和图片</a>
         </div>
         <p v-else-if="info?.state === 'active'" class="sheet-note">链接仅在生成时显示。若遗失，可重新生成。</p>
       </div>
@@ -185,6 +187,7 @@ onBeforeUnmount(reset)
 .sheet-error { color: var(--el-color-danger); }
 .sheet-url { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 7px; align-items: center; }
 .sheet-url label { grid-column: 1/-1; }
+.sheet-preview { grid-column: 1/-1; justify-self: start; color: var(--el-color-primary); }
 .sheet-url input { width: 100%; box-sizing: border-box; min-width: 0; padding: 7px; font: inherit; border-radius: 6px; border: 1px solid var(--el-border-color); }
 .sheet-footer { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
 .sheet-footer .el-button { margin-left: 0; }

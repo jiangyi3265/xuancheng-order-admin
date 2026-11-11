@@ -12,10 +12,7 @@ const instructions = [
 ]
 
 export function sheetIssues(bugs = [], all = false) {
-  const sorted = [...bugs].sort(newestIssueFirst)
-  if (all) return sorted
-  const marked = sorted.filter(b => b.status === 'action')
-  return marked.length ? marked : sorted.filter(b => !b.status || b.status === 'open')
+  return bugs.filter(b => all || !b.status || b.status === 'open' || b.status === 'action').sort(newestIssueFirst)
 }
 
 function author(row, project) {
@@ -24,7 +21,7 @@ function author(row, project) {
   return (name || (kind === 'customer' ? '客户' : '成员')) + (kind === 'customer' ? '（客户）' : '（团队）')
 }
 
-function mediaLines(files = [], origin, nested = false) {
+function mediaLines(files, origin, issueId, nested = false) {
   const prefix = nested ? '    - ' : '- '
   const images = [], others = []
   for (const file of files || []) {
@@ -32,11 +29,13 @@ function mediaLines(files = [], origin, nested = false) {
     const path = raw.startsWith(origin + '/') ? raw.slice(origin.length) : raw
     if (!/^\/jiedan\/media\/[0-9a-f]{32}\.[a-z0-9]{1,10}$/.test(path)) continue
     const url = origin + path
-    if (file.type === 'image') images.push(url)
+    if (/\.(?:png|jpe?g|gif|webp|bmp|avif|svg)$/.test(path)) images.push(url)
     else others.push(prefix + ({ audio: '语音', voice: '语音', video: '视频' }[file.type] || '文件') + '：' + (file.name || '附件') + ' ' + url)
   }
-  if (nested) return [...images.map(url => prefix + '图片：' + url), ...others]
-  return [...(images.length ? ['- 图片：', ...images.map(url => '  - ' + url)] : ['- 图片：无']), ...others]
+  const imageLines = images.map((url, index) =>
+    `${nested ? '    ' : '  '}- ![需求 #${issueId} ${nested ? '补充图片' : '图片'} ${index + 1}](${url})`)
+  if (nested) return [...imageLines, ...others]
+  return [images.length ? '- 图片：' : '- 图片：无', ...imageLines, ...others]
 }
 
 export function issueSheet(project, origin = location.origin, now = new Date(), all = false) {
@@ -49,9 +48,9 @@ export function issueSheet(project, origin = location.origin, now = new Date(), 
     const body = bug.sheetContent ?? String(bug.content || '').replace(/(?:\n联系方式：[^\n]*)?(?:\n参考预算：¥[^\n]*)?$/, '')
     lines.push('', '## #' + bug.id + ' ' + (body || '（只有图片）'),
       '- 提出：' + author(bug, project) + ' · ' + (bug.time || '').slice(0, 16) + ' · 状态：' + (labels[bug.status] || '未标记'),
-      ...mediaLines(bug.attachments, origin))
+      ...mediaLines(bug.attachments, origin, bug.id))
     if (bug.updates?.length) lines.push('- 补充说明：')
-    for (const row of bug.updates || []) lines.push('  - ' + (row.time || '').slice(0, 16) + ' ' + author(row, project) + '：' + (row.content || '（只有附件）'), ...mediaLines(row.attachments, origin, true))
+    for (const row of bug.updates || []) lines.push('  - ' + (row.time || '').slice(0, 16) + ' ' + author(row, project) + '：' + (row.content || '（只有附件）'), ...mediaLines(row.attachments, origin, bug.id, true))
   }
   lines.push('', '---', '汇报格式（每条一段）：',
     '#' + (issues[0]?.id ?? '编号') + ' 已修改：改了什么、改了哪些文件、怎么验证的',
