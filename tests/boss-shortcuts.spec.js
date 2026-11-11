@@ -168,7 +168,7 @@ test('员工看不到催款话术', async ({ page }) => {
   await expect(page.getByRole('button', { name: '复制催款话术' })).toHaveCount(0)
 })
 
-test('建客户账号：密码已经随机填好，只填账号就能建；建好后的那段话里带着这个密码', async ({ page }) => {
+test('建客户账号：密码已填好，只填账号就能建；建好后的那段话里带着这个密码', async ({ page }) => {
   await as(page, 'boss')
   let body = null
   await page.route('**/jiedan/customer', async (r) => {
@@ -180,8 +180,7 @@ test('建客户账号：密码已经随机填好，只填账号就能建；建�
   await page.getByRole('button', { name: '新建客户账号' }).click()
   const d = page.getByRole('dialog', { name: '新建客户账号' })
   const pwd = await d.getByPlaceholder('5-20 位').inputValue()
-  // 4 个字母 + 4 个数字，没有容易看错的 0 o 1 l i
-  expect(pwd).toMatch(/^[a-hj-km-np-z]{4}[2-9]{4}$/)
+  expect(pwd).toBe('123456')
   await d.getByPlaceholder('客户登录用，字母/数字').fill('kh90001')
   await d.getByRole('button', { name: '创建' }).click()
   await expect.poll(() => body).toEqual(expect.objectContaining({ userName: 'kh90001', password: pwd }))

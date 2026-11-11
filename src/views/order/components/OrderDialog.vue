@@ -13,7 +13,7 @@
     <el-form ref="formRef" :model="form" :rules="rules" label-width="84px" class="design-order-form" data-paste-zone="新建项目">
       <el-form-item class="field-title" label="项目名" prop="title"><el-input ref="titleInput" v-model="form.title" placeholder="一句话写清做什么，比如：餐饮点餐小程序" /></el-form-item>
       <el-form-item class="field-customer" label="客户 / 联系方式"><div class="customer-inline"><el-input v-model="form.customer" placeholder="客户称呼"/><el-input v-model="form.contact" placeholder="微信/旺旺号，选填"/></div></el-form-item>
-      <el-form-item class="field-account" label="客户账号"><div class="cust-account"><el-select v-model="form.customerAccount" @change="form.testerIds = []" filterable clearable placeholder="选择绑定客户"><el-option v-for="c in customers" :key="c.userId" :label="`${c.userName}（${c.nickName}）`" :value="c.userName"/></el-select><el-button :icon="Plus" aria-label="新建账号" title="新建账号" @click="openQuickCreate(false)"/></div></el-form-item>
+      <el-form-item class="field-account" label="客户账号"><div class="cust-account"><el-select v-model="form.customerAccount" @change="form.testerIds = []" filterable clearable placeholder="选择绑定客户"><el-option v-for="c in customers" :key="c.userId" :label="`${c.userName}（${c.nickName}）`" :value="c.userName"/></el-select><el-button v-if="!form.customerAccount" link type="primary" class="account-batch" @click="batchVisible=true">批量创建</el-button><el-button :icon="Plus" aria-label="新建账号" title="新建账号" @click="openQuickCreate(false)"/></div></el-form-item>
       <el-form-item class="field-owner" label="负责人"><el-select v-model="form.ownerId" :disabled="!isBoss"><el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id" :disabled="m.status !== '0'"/></el-select></el-form-item>
       <el-form-item v-if="form.customerAccount" class="field-testers" label="测试账号">
         <div class="cust-account">
@@ -21,6 +21,7 @@
             <el-option v-for="c in customers.filter(c => c.userName !== form.customerAccount)" :key="c.userId"
               :label="`${c.nickName || c.userName}（${c.userName}）`" :value="Number(c.userId)" :disabled="c.status === '1'" />
           </el-select>
+          <el-button link type="primary" class="account-batch" @click="batchVisible=true">批量创建</el-button>
           <el-button :icon="Plus" aria-label="新建测试账号" title="新建测试账号" @click="openQuickCreate(true)" />
         </div>
         <small class="tester-help">绑定后可查看本项目、提交问题和确认整体验收。</small>
@@ -39,12 +40,14 @@
       <el-button type="primary" aria-label="保存" :loading="saving" @click="submit">保存项目</el-button>
     </template>
 
+    <CustomerBatchDialog v-model:visible="batchVisible" :scope="'project-'+(form.id || 'new')"
+      :project-hint="form.customerAccount ? '创建的账号会选入本项目，保存项目后即可登录测试。' : '第一个账号作为主客户，其余作为测试账号，保存项目后生效。'"
+      @created="selectBatch" />
     <!-- 快捷新建客户账号 -->
-    <!-- 昵称按上面填的客户称呼带过来、密码先给一个随机的，只用填账号；打开光标就在「账号」里，回车创建 -->
     <el-dialog v-model="quickVisible" :close-on-click-modal="false" :before-close="closeQuick" title="新建客户账号" width="420px" append-to-body @opened="focusField(quickAccountInput)">
       <el-form ref="qFormRef" :model="quickForm" :rules="quickRules" label-width="64px" @submit.prevent>
         <el-form-item label="账号" prop="userName">
-          <el-input ref="quickAccountInput" v-model="quickForm.userName" placeholder="客户登录用，字母/数字" @keydown.enter="enterQuickCreate" />
+          <el-input ref="quickAccountInput" v-model="quickForm.userName" placeholder="留空自动生成 · 客户登录用，字母/数字" @keydown.enter="enterQuickCreate" />
         </el-form-item>
         <el-form-item label="昵称" prop="nickName">
           <el-input v-model="quickForm.nickName" placeholder="选填，如公司/称呼" @keydown.enter="enterQuickCreate" />
@@ -72,7 +75,7 @@ import DeadlineChips from '@/components/DeadlineChips.vue'
 import { CHANNEL, PRIORITY, STATUS, MEMBERS } from '@/constants/options'
 import { listCustomers, createCustomer, currentMember, isBoss } from '@/mock/store'
 import { offerLoginInfo } from '@/utils/loginInfo'
-import { suggestPassword } from '@/utils/password'
+import CustomerBatchDialog from '@/views/customers/CustomerBatchDialog.vue'
 import { onEnter, focusField } from '@/utils/formKeys'
 
 const props = defineProps({
@@ -90,6 +93,15 @@ const statusOpts = computed(() =>
   STATUS.filter((s) => isBoss.value || ['pending', 'doing', 'review'].includes(s.value) || s.value === form.status)
 )
 const customers = ref([])
+const batchVisible = ref(false)
+async function selectBatch(accounts) {
+  const [first, ...rest] = accounts
+  const testers = form.customerAccount ? accounts : rest
+  if (!form.customerAccount) form.customerAccount = first.userName
+  form.testerIds = [...new Set([...form.testerIds, ...testers.map(a => Number(a.userId))])]
+  customers.value = [...customers.value.filter(c => !accounts.some(a => a.userId === c.userId)), ...accounts]
+  await loadCustomers()
+}
 
 // ---- 快捷新建客户账号 ----
 const quickVisible = ref(false)
@@ -103,7 +115,6 @@ const closeQuick = useFormClose({
 })
 const quickRules = {
   userName: [
-    { required: true, message: '请填写账号', trigger: 'blur' },
     { pattern: /^[a-zA-Z0-9_]{2,20}$/, message: '2-20 位字母/数字/下划线', trigger: 'blur' }
   ],
   password: [
@@ -124,9 +135,8 @@ let creatingTester = false
 function openQuickCreate(tester) {
   creatingTester = tester
   quickForm.userName = ''
-  // 昵称先按上面填的客户称呼带过来，密码先给一个随机的（建好后会连同账号整理成一段话供复制），都可以改
   quickForm.nickName = tester ? '' : String(form.customer || '').trim().slice(0, 30)
-  quickForm.password = suggestPassword()
+  quickForm.password = '123456'
   initialQuick = JSON.stringify(quickForm)
   quickVisible.value = true
   qFormRef.value?.clearValidate()
@@ -138,16 +148,17 @@ function submitQuickCreate() {
     if (!ok || quickSaving.value) return
     quickSaving.value = true
     try {
-      const account = await createCustomer({ ...quickForm })
+      const account = await createCustomer({ ...quickForm, autoUsername: !quickForm.userName.trim() })
+      const username = account?.userName || quickForm.userName
       ElMessage.success('账号已创建，保存项目后生效')
-      offerLoginInfo({ name: quickForm.nickName, userName: quickForm.userName, password: quickForm.password, who: 'customer' })
+      offerLoginInfo({ name: quickForm.nickName, userName: username, password: quickForm.password, who: 'customer' })
       await loadCustomers()
       if (creatingTester) {
-        const id = Number(account?.userId || customers.value.find(c => c.userName === quickForm.userName)?.userId)
+        const id = Number(account?.userId || customers.value.find(c => c.userName === username)?.userId)
         if (id) form.testerIds = [...new Set([...form.testerIds, id])]
         else ElMessage.warning('账号已创建，请重新打开项目选择测试账号')
       } else {
-        form.customerAccount = quickForm.userName
+        form.customerAccount = username
         form.testerIds = []
       }
       quickVisible.value = false
@@ -250,6 +261,7 @@ async function submit() {
 
 <style scoped>
 .tester-help { color: #58677e; font-size: 12px; line-height: 1.5; margin-top: 4px; }
+.design-order-form .cust-account .el-button.account-batch { width: auto; padding: 0 4px; }
 .field-testers { grid-column: 1 / -1; }
 .draft-banner { margin: 0 0 12px; color: #546981; font-size: 13px; }
 .deadline-box { display: flex; flex-direction: column; gap: 8px; width: 100%; }

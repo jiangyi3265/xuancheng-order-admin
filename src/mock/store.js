@@ -822,6 +822,10 @@ export async function createCustomer(payload) {
   return await http('/jiedan/customer', { method: 'POST', body: JSON.stringify(payload) })
 }
 
+export async function createCustomerBatch(payload) {
+  return http('/jiedan/customer/batch', { method: 'POST', body: JSON.stringify(payload), timeoutMs: 60000 })
+}
+
 export async function resetCustomerPwd(userId, password) {
   return await http('/jiedan/customer/reset', {
     method: 'PUT',

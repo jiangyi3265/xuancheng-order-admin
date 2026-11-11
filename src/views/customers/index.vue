@@ -5,7 +5,10 @@
         <h2>客户账号</h2>
         <span>为客户创建登录账号并绑定项目；项目完成后可删除账号（会自动解绑其项目）</span>
       </div>
-      <el-button type="primary" :icon="Plus" @click="openCreate">新建客户账号</el-button>
+      <div class="account-actions">
+        <el-button @click="batchVisible=true">批量创建</el-button>
+        <el-button type="primary" :icon="Plus" @click="openCreate">新建客户账号</el-button>
+      </div>
     </div>
 
     <el-input v-model="keyword" class="entity-search" placeholder="搜索客户名称或登录账号" clearable prefix-icon="Search" />
@@ -45,18 +48,18 @@
     </el-table>
 
     <el-dialog :model-value="!!selectedCustomer" title="客户信息" @close="selectedCustomer=null"><template v-if="selectedCustomer"><div class="board-account-profile"><el-avatar :size="58">{{ (selectedCustomer.nickName||selectedCustomer.userName).slice(-1) }}</el-avatar><h2>{{ selectedCustomer.nickName || selectedCustomer.userName }}</h2><p>客户账号</p></div><el-form label-position="top"><el-form-item label="登录账号"><el-input :model-value="selectedCustomer.userName" readonly/></el-form-item><el-form-item label="客户名称"><el-input :model-value="selectedCustomer.nickName" readonly/></el-form-item><el-form-item label="所属负责人"><el-input :model-value="selectedCustomer.ownerName || currentMember.name" readonly/></el-form-item></el-form><p class="muted">转交负责人仅影响后续提交的需求，现有项目负责人保持不变。</p><div class="board-account-actions"><el-button v-if="isBoss" @click="openTransfer(selectedCustomer)">转交负责人</el-button><el-button @click="doReset(selectedCustomer)">重置密码</el-button><el-button type="danger" plain @click="doDelete(selectedCustomer)">删除客户账号</el-button></div></template><template #footer><el-button type="primary" @click="selectedCustomer=null">完成</el-button></template></el-dialog>
+    <CustomerBatchDialog v-model:visible="batchVisible" @created="load" />
     <!-- 新建账号 -->
     <!-- 打开光标就在「账号」里，填完按回车就创建 -->
     <el-dialog v-model="createVisible" :before-close="closeCreate" :close-on-click-modal="false" title="新建客户账号" width="440px" @opened="focusField(accountInput)">
       <el-form ref="formRef" :model="createForm" :rules="rules" label-width="72px" @submit.prevent>
         <el-form-item label="账号" prop="userName">
-          <el-input ref="accountInput" v-model="createForm.userName" placeholder="客户登录用，字母/数字" @keydown.enter="enterCreate" />
+          <el-input ref="accountInput" v-model="createForm.userName" placeholder="留空自动生成 · 客户登录用，字母/数字" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item label="昵称" prop="nickName">
           <el-input v-model="createForm.nickName" placeholder="选填，如公司/称呼" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item label="密码" prop="password">
-          <!-- 先给一个随机密码，不用自己想；建好后会连同账号一起整理成一段话供复制 -->
           <el-input v-model="createForm.password" placeholder="5-20 位" @keydown.enter="enterCreate" />
         </el-form-item>
         <el-form-item v-if="isBoss" label="负责人">
@@ -91,7 +94,9 @@
 
 <script setup>
 import { useFormClose } from '@/utils/dialogGuard'
+import CustomerBatchDialog from './CustomerBatchDialog.vue'
 const selectedCustomer = ref(null)
+const batchVisible = ref(false)
 
 import { ref, reactive, computed, onMounted } from 'vue'
 import { ElMessageBox } from 'element-plus'
@@ -135,7 +140,6 @@ const closeTransfer = useFormClose({
 })
 const rules = {
   userName: [
-    { required: true, message: '请填写账号', trigger: 'blur' },
     { pattern: /^[a-zA-Z0-9_]{2,20}$/, message: '2-20 位字母/数字/下划线', trigger: 'blur' }
   ],
   password: [
@@ -158,7 +162,7 @@ async function load() {
 function openCreate() {
   createForm.userName = ''
   createForm.nickName = ''
-  createForm.password = suggestPassword()
+  createForm.password = '123456'
   createForm.ownerId = currentMember.value.id
   initialForm = JSON.stringify(createForm)
   createVisible.value = true
@@ -194,11 +198,11 @@ function submitCreate() {
     saving.value = true
     try {
       const info = { name: createForm.nickName.trim(), userName: createForm.userName.trim(), password: createForm.password }
-      await createCustomer({ ...createForm, ownerId: isBoss.value ? createForm.ownerId : undefined })
+      const account = await createCustomer({ ...createForm, autoUsername: !info.userName, ownerId: isBoss.value ? createForm.ownerId : undefined })
       createVisible.value = false
       load()
       // 建好就把「地址 + 账号 + 密码」整理成一段话，一键复制发给客户
-      offerLoginInfo({ ...info, who: 'customer' })
+      offerLoginInfo({ ...info, userName: account?.userName || info.userName, who: 'customer' })
     } catch (e) {
       ElMessage.error(e.message || '创建失败')
     } finally {
@@ -268,6 +272,8 @@ onMounted(load)
   font-size: 13px;
   color: #909399;
 }
+.account-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.account-actions .el-button { margin: 0; }
 .field-hint {
   margin-top: 4px;
   font-size: 12px;
