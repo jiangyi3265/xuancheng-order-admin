@@ -179,6 +179,7 @@ test('真实客户提交、负责人复制和管理链接、匿名 curl 与浏�
       const dialog = adminPage.getByRole('dialog',{name:'AI 链接',exact:true})
       await dialog.getByRole('button',{name:'开启回复权限'}).click()
       await dialog.getByRole('button',{name:'复制 Codex 回复说明'}).click()
+      await expect.poll(() => adminPage.evaluate(()=>navigator.clipboard.readText())).toContain("X-Codex-Reply-Key:")
       const instructions = await adminPage.evaluate(()=>navigator.clipboard.readText())
       const key = instructions.match(/X-Codex-Reply-Key: ([A-Za-z0-9_-]{43})/)[1]
       const report = {changes:'修好了图片预览',tests:'手机和电脑均能打开原图',requestId:randomUUID()}
@@ -200,6 +201,20 @@ test('真实客户提交、负责人复制和管理链接、匿名 curl 与浏�
         expect(replies[0].content).toContain(report.tests)
       }
       expect((await (await request.put(server+'/jiedan/order/bug/'+added+'/status',{headers:{Authorization:'Bearer '+team},data:{status:'resolved'}})).json()).code).not.toBe(200)
+      const accessPath='/jiedan/agent/orders/'+project.id
+      const granted=(await api(accessPath+'/link',boss)).data
+      expect(granted.replyReaderId).toBeTruthy()
+      await api(accessPath+'/reply-reader',boss,{})
+      expect((await api('/jiedan/agent/reports',reviewer)).data.some(r=>r.bugId===added)).toBe(false)
+      await dialog.getByRole('button',{name:'关闭',exact:true}).click()
+      await adminPage.getByRole('button',{name:'AI 任务单选项'}).click()
+      await adminPage.getByText('AI 链接',{exact:true}).click()
+      await expect(dialog.getByText('仅项目负责人和管理员',{exact:true})).toBeVisible()
+      await dialog.getByText('仅项目负责人和管理员',{exact:true}).click()
+      await adminPage.getByRole('option',{name:'费鹏飞',exact:true}).click()
+      await dialog.getByRole('button',{name:'保存查看人'}).click()
+      await expect.poll(async()=> (await api(accessPath+'/link',boss)).data.replyReaderId).toBe(granted.replyReaderId)
+      expect((await api(accessPath+'/link',boss)).data.replyRevision).toBe(granted.replyRevision)
       const receiver=await browser.newContext({baseURL})
       try {
         await receiver.addInitScript(t=>localStorage.setItem('token',t),reviewer)

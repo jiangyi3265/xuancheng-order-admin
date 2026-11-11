@@ -38,12 +38,13 @@
         <section v-if="isBoss && info?.state === 'active'" class="reply-access">
           <strong>Codex 回复权限</strong>
           <p>仅用于这个项目。每条回复须写明修改内容和测试结果，提交后等你验收。</p>
-          <label>同步查看回复 <el-select v-model="readerId" clearable placeholder="仅项目负责人和管理员">
+          <label>同步查看回复 <el-select v-model="readerId" :disabled="saving || verifying" clearable placeholder="仅项目负责人和管理员">
             <el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id"/>
           </el-select></label>
+          <el-button v-if="info.replyRevision && (readerId || null) !== info.replyReaderId" size="small" :disabled="saving || verifying" @click="saveReader">保存查看人</el-button>
           <el-button size="small" :disabled="saving || verifying" @click="manageKey(true)">{{ info.replyRevision ? '更换回复凭据' : '开启回复权限' }}</el-button>
           <el-button v-if="info.replyRevision" size="small" :disabled="saving || verifying" @click="manageKey(false)">关闭回复权限</el-button>
-          <el-button v-if="secret" size="small" type="primary" @click="copyInstructions">复制 Codex 回复说明</el-button>
+          <el-button v-if="secret" :disabled="saving || verifying" size="small" type="primary" @click="copyInstructions">复制 Codex 回复说明</el-button>
           <p v-if="secret">请在关闭前复制，回复凭据只显示一次。</p>
         </section>
       </div>
@@ -130,7 +131,9 @@ function acceptStatus(data) {
       (data.state === 'active' && !data.revision)) throw new Error('暂时无法读取链接状态')
   if (info.value?.revision !== data.revision || data.state !== 'active') freshUrl.value = ''
   if (info.value?.replyRevision !== data.replyRevision || data.state !== 'active') secret.value = ''
-  info.value = { replyRevision:data.replyRevision, state: data.state, revision: data.revision, expiresAt: data.expiresAt, lastReadAt: data.lastReadAt }
+  const savedReader = data.replyReaderId ?? null
+  if (data.replyRevision && (!info.value || info.value.replyRevision !== data.replyRevision || info.value.replyReaderId !== savedReader)) readerId.value = savedReader
+  info.value = { replyReaderId:savedReader, replyRevision:data.replyRevision, state: data.state, revision: data.revision, expiresAt: data.expiresAt, lastReadAt: data.lastReadAt }
 }
 
 async function refresh() {
@@ -154,7 +157,7 @@ async function change(action) {
   loading.value = false
   try {
     if (info.value.state === 'active') {
-      const message = action === 'disable' ? '停用后，已保存的链接将立即失效。' : '重新生成后，旧链接将立即失效，需要把新链接交给 AI。'
+      const message = action === 'disable' ? '停用后，已保存的链接和回复凭据将立即失效。' : '重新生成后，旧链接和回复凭据将立即失效。请复制新链接，并重新开启回复权限。'
       try { await ElMessageBox.confirm(message, action === 'disable' ? '停用 AI 链接' : '重新生成 AI 链接', { confirmButtonText: '确定', cancelButtonText: '取消' }) }
       catch { return }
     }
@@ -194,11 +197,42 @@ async function manageKey(enable) {
     if (ticket === generation) clearUnverified(e)
   } finally { if (ticket === generation) saving.value = false }
 }
-function copyInstructions() {
-  if (!secret.value) return
+async function saveReader() {
+  if (saving.value || verifying.value || !info.value?.replyRevision) return
+  const ticket = ++generation
+  saving.value = true
+  loading.value = false
+  try {
+    const reader = readerId.value
+    const path = '/jiedan/agent/orders/' + props.project.id + '/reply-reader'
+    const data = await adminHttp(path + (reader ? '?readerId=' + encodeURIComponent(reader) : ''), {method:'POST'})
+    if (ticket !== generation) return
+    acceptStatus(data)
+    error.value = ''
+    toast.success('已保存查看人')
+  } catch (e) {
+    if (ticket === generation) clearUnverified(e)
+  } finally { if (ticket === generation) saving.value = false }
+}
+async function copyInstructions() {
+  if (!secret.value || saving.value || verifying.value) return
+  const ticket = ++generation
+  verifying.value = true
+  loading.value = false
+  try {
+    const data = await getStatus()
+    if (ticket !== generation) return
+    acceptStatus(data)
+    if (!secret.value) { toast.info('回复凭据已变更'); return }
+    await copyVerifiedInstructions()
+  } catch (e) {
+    if (ticket === generation) clearUnverified(e)
+  } finally { if (ticket === generation) verifying.value = false }
+}
+function copyVerifiedInstructions() {
   const origin = location.origin
   const source = freshUrl.value || '使用我提供的本项目只读清单'
-  copyText([source, '逐条完成实际修改和测试后，用对应需求编号提交一次结果。',
+  return copyText([source, '逐条完成实际修改和测试后，用对应需求编号提交一次结果。',
     'POST ' + origin + '/jiedan/agent/issue-reports/{需求编号}',
     '请求头 Content-Type: application/json',
     '请求头 X-Codex-Reply-Key: ' + secret.value,
@@ -231,6 +265,7 @@ onBeforeUnmount(reset)
 .sheet-menu { display: inline-flex; align-items: stretch; white-space: nowrap; }
 .sheet-menu .copy-sheet { border-radius: 6px 0 0 6px; }
 .sheet-menu .sheet-more { margin-left: -1px; border-radius: 0 6px 6px 0; padding-inline: 5px; }
+.sheet-link-dialog { max-height: 62vh; max-height: 62dvh; overflow-y: auto; overflow-wrap: anywhere; }
 .sheet-link-dialog p { margin: 8px 0 14px; line-height: 1.55; color: var(--el-text-color-regular); }
 .sheet-link-dialog dl { margin: 12px 0; padding: 10px 14px; background: var(--el-fill-color-lighter); border-radius: 8px; }
 .sheet-link-dialog dl div { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 4px 0; }
