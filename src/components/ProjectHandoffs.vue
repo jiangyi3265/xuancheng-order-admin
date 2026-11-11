@@ -10,18 +10,21 @@
       <li v-for="r in expanded ? active.rows : active.rows.slice(0,4)" :key="r.key">
         <div class="row-main">
           <button class="project" @click="visit(r)">{{ r.order.title }}</button>
-          <span class="kind">{{ reviewLabels[r.kind] || r.label || '加急' }}</span>
-          <p>{{ r.text }}<template v-if="r.kind === 'deliveryReview'"> · {{ owner(r.order) }}</template></p>
-          <small v-if="r.kind === 'urgentReview' || r.kind === 'submitted'">提交于 {{ fmtTime(r.order.urgentHandoff.submittedAt) }}</small>
-          <small v-if="r.order.reminderReceipts?.urgent && r.kind === 'outgoing'">上次提醒 {{ fmtTime(r.order.reminderReceipts.urgent.at) }} · {{ r.order.reminderReceipts.urgent.by }}</small>
+          <span class="kind">{{ reviewLabels[r.kind] || pendingLabels[r.kind] }}</span>
+          <p><IssueNumber v-if="r.kind === 'bug' && r.bugId" :id="r.bugId" /> {{ r.text }}</p>
+          <small class="turn-owner">{{ r.currentAction }}</small>
+          <small v-if="r.handoffNote">{{ r.handoffNote }}</small>
+          <small v-if="r.review && r.turn?.submittedAt">提交于 {{ fmtTime(r.turn.submittedAt) }}</small>
+          <small v-if="r.kind === 'next' && r.due">截止 {{ r.due }}</small>
+          <small v-if="r.receipt">上次提醒 {{ fmtTime(r.receipt.at) }} · {{ r.receipt.by }}</small>
         </div>
         <div class="actions">
-          <UrgentReviewActions v-if="r.kind === 'urgentReview'" :order="r.order" />
-          <TaskReviewActions v-else-if="['manualReview','nextReview'].includes(r.kind)" :item="r" />
-          <el-button v-else-if="r.kind === 'deliveryReview'" size="small" type="primary" plain @click="$emit('delivery', r.order)">验收项目</el-button>
-          <el-button v-else-if="r.kind === 'outgoing'" size="small" type="primary" plain :loading="busy.has(r.order.id)" @click="act(r)">微信提醒</el-button>
-          <el-button v-else-if="r.kind === 'incoming' && r.order.assignState !== 'pending'" size="small" type="primary" plain :loading="busy.has(r.order.id)" @click="act(r)">提交确认</el-button>
-          <el-button v-else size="small" @click="visit(r)">{{ r.kind === 'issueReview' ? '查看问题' : '查看项目' }}</el-button>
+          <UrgentReviewActions v-if="r.mine && r.kind === 'urgentReview'" :order="r.order" />
+          <TaskReviewActions v-else-if="r.mine && ['manualReview','nextReview'].includes(r.kind)" :item="r" />
+          <el-button v-else-if="r.mine && r.kind === 'deliveryReview'" size="small" type="primary" plain @click="$emit('delivery', r.order)">验收项目</el-button>
+          <el-button v-else-if="r.lane === 'waitingWork' && !r.fresh" size="small" type="primary" plain :loading="busy.has(r.order.id)" @click="act(r)">微信提醒</el-button>
+          <el-button v-else-if="r.lane === 'work' && r.turn && !r.needsAcceptance" size="small" type="primary" plain :loading="busy.has(r.order.id)" @click="act(r)">提交验收</el-button>
+          <el-button v-else size="small" @click="visit(r)">{{ r.needsAcceptance && r.mine ? '去接单' : r.bugId ? '查看问题' : '查看项目' }}</el-button>
         </div>
       </li>
     </ul>
@@ -32,8 +35,9 @@
 import { computed, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { currentMember, isBoss, orders, getOrder, remindPendingItem } from '@/mock/store'
-import { memberMap } from '@/constants/options'
-import { reviewItems, reviewLabels } from '@/utils/handoffs'
+import IssueNumber from './IssueNumber.vue'
+import { pendingLabels, pendingDestination } from '@/utils/pendingItems'
+import { handoffItems, handoffGroups, reviewLabels } from '@/utils/handoffs'
 import { finishPendingWithUndo } from '@/utils/orderUndo'
 import { fmtTime } from '@/utils/time'
 import { toast } from '@/utils/toast'
@@ -41,52 +45,15 @@ import TaskReviewActions from './TaskReviewActions.vue'
 import UrgentReviewActions from './UrgentReviewActions.vue'
 const emit = defineEmits(['open', 'delivery'])
 const router = useRouter()
-const owner = o => memberMap[o.ownerId]?.name || '项目负责人'
 const selected = ref('')
 const expanded = ref(false)
 const busy = reactive(new Set())
-const groups = computed(() => {
-  const me = currentMember.value.id
-  const reviews = reviewItems(orders, me, isBoss.value)
-  const outgoing = [], incoming = [], submitted = []
-  for (const order of orders) {
-    const h = order.urgentHandoff
-    const closed = ['done', 'cancelled'].includes(order.status)
-    if (closed && !h?.submittedAt) continue
-    if (!closed && !isBoss.value && order.ownerId === me) {
-      if (order.status === 'review')
-        submitted.push({ key: order.id + '-delivery', kind:'deliverySent', label:'项目验收', order, text:'项目已交付，等待验收' })
-      for (const bug of order.internalReviewIssues || [])
-        submitted.push({ key: order.id + '-issue-' + bug.id, kind:'issueSent', label:'问题验收', order,
-          text:'问题 #' + bug.id + ' 等内部验收 · ' + (bug.content || '查看修改结果'), bugId:bug.id })
-    }
-    for (const kind of ['next','manual']) {
-      const turn = order.taskTurns?.[kind]
-      if (!closed && turn?.submittedAt && turn.submittedBy === me && turn.requesterId !== me)
-        submitted.push({ key: order.id+'-'+kind, kind:'taskSent', label:kind==='next' ? '下一步' : '手动标记',
-          order,text:(kind==='next' ? order.nextStep+' · ' : '')+'等'+turn.requesterName+'确认' })
-    }
-    if (!h) continue
-    const row = (kind, text) => ({ key: order.id + kind, order, kind, text })
-    if (h.submittedAt) {
-      if (h.submittedBy === me && h.requesterId !== me)
-        submitted.push(row('submitted', '等' + (h.requesterName || '发起人') + '确认加急结果'))
-    } else if (order.urgentUntil && (!order.handled || order.urgentHandoff) && order.ownerId !== h.requesterId) {
-      if (h.requesterId === me) outgoing.push(row('outgoing', '交给' + owner(order) + ' · 截止 ' + h.due))
-      if (order.ownerId === me) incoming.push(row('incoming', (h.requesterName || '同事') + ' 发起 · 截止 ' + h.due))
-    }
-  }
-  const byDue = (a,b) => a.order.urgentUntil.localeCompare(b.order.urgentUntil) || b.order.id - a.order.id
-  const entries = []
-  if (isBoss.value || reviews.length) entries.push({ key:'review', label:'等我确认', rows: reviews, empty:'当前没有等你确认的事项' })
-  if (isBoss.value || outgoing.length) entries.push({ key:'out', label:'我发出的加急', rows: outgoing.sort(byDue), empty:'当前没有发给同事的加急' })
-  if (incoming.length) entries.push({ key:'in', label:'我收到的加急', rows: incoming.sort(byDue) })
-  if (submitted.length) entries.push({ key:'submitted', label:'等对方确认', rows: submitted.sort((a,b) => (b.order.urgentHandoff?.submittedAt || b.order.updateTime || '').localeCompare(a.order.urgentHandoff?.submittedAt || a.order.updateTime || '')) })
-  return entries
-})
+const groups = computed(() => handoffGroups(
+  handoffItems(orders, currentMember.value.id, isBoss.value).filter(item => item.personal)
+))
 const active = computed(() => groups.value.find(g => g.key === selected.value) || groups.value.find(g => g.rows.length) || groups.value[0])
 function visit(row) {
-  if (row.bugId) router.push({ path:'/order', query:{id:String(row.order.id), tab:'bugs', bug:String(row.bugId)} })
+  if (row.bugId || ['manual', 'manualReview'].includes(row.kind)) router.push(pendingDestination(row))
   else emit('open', row.order)
 }
 async function act(row) {
@@ -94,10 +61,10 @@ async function act(row) {
   if (busy.has(order.id)) return
   busy.add(order.id)
   try {
-    if (row.kind === 'incoming') await finishPendingWithUndo(order, 'urgent', null, '已提交加急结果')
+    if (row.mine) await finishPendingWithUndo(order, row.kind, row.bugId, '事项已处理')
     else {
-      await remindPendingItem(order, 'urgent')
-      toast.success('已通过企业微信提醒' + owner(order))
+      await remindPendingItem(order, row.kind, row.bugId)
+      toast.success('已通过企业微信提醒' + (row.recipient || '负责人'))
       await getOrder(order.id).catch(() => {})
     }
   } catch (error) {

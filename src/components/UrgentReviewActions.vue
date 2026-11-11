@@ -9,6 +9,7 @@ import { computed } from 'vue'
 import { reviewsInFlight } from '@/utils/handoffs'
 import { ElMessageBox } from 'element-plus'
 import { getOrder, latestOrderVersion, reviewUrgency } from '@/mock/store'
+import { memberMap } from '@/constants/options'
 import { toast } from '@/utils/toast'
 const props = defineProps({ order: { type: Object, required: true } })
 const busy = computed(() => reviewsInFlight.has(props.order.id))
@@ -28,7 +29,7 @@ async function decide(decision) {
       note = response.value || ''
     }
     await reviewUrgency(id, version, decision, note)
-    toast.success(decision === 'confirm' ? '已确认本次加急完成' : '已退回负责人的加急待办')
+    toast.success(decision === 'confirm' ? '已确认本次加急完成' : '已退回给' + (memberMap[props.order.ownerId]?.name || '负责人') + '继续处理加急')
   } catch (err) {
     if (err === 'cancel' || err === 'close') return
     toast.error(err.message || '操作失败，请重试')

@@ -8,6 +8,7 @@
 import { computed } from 'vue'
 import { reviewsInFlight } from '@/utils/handoffs'
 import { reviewTaskTurn, updateBugStatus, getOrder } from '@/mock/store'
+import { memberMap } from '@/constants/options'
 import { toast } from '@/utils/toast'
 const props = defineProps({ item:{ type:Object, required:true } })
 const busy = computed(() => reviewsInFlight.has(props.item.id))
@@ -19,7 +20,10 @@ async function decide(decision) {
   try {
     if (row.kind === 'issueReview') await updateBugStatus(row.bugId,decision==='confirm' ? 'resolved' : 'action','ai_review')
     else await reviewTaskTurn(row.order,row.kind === 'nextReview' ? 'next' : 'manual',decision)
-    toast.success(decision === 'confirm' ? '已确认完成' : '已退回处理人')
+    const owner = row.kind === 'nextReview'
+      ? row.order.nextOwnerName || memberMap[row.order.nextOwnerId ?? row.order.ownerId]?.name
+      : memberMap[row.order.ownerId]?.name
+    toast.success(decision === 'confirm' ? '已验收完成' : '已退回给' + (owner || '负责人') + '继续处理')
   } catch (err) {
     toast.error(err.message || '操作失败，请重试')
     await getOrder(row.id).catch(() => {})

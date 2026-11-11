@@ -56,9 +56,10 @@ test('两人的加急催办、退回再提交，以及独立的问题和项目�
     await api(staff,projectPath+'/accept','POST')
     await api(page,projectPath+'/urgency','PUT',{previousUntil:null,urgentUntil:due})
     let bossPanel = await workbench(page)
-    await bossPanel.getByRole('button',{name:/我发出的加急/}).click()
+    await bossPanel.getByRole('button',{name:/等同事处理/}).click()
     const out = bossPanel.getByRole('listitem').filter({hasText:title})
-    await expect(out).toContainText('交给交接同事 · 截止 '+due)
+    await expect(out).toContainText('现在由交接同事处理')
+    await expect(out).toContainText('截止 '+due)
     if (mockPort) {
       await api(page,'/jiedan/push/config','POST',{
         'push.enabled':'true','push.siteUrl':'https://local-test.example','push.wecom.corpId':'wwtestcorp01',
@@ -70,11 +71,12 @@ test('两人的加急催办、退回再提交，以及独立的问题和项目�
       expect(calls.some(c => c.touser==='LocalStaff' && c.news?.articles[0].url.endsWith('id='+order.id))).toBeTruthy()
     }
     const staffPanel = await workbench(staff)
-    await staffPanel.getByRole('listitem').filter({hasText:title}).getByRole('button',{name:'提交确认'}).click()
-    await expect(staffPanel).toContainText('等对方确认')
+    await staffPanel.getByRole('listitem').filter({hasText:title}).getByRole('button',{name:'提交验收'}).click()
+    await staffPanel.getByRole('button',{name:/等同事验收/}).click()
+    await expect(staffPanel.getByRole('listitem').filter({hasText:title})).toContainText('你已提交处理结果')
     bossPanel = await workbench(page)
     const reviewed = bossPanel.getByRole('listitem').filter({hasText:title})
-    await expect(reviewed).toContainText('交接同事 已提交加急结果')
+    await expect(reviewed).toContainText('交接同事已提交处理结果')
     if (mockPort) await expect.poll(()=>calls.some(c=>c.touser==='LocalReviewer' && c.news?.articles[0].title.includes('等你确认'))).toBeTruthy()
     const current = await api(staff,projectPath)
     expect(await api(staff,projectPath+'/urgent-review','POST',{decision:'confirm',version:current.version},false)).toBe(403)

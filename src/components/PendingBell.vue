@@ -12,24 +12,28 @@
       </div>
       <div v-if="loadError" role="alert" class="load-error">{{ loadError }} <button type="button" @click="refresh" :disabled="loading">重试</button></div>
       <p v-if="!items.length && !loadError" role="status">{{ loading ? '正在加载…' : '当前没有分给你的待处理事项' }}</p>
-      <ul v-if="items.length">
-        <li v-for="item in items" :key="item.key">
+      <section v-for="group in groups" :key="group.key" :aria-label="group.label" class="bell-group">
+        <h3>{{ group.label }} <small>{{ group.rows.length }}</small></h3>
+        <ul>
+        <li v-for="item in group.rows" :key="item.key">
           <router-link :to="pendingDestination(item, route.path === '/order' ? route.query : {})" @click="open = false">
             <span class="item-head"><small :class="item.kind">{{ (pendingLabels[item.kind] || reviewLabels[item.kind]) }}</small><strong>{{ item.title }}</strong></span>
             <span class="item-text"><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</span>
-            <span v-if="item.meta" class="meta">{{ item.meta }}</span>
+            <span v-if="item.handoffNote" class="meta">{{ item.handoffNote }}</span>
+            <span v-if="item.kind === 'next' && item.due" class="meta">截止 {{ item.due }}</span>
           </router-link>
           <UrgentReviewActions v-if="item.kind === 'urgentReview'" :order="item.order" />
           <TaskReviewActions v-else-if="['manualReview','nextReview','issueReview'].includes(item.kind)" :item="item" />
           <button v-else-if="reviewLabels[item.kind]" class="complete" @click="open = false; router.push(pendingDestination(item))">查看验收</button>
-          <button v-else-if="item.kind === 'urgent' && !isBoss && item.order.assignState === 'pending'" class="complete"
+          <button v-else-if="item.needsAcceptance" class="complete"
             type="button" @click="open = false; router.push(pendingDestination(item))">去接单</button>
           <button v-else-if="!item.fresh && (item.kind !== 'bug' || item.bugId)" class="complete" type="button"
             :disabled="loading || !!loadError || busy.has(item.id)" :aria-label="finishLabel(item) + '，' + actionTitle(item)" :title="actionTitle(item)" @click="finish(item)">
             {{ busy.get(item.id) === item.key ? '处理中…' : finishLabel(item) }}
           </button>
         </li>
-      </ul>
+        </ul>
+      </section>
     </div>
   </el-drawer>
 </template>
@@ -39,13 +43,13 @@ import IssueNumber from '@/components/IssueNumber.vue'
 import { computed, reactive, ref } from 'vue'
 import TaskReviewActions from './TaskReviewActions.vue'
 import UrgentReviewActions from './UrgentReviewActions.vue'
-import { reviewItems, reviewLabels } from '@/utils/handoffs'
+import { handoffItems, handoffGroups, reviewLabels } from '@/utils/handoffs'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell } from '@element-plus/icons-vue'
 import { toast as ElMessage } from '@/utils/toast'
 import { finishPendingWithUndo } from '@/utils/orderUndo'
 import { loadOrders, me, orders, isBoss } from '@/mock/store'
-import { pendingItems, pendingLabels, pendingDestination } from '@/utils/pendingItems'
+import { pendingLabels, pendingDestination } from '@/utils/pendingItems'
 import { isMobile } from '@/utils/useMobile'
 
 const route = useRoute()
@@ -55,16 +59,11 @@ const drawerMounted = ref(false)
 const loading = ref(false)
 const loadError = ref('')
 const busy = reactive(new Map())
-const items = computed(() => {
-  const memberId = me.value?.id
-  if (memberId == null) return []
-  return [...reviewItems(orders, memberId, isBoss.value),
-    ...pendingItems(orders).filter(item => item.recipientId != null && String(item.recipientId) === String(memberId))]
-
-})
+const items = computed(() => handoffItems(orders, me.value?.id, isBoss.value).filter(item => item.mine))
+const groups = computed(() => handoffGroups(items.value).filter(group => group.rows.length))
 
 function finishLabel(item) {
-  return item.turn ? '提交确认' : '标为已处理'
+  return item.turn ? '提交验收' : '标为已处理'
 }
 
 function actionTitle(item) {
@@ -108,6 +107,8 @@ async function finish(item) {
 .panel-tools, .item-head { display: flex; align-items: center; gap: 8px; }
 .panel-tools { justify-content: space-between; margin-bottom: 12px; color: #213653; }
 .panel-tools a { color: #1757c7; font-size: 13px; }
+.bell-group h3 {margin:14px 0 6px;color:#233957;font-size:14px}
+.bell-group h3 small {margin-left:4px;color:#536b88}
 .bell-panel ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
 .bell-panel li { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e0e7f2; border-radius: 10px; background: #f8faff; }
 .bell-panel li a { min-width: 0; flex: 1; display: grid; gap: 5px; color: #263958; text-decoration: none; overflow-wrap: anywhere; }
