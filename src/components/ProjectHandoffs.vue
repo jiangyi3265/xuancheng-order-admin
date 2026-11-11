@@ -17,6 +17,7 @@
         </div>
         <div class="actions">
           <UrgentReviewActions v-if="r.kind === 'urgentReview'" :order="r.order" />
+          <TaskReviewActions v-else-if="['manualReview','nextReview'].includes(r.kind)" :item="r" />
           <el-button v-else-if="r.kind === 'deliveryReview'" size="small" type="primary" plain @click="$emit('delivery', r.order)">验收项目</el-button>
           <el-button v-else-if="r.kind === 'outgoing'" size="small" type="primary" plain :loading="busy.has(r.order.id)" @click="act(r)">微信提醒</el-button>
           <el-button v-else-if="r.kind === 'incoming' && r.order.assignState !== 'pending'" size="small" type="primary" plain :loading="busy.has(r.order.id)" @click="act(r)">提交确认</el-button>
@@ -36,6 +37,7 @@ import { reviewItems, reviewLabels } from '@/utils/handoffs'
 import { finishPendingWithUndo } from '@/utils/orderUndo'
 import { fmtTime } from '@/utils/time'
 import { toast } from '@/utils/toast'
+import TaskReviewActions from './TaskReviewActions.vue'
 import UrgentReviewActions from './UrgentReviewActions.vue'
 const emit = defineEmits(['open', 'delivery'])
 const router = useRouter()
@@ -58,12 +60,18 @@ const groups = computed(() => {
         submitted.push({ key: order.id + '-issue-' + bug.id, kind:'issueSent', label:'问题验收', order,
           text:'问题 #' + bug.id + ' 等内部验收 · ' + (bug.content || '查看修改结果'), bugId:bug.id })
     }
+    for (const kind of ['next','manual']) {
+      const turn = order.taskTurns?.[kind]
+      if (!closed && turn?.submittedAt && turn.submittedBy === me && turn.requesterId !== me)
+        submitted.push({ key: order.id+'-'+kind, kind:'taskSent', label:kind==='next' ? '下一步' : '手动标记',
+          order,text:(kind==='next' ? order.nextStep+' · ' : '')+'等'+turn.requesterName+'确认' })
+    }
     if (!h) continue
     const row = (kind, text) => ({ key: order.id + kind, order, kind, text })
     if (h.submittedAt) {
       if (h.submittedBy === me && h.requesterId !== me)
         submitted.push(row('submitted', '等' + (h.requesterName || '发起人') + '确认加急结果'))
-    } else if (order.urgentUntil && !order.handled && order.ownerId !== h.requesterId) {
+    } else if (order.urgentUntil && (!order.handled || order.urgentHandoff) && order.ownerId !== h.requesterId) {
       if (h.requesterId === me) outgoing.push(row('outgoing', '交给' + owner(order) + ' · 截止 ' + h.due))
       if (order.ownerId === me) incoming.push(row('incoming', (h.requesterName || '同事') + ' 发起 · 截止 ' + h.due))
     }

@@ -9,7 +9,7 @@
       <p>{{ item.text }}</p>
       <div class="notice-actions">
         <button type="button" @click="openIssue(item)">查看问题</button>
-        <button v-if="!item.fresh" type="button" class="finish" :disabled="busy" @click="finish(item)">{{ busy ? '处理中…' : '标为已处理' }}</button>
+        <button v-if="!item.fresh" type="button" class="finish" :disabled="busy" @click="finish(item)">{{ busy ? '处理中…' : item.turn ? '提交确认' : '标为已处理' }}</button>
       </div>
     </section>
   </Teleport>

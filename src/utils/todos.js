@@ -68,7 +68,7 @@ function messageText(last) {
 
 // 下一步交给谁：没单独指定时算项目负责人（和顶部「待处理通知」铃铛的口径一致）
 export function isMyNextStep(o, me) {
-  return !!String(o?.nextStep || '').trim() && String(o.nextOwnerId ?? o.ownerId) === String(me)
+  return !o?.taskTurns?.next?.submittedAt && !!String(o?.nextStep || '').trim() && String(o.nextOwnerId ?? o.ownerId) === String(me)
 }
 
 // 这个项目为什么需要我处理；不需要就返回 null。rank 越小越靠前。
@@ -84,7 +84,7 @@ export function todoReason(o, me, boss, today = todayStr()) {
   }
   const message = colleagueTask(o, me)
   if (message) return message
-  if (open && mine && o.urgentUntil && !o.handled) return { kind: 'urgent', rank: 2, text: '加急：' + o.urgentUntil + ' 前要处理' }
+  if (open && mine && o.urgentUntil && (!o.handled || o.urgentHandoff)) return { kind: 'urgent', rank: 2, text: '加急：' + o.urgentUntil + ' 前要处理' }
   if (mine && waitingReply(o)) return { kind: 'reply', rank: 4, text: messageText(o.lastMessage) }
   if (!open) return null
   if (mine && o.newBugCount > 0) return { kind:'newIssues', rank:4.5, text:'客户提了 ' + o.newBugCount + ' 条新问题：' + (o.newBugPreview?.content || '查看问题附件') }
@@ -97,7 +97,7 @@ export function todoReason(o, me, boss, today = todayStr()) {
     return { kind: 'request', rank: 6, text: who + '提交了新需求' + (boss ? '，派给谁做？' : '，先看一下') }
   }
   if (mine && Number(o.actionBugCount) > 0) return { kind: 'bugs', rank: 7, text: o.actionBugCount + ' 条问题已标记需处理' }
-  if (mine && !o.handled && o.handledTime) return { kind: 'manual', rank: 8, text: '项目标成了「未处理」，处理完记得标回来' }
+  if (mine && !o.handled && o.handledTime && !o.taskTurns?.manual?.submittedAt) return { kind: 'manual', rank: 8, text: '项目标成了「未处理」，处理完记得标回来' }
   if (boss && o.status === 'review') return { kind: 'review', rank: 9, text: `${ownerName(o)} 做完提交了，等你验收` }
   if (mine && ['pending', 'doing'].includes(o.status) && o.assignState !== 'pending' && o.deadline && o.deadline < today) {
     return { kind: 'overdue', rank: 10, text: '已逾期（截止 ' + shortDue(o.deadline) + '）' }

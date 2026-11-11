@@ -9,7 +9,7 @@ export function pendingItems(orders) {
     if (row.status === 'done' || row.status === 'cancelled') continue
     const owner = memberMap[row.ownerId]?.name || ''
     const project = { id: row.id, title: row.title, order: row, recipientId: row.ownerId, recipient: owner }
-    if (row.urgentUntil && !row.handled) {
+    if (row.urgentUntil && (!row.handled || row.urgentHandoff)) {
       groups.urgent.push({ ...project, key: row.id + '-urgent', kind: 'urgent',
         text: '截止 ' + row.urgentUntil, meta: owner, due: row.urgentUntil })
     }
@@ -31,13 +31,13 @@ export function pendingItems(orders) {
           text: row.actionBugCount + ' 个问题需处理', meta: owner })
       }
     }
-    if (row.nextStep?.trim()) {
+    if (row.nextStep?.trim() && !row.taskTurns?.next?.submittedAt) {
       const assignee = memberMap[row.nextOwnerId]?.name || row.nextOwnerName || owner
       groups.next.push({ ...project, key: row.id + '-next', kind: 'next', text: row.nextStep,
         recipientId: row.nextOwnerId ?? row.ownerId, recipient: assignee,
         meta: [assignee, row.nextDue && ('截止 ' + row.nextDue)].filter(Boolean).join(' · '), due: row.nextDue })
     }
-    if (!row.handled && row.handledTime) {
+    if (!row.handled && row.handledTime && !row.taskTurns?.manual?.submittedAt) {
       groups.manual.push({ ...project, key: row.id + '-manual', kind: 'manual', text: '项目已标为未处理',
         meta: [owner, fmtTime(row.handledTime)].filter(Boolean).join(' · ') })
     }
@@ -60,7 +60,8 @@ export function pendingItems(orders) {
   ]
   return ordered.map(item => {
     const key = item.kind === 'bug' ? (item.bugId ? 'bug-' + item.bugId : 'bugs') : item.kind
-    return { ...item, receipt: item.order.reminderReceipts?.[key] }
+    const turn = item.kind === 'urgent' ? item.order.urgentHandoff : item.order.taskTurns?.[key]
+    return { ...item, turn, receipt: item.order.reminderReceipts?.[key] }
   })
 }
 
@@ -71,6 +72,6 @@ export function pendingDestination(item, currentQuery = {}) {
     query.tab = 'bugs'
     if (item.bugId) query.bug = String(item.bugId)
     else query.todo = '1'
-  } else if (item.kind === 'manual') query.followup = 'manual'
+  } else if (['manual','manualReview'].includes(item.kind)) query.followup = 'manual'
   return { path: '/order', query }
 }

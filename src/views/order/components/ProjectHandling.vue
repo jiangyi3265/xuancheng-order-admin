@@ -1,12 +1,13 @@
 <template>
   <div class="handling">
     <div class="handling-line">
-      <span class="handling-state" :class="{ done: order.handled }">{{ order.handled ? '已处理' : '未处理' }}</span>
+      <span class="handling-state" :class="{ done: order.handled }">{{ order.taskTurns?.manual?.submittedAt ? '等' + order.taskTurns.manual.requesterName + '确认' : order.handled ? '已处理' : '未处理' }}</span>
       <div v-if="canMark" class="handling-actions">
         <button v-if="!order.handled && !order.handledTime && !['done', 'cancelled'].includes(order.status)" type="button" class="handling-action"
           :disabled="saving" @click="mark(false)">加入待处理</button>
-        <button type="button" class="handling-action" :disabled="saving" @click="mark(!order.handled)">
-          {{ saving ? '保存中…' : order.handled ? '改为未处理' : '标为已处理' }}
+        <TaskReviewActions v-if="order.taskTurns?.manual?.submittedAt && order.taskTurns.manual.requesterId === currentMember.id" :item="{ order, id:order.id, kind:'manualReview' }" />
+        <button v-if="!order.taskTurns?.manual || (!order.taskTurns.manual.submittedAt && order.ownerId===currentMember.id)" type="button" class="handling-action" :disabled="saving" @click="mark(!order.handled)">
+          {{ saving ? '保存中…' : order.handled ? '改为未处理' : order.taskTurns?.manual ? '提交确认' : '标为已处理' }}
         </button>
       </div>
     </div>
@@ -18,6 +19,7 @@
 </template>
 
 <script setup>
+import TaskReviewActions from '@/components/TaskReviewActions.vue'
 import { offerOrderUndo } from '@/utils/orderUndo'
 import { ref, computed } from 'vue'
 import { toast as ElMessage } from '@/utils/toast'
@@ -34,6 +36,10 @@ async function mark(handled) {
   const hadMark = Boolean(row.handledTime)
   try {
     const updated = await setOrderHandled(row, handled)
+    if (updated.taskTurns?.manual?.submittedAt) {
+      ElMessage.success('已提交，等' + updated.taskTurns.manual.requesterName + '确认')
+      return
+    }
     // The API can mark either state, but cannot remove a project's very first mark.
     if (hadMark && previous !== handled) {
       const markedAt = updated.handledTime

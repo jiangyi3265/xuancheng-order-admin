@@ -5,15 +5,17 @@
   </span>
 </template>
 <script setup>
-import { ref } from 'vue'
+import { computed } from 'vue'
+import { reviewsInFlight } from '@/utils/handoffs'
 import { ElMessageBox } from 'element-plus'
 import { getOrder, latestOrderVersion, reviewUrgency } from '@/mock/store'
 import { toast } from '@/utils/toast'
 const props = defineProps({ order: { type: Object, required: true } })
-const busy = ref(false)
+const busy = computed(() => reviewsInFlight.has(props.order.id))
 async function decide(decision) {
   if (busy.value) return
-  busy.value = true
+  const projectId = props.order.id
+  reviewsInFlight.add(projectId)
   const { id, title } = props.order
   const version = latestOrderVersion(props.order)
   try {
@@ -31,7 +33,7 @@ async function decide(decision) {
     if (err === 'cancel' || err === 'close') return
     toast.error(err.message || '操作失败，请重试')
     await getOrder(id).catch(() => {})
-  } finally { busy.value = false }
+  } finally { reviewsInFlight.delete(projectId) }
 }
 </script>
 <style scoped>

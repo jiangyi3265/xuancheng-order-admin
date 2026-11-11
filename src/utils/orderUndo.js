@@ -42,7 +42,11 @@ function nextSnapshot(order) {
 export async function finishNext(order) {
   const previous = nextSnapshot(order)
   const id = order.id
-  await completeNextStep(id)
+  const updated = await completeNextStep(id)
+  if (updated?.taskTurns?.next?.submittedAt) {
+    toast.success('已提交，等' + updated.taskTurns.next.requesterName + '确认')
+    return null
+  }
   return (onRestored) => offerOrderUndo(id, 'next', '已完成「' + previous.content + '」',
     cur => !cur.nextStep && !['done', 'cancelled'].includes(cur.status),
     async () => { await setNextStep(id, previous); onRestored?.() })
@@ -53,6 +57,11 @@ export async function finishPendingWithUndo(order, kind, bugId, message) {
   const due = order.urgentUntil
   const id = order.id
   const updated = await completePendingItem(order, kind, bugId)
+  const turn = updated.taskTurns?.[kind === 'bug' ? 'bug-' + bugId : kind]
+  if (turn?.submittedAt) {
+    toast.success('已提交，等' + turn.requesterName + '确认')
+    return
+  }
   const markedAt = updated.handledTime
   if (updated.urgentHandoff?.submittedAt && (kind === 'urgent' || kind === 'manual')) {
     toast.success('已提交加急结果，等' + (updated.urgentHandoff.requesterName || '发起人') + '确认')

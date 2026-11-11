@@ -315,14 +315,14 @@
                       </div>
                     </div>
                     <div class="bug-actions">
-                      <el-button v-if="processingBugs" type="primary" size="small"
+                      <el-button v-if="processingBugs && (!order.taskTurns?.['bug-'+bug.id] || order.ownerId === currentMember.id)" type="primary" size="small"
                         :loading="statusUpdatingBugId === bug.id" :disabled="issueNavigationLocked"
                         @click="resolveCurrentIssue(bug, $event)">
-                        {{ actionableBugs.length > 1 ? '解决并继续' : '解决最后一条' }}
+                        {{ order.taskTurns?.['bug-' + bug.id] ? '提交确认' : actionableBugs.length > 1 ? '解决并继续' : '解决最后一条' }}
                       </el-button>
                       <div v-else-if="bug.status==='ai_review'" class="issue-awaiting">
-                        待内部验收
-                        <template v-if="isBoss">
+                        待内部验收<span v-if="order.taskTurns?.['bug-'+bug.id]"> · 等{{ order.taskTurns['bug-'+bug.id].requesterName }}确认</span>
+                        <template v-if="order.taskTurns?.['bug-'+bug.id] ? order.taskTurns['bug-'+bug.id].requesterId === currentMember.id : isBoss">
                           <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'resolved')">验收通过 · 已解决</el-button>
                           <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'action')">退回修改</el-button>
                         </template>
@@ -336,13 +336,13 @@
                         :disabled="!!statusUpdatingBugId"
                         @change="(val) => changeBugStatus(bug, val)"
                       >
-                        <el-radio-button value="open">未标记</el-radio-button>
+                        <el-radio-button value="open" :disabled="bug.status==='action' && !!order.taskTurns?.['bug-'+bug.id] && order.taskTurns['bug-'+bug.id].requesterId!==currentMember.id">未标记</el-radio-button>
                         <el-radio-button v-if="!isBugResolved(bug)" value="action" :disabled="['done','cancelled'].includes(order.status)">需处理</el-radio-button>
-                        <el-radio-button value="resolved">已解决</el-radio-button>
+                        <el-radio-button v-if="!order.taskTurns?.['bug-'+bug.id]" value="resolved">已解决</el-radio-button>
                       </el-radio-group>
-                      <el-button v-if="!isBoss && !pendingAccept && !['done','cancelled'].includes(order.status) && ['open','action'].includes(bugStatus(bug))"
+                      <el-button v-if="(!isBoss || order.taskTurns?.['bug-'+bug.id]) && order.ownerId === currentMember.id && !pendingAccept && !['done','cancelled'].includes(order.status) && ['open','action'].includes(bugStatus(bug))"
                         size="small" type="primary" plain :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'submitReview')">提交内部验收</el-button>
-                      <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && !['confirm','ai_review'].includes(bug.status)"
+                      <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && !['confirm','ai_review'].includes(bug.status) && !(bug.status==='action' && order.taskTurns?.['bug-'+bug.id] && order.taskTurns['bug-'+bug.id].requesterId!==currentMember.id)"
                         type="primary" plain size="small" :disabled="!!statusUpdatingBugId || !!deletingBugId" @click="reviewBugId=bug.id">请客户确认</el-button>
                       <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
                         {{ activeUpdateBugId === bug.id ? '收起' : '补充说明' }}
@@ -1178,7 +1178,11 @@ async function changeBugStatus(bug, status) {
   const reactivating = isBugResolved(bug) && status === 'action'
   statusUpdatingBugId.value = bug.id
   try {
-    await updateBugStatus(bug.id, status)
+    const result = await updateBugStatus(bug.id, status, bug.status)
+    if (result?.taskTurns?.['bug-'+bug.id]?.submittedAt) {
+      ElMessage.success('已提交，等' + result.taskTurns['bug-'+bug.id].requesterName + '确认')
+      return true
+    }
     if (reactivating) bugExpansion.value.set(String(bug.id), true)
     ElMessage.success(reactivating ? '已重新激活，加入逐条处理' : { resolved: '已解决', action: '已标记需处理', open: '已取消处理标记', submitReview: '已提交，等待内部验收' }[status])
     return true

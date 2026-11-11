@@ -453,6 +453,7 @@ async function quickCompleteNext(o) {
   let offerUndo
   try {
     offerUndo = await finishNext(o)
+    if (!offerUndo) return
   } catch (e) {
     ElMessage.error(e.message || '操作失败')
     return

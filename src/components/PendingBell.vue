@@ -20,6 +20,7 @@
             <span v-if="item.meta" class="meta">{{ item.meta }}</span>
           </router-link>
           <UrgentReviewActions v-if="item.kind === 'urgentReview'" :order="item.order" />
+          <TaskReviewActions v-else-if="['manualReview','nextReview','issueReview'].includes(item.kind)" :item="item" />
           <button v-else-if="reviewLabels[item.kind]" class="complete" @click="open = false; router.push(pendingDestination(item))">查看验收</button>
           <button v-else-if="item.kind === 'urgent' && !isBoss && item.order.assignState === 'pending'" class="complete"
             type="button" @click="open = false; router.push(pendingDestination(item))">去接单</button>
@@ -36,6 +37,7 @@
 <script setup>
 import IssueNumber from '@/components/IssueNumber.vue'
 import { computed, reactive, ref } from 'vue'
+import TaskReviewActions from './TaskReviewActions.vue'
 import UrgentReviewActions from './UrgentReviewActions.vue'
 import { reviewItems, reviewLabels } from '@/utils/handoffs'
 import { useRoute, useRouter } from 'vue-router'
@@ -62,7 +64,7 @@ const items = computed(() => {
 })
 
 function finishLabel(item) {
-  return item.kind === 'urgent' && item.order.urgentHandoff ? '提交确认' : '标为已处理'
+  return item.turn ? '提交确认' : '标为已处理'
 }
 
 function actionTitle(item) {

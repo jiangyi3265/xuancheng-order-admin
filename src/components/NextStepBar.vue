@@ -11,8 +11,10 @@
           <span v-if="order.nextDue" class="ns-due">{{ dueLabel }}</span>
         </span>
         <span class="ns-actions">
-          <el-button size="small" type="success" :loading="busy" @click="complete">完成</el-button>
-          <el-button size="small" link type="primary" @click="startEdit(false)">修改</el-button>
+          <span v-if="order.taskTurns?.next?.submittedAt">等{{ order.taskTurns.next.requesterName }}确认</span>
+          <el-button v-else-if="!order.taskTurns?.next || (order.nextOwnerId ?? order.ownerId) === currentMember.id" size="small" type="success" :loading="busy" @click="complete">{{ order.taskTurns?.next ? '提交确认' : '完成' }}</el-button>
+          <TaskReviewActions v-if="order.taskTurns?.next?.submittedAt && order.taskTurns.next.requesterId === currentMember.id" :item="{ order, id:order.id, kind:'nextReview' }" />
+          <el-button v-if="!order.taskTurns?.next?.submittedAt" size="small" link type="primary" @click="startEdit(false)">修改</el-button>
         </span>
       </template>
       <button v-else type="button" class="ns-add" @click="startEdit(false)">
@@ -43,6 +45,7 @@
 </template>
 
 <script setup>
+import TaskReviewActions from '@/components/TaskReviewActions.vue'
 import { ref, reactive, computed, nextTick } from 'vue'
 import { toast as ElMessage } from '@/utils/toast'
 import { Flag } from '@element-plus/icons-vue'
@@ -120,6 +123,7 @@ async function complete() {
   const done = props.order.nextStep
   try {
     const offerUndo = await finishNext(props.order)
+    if (!offerUndo) return
     offerUndo(() => { if (justDone.value && !form.content.trim()) cancel() })
     justDone.value = done
     startEdit(true)

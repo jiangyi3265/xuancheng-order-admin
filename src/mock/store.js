@@ -600,10 +600,10 @@ export async function requestIssueReview(id, payload) {
   return upsert(order)
 }
 
-export async function updateBugStatus(id, status) {
+export async function updateBugStatus(id, status, previousStatus) {
   const vo = await http(`${BASE}/bug/${id}/status`, {
     method: 'PUT',
-    body: JSON.stringify({ status })
+    body: JSON.stringify({ status, previousStatus })
   })
   upsert(vo)
   return vo
@@ -721,6 +721,13 @@ export async function completePendingItem(order, kind, bugId) {
   const updated = await http(`${BASE}/${order.id}/pending-completion`, {
     method: 'POST',
     body: JSON.stringify({ kind, bugId, version: orderVersions.get(order) ?? order.version })
+  })
+  return upsert(updated)
+}
+
+export async function reviewTaskTurn(order, kind, decision) {
+  const updated = await http(`${BASE}/${order.id}/task-review`, {
+    method:'POST', body:JSON.stringify({ kind, decision, version:latestOrderVersion(order) })
   })
   return upsert(updated)
 }

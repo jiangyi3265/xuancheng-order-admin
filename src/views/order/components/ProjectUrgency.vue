@@ -8,7 +8,7 @@
       :aria-label="fullLabel" :title="order.urgentUntil ? fullLabel + '（北京时间）' : undefined"
       @click.stop="open">{{ label }}</el-button>
     <el-tag v-else size="small" type="danger" :title="fullLabel + '（北京时间）'">{{ label }}</el-tag>
-    <el-button v-if="!selecting && order.urgentHandoff && !closed && order.urgentUntil && !order.handled && order.ownerId === currentMember.id && order.urgentHandoff.requesterId !== currentMember.id && order.assignState !== 'pending'"
+    <el-button v-if="!selecting && order.urgentHandoff && !closed && order.urgentUntil && (!order.handled || order.urgentHandoff) && order.ownerId === currentMember.id && order.urgentHandoff.requesterId !== currentMember.id && order.assignState !== 'pending'"
       size="small" link type="primary" :loading="submitting" @click.stop="submit">提交确认</el-button>
     <el-button v-if="canRemind" size="small" link type="primary" :loading="reminding" :aria-label="'提醒' + ownerName" :title="'提醒' + ownerName" @click.stop="remind">{{ compact ? '提醒' : '提醒' + ownerName }}</el-button>
   </span>
@@ -48,7 +48,7 @@ const label = computed(() => {
 const closed = computed(() => ['done', 'cancelled'].includes(props.order.status))
 const canEdit = computed(() => !props.selecting && (!closed.value || !!props.order.urgentUntil) &&
   (isBoss.value || (props.order.ownerId === currentMember.value.id && props.order.assignState !== 'pending')))
-const canRemind = computed(() => canEdit.value && props.order.urgentUntil && !props.order.handled &&
+const canRemind = computed(() => canEdit.value && props.order.urgentUntil && (!props.order.handled || props.order.urgentHandoff) &&
   props.order.ownerId && props.order.ownerId !== currentMember.value.id && !['done', 'cancelled'].includes(props.order.status))
 const ownerName = computed(() => memberMap[props.order.ownerId]?.name || '负责人')
 const visible = ref(false)
