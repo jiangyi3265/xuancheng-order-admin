@@ -202,7 +202,7 @@
                 <div class="issue-tools">
                   <IssueSheetMenu v-if="visible && mayExportIssues" :key="order.id + '-' + currentMember.id" :project="order" />
                   <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
-                    {{ bugOpen ? '收起' : '记一条问题' }}
+                    {{ bugOpen ? '收起' : bugHasDraft ? '继续写问题' : '记一条问题' }}
                   </el-button>
                 </div>
               </div>
@@ -237,7 +237,7 @@
               <div v-if="bugOpen" class="bug-form">
                 <el-input
                   ref="bugInput"
-                  v-model="bugText"
+                  v-model="bugDraft.text"
                   type="textarea"
                   :rows="2"
                   resize="none"
@@ -245,10 +245,10 @@
                   @keydown.enter.ctrl.prevent="submitBug()"
                   @keydown.enter.meta.prevent="submitBug()"
                 />
-                <AttachmentUploader v-model="bugFiles" compact class="note-upload" />
+                <AttachmentUploader :key="order.id" :draft="bugDraft" v-model="bugDraft.files" compact class="note-upload" />
                 <div class="bug-submit-actions">
-                  <el-button plain :loading="bugSubmitting" @click="submitBug()">记下问题</el-button>
-                  <el-button v-if="bugRecipient" type="primary" :icon="Promotion" :loading="bugSubmitting"
+                  <el-button plain :disabled="!bugReady" :loading="bugSubmitting" @click="submitBug()">记下问题</el-button>
+                  <el-button v-if="bugRecipient" type="primary" :icon="Promotion" :disabled="!bugReady" :loading="bugSubmitting"
                     @click="submitBug(true)">发给{{ bugRecipient }}处理</el-button>
                 </div>
               </div>
@@ -523,7 +523,7 @@ import { ref, computed, watch, nextTick, onBeforeUnmount, toRefs } from 'vue'
 import { Edit, Delete, Paperclip, Promotion, EditPen, Bell, Notebook, CirclePlus, Close, Coin, RefreshLeft, Back, ArrowDown, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessageBox } from 'element-plus'
 import { toast as ElMessage } from '@/utils/toast'
-import { chatDraft, sendDraft } from '@/utils/chatDraft'
+import { chatDraft, sendDraft, staffIssueDraft } from '@/utils/chatDraft'
 import ChatInput from '@/components/ChatInput.vue'
 import QuickPhrases from '@/components/QuickPhrases.vue'
 import IssueSheetMenu from './IssueSheetMenu.vue'
@@ -598,13 +598,18 @@ function toggleMention(id) {
 }
 const draft = chatDraft('project', props.order?.id)
 const { text: replyText, files: replyFiles, sending: replying } = toRefs(draft)
-const bugOpen = ref(false)
+const bugDraft = computed(() => staffIssueDraft(props.order?.id))
+const bugHasDraft = computed(() => !!(bugDraft.value.text || bugDraft.value.files.length || bugDraft.value.attachmentWaitList.length))
+const bugOpen = ref(bugHasDraft.value)
+watch([() => props.visible, bugDraft], ([visible]) => {
+  if (visible) bugOpen.value = bugHasDraft.value
+})
 // 点「记一条问题」：光标直接在输入框里
 const bugInput = ref(null)
 watch(bugOpen, (open) => { if (open && !isMobile.value) nextTick(() => bugInput.value?.focus?.()) })
-const bugText = ref('')
-const bugFiles = ref([])
-const bugSubmitting = ref(false)
+const bugSubmitting = computed(() => bugDraft.value.sending)
+const bugReady = computed(() => !bugSubmitting.value && !bugDraft.value.uploading && !bugDraft.value.attachmentWaitList.length &&
+  !!(bugDraft.value.text.trim() || bugDraft.value.files.length))
 const deletingBugId = ref(null)
 const statusUpdatingBugId = ref(null)
 const activeUpdateBugId = ref(null)
@@ -1099,22 +1104,20 @@ const bugRecipient = computed(() => {
   return owner?.name || memberMap[order.ownerId]?.name || order.ownerName || '负责人'
 })
 async function submitBug(needsAction = false) {
-  if (bugSubmitting.value || (!bugText.value.trim() && !bugFiles.value.length)) return
-  bugSubmitting.value = true
+  if (!bugReady.value) return
+  const draft = bugDraft.value
+  const projectId = props.order.id
   try {
     const recipient = bugRecipient.value
-    await createBug(props.order.id, bugText.value.trim(), [...bugFiles.value], needsAction)
-    bugText.value = ''
-    bugFiles.value = []
-    bugOpen.value = false
+    const saved = await sendDraft(draft, ({content, attachments}) => createBug(projectId, content, attachments, needsAction))
+    if (!saved || draft !== bugDraft.value) return
+    bugOpen.value = bugHasDraft.value
     if (issueState.value === 'resolved') issueState.value = 'all'
     processingBugs.value = false
     currentMinute.value = Math.floor(Date.now() / 60000)
     ElMessage.success(needsAction ? '已发给' + recipient + '处理' : '问题已记下')
   } catch (e) {
-    ElMessage.error(e.message || '创建失败')
-  } finally {
-    bugSubmitting.value = false
+    ElMessage.error(e.message || '问题未发送，草稿已保留')
   }
 }
 function toggleBugUpdate(bug) {

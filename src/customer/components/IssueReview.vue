@@ -1,6 +1,6 @@
 <template>
   <section class="issue-review" aria-label="本次修改">
-    <header :id="'issue-reply-'+review.id" :data-team-reply="review.id">
+    <header :id="'issue-reply-'+review.id" :data-team-reply="review.id" tabindex="-1">
       <h3>本次修改</h3><time v-if="review.time">{{ review.time }}</time>
     </header>
     <p v-if="review.content" class="review-note">{{ review.content }}</p>
@@ -22,14 +22,18 @@
       <button type="button" class="accept" :disabled="busy" @click="$emit('accept')">确认好了</button>
       <button type="button" :disabled="busy" @click="$emit('adjust')">还要调整</button>
     </div>
+    <div v-else-if="remainingCount != null" class="review-choices">
+      <button v-if="remainingCount" type="button" @click="$emit('next')">查看下一条待确认（剩 {{ remainingCount }} 条）</button>
+      <button v-else type="button" @click="$emit('back')">{{ backLabel }}</button>
+    </div>
   </section>
 </template>
 
 <script setup>
 import {computed, reactive, ref} from 'vue'
 import {openImage} from '@/utils/imagePreview'
-const props = defineProps({review:{type:Object,required:true}, pending:Boolean, adjusting:Boolean, busy:Boolean})
-defineEmits(['accept','adjust'])
+const props = defineProps({review:{type:Object,required:true}, pending:Boolean, adjusting:Boolean, busy:Boolean, remainingCount:Number, backLabel:String})
+defineEmits(['accept','adjust','next','back'])
 const selected = ref('after')
 const failed = reactive({})
 const pictures = computed(() => [

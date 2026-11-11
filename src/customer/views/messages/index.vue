@@ -23,13 +23,23 @@
 
 <script setup>
 import { fmtTime } from '@/utils/time'
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
+import { onBeforeRouteLeave, useRoute } from 'vue-router'
 import { ArrowRight, ChatDotRound, Document } from '@element-plus/icons-vue'
 import { useCustomerOrders } from '@/customer/utils/useCustomerOrders'
 import { hasNewReply } from '@/customer/utils/seen'
 import { issueRoute, reviewRoute, replyText, replyTime } from '@/customer/utils/requirementReplies'
 
 const { orders, loading, refreshing, error, load } = useCustomerOrders()
+const route = useRoute()
+const account = localStorage.getItem('customerAccount')
+const saved = history.state?.customerInbox
+let restoreTop = account && saved?.account === account ? saved.top : null
+
+onBeforeRouteLeave(to => {
+  if (!account || !to.params.id || history.state?.current !== route.fullPath) return
+  history.replaceState({...history.state, customerInbox:{account, top:window.scrollY}}, '')
+})
 const entries = computed(() => {
   const rows = []
   for (const project of orders.value) {
@@ -70,6 +80,13 @@ const entries = computed(() => {
     return reviewA ? byTime : Number(!!b.unread) - Number(!!a.unread) || byTime
   })
 })
+
+// Project details remount the portal. Wait until the rows have height before restoring the viewport.
+watch([loading, entries], () => {
+  if (restoreTop == null || loading.value || !entries.value.length) return
+  window.scrollTo(0, restoreTop)
+  restoreTop = null
+}, {flush:'post'})
 </script>
 
 <style scoped>

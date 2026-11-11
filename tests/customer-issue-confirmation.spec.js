@@ -121,3 +121,68 @@ test('旧回合链接不决定新回合，只有文字也能确认',async({page}
   await review.getByRole('button',{name:'确认好了'}).click()
   await expect.poll(()=>decisions.length).toBe(1)
 })
+
+test('客户逐条查看同项目待确认的修改，打开下一条只切换到对应回合', async ({page}) => {
+  const {bug,project} = await setup(page)
+  const nextBug = (id, reviewId, time, state = 'pending') => ({
+    ...bug, id, content:'需求 '+id, updates:[],
+    review:{...bug.review, id:reviewId, time, state, content:'修改说明 '+reviewId}
+  })
+  project.bugs.push(
+    nextBug(23, 75, '2026-11-09 10:00'),
+    nextBug(24, 78, '2026-11-09 11:00'),
+    nextBug(25, 79, '2026-11-09 12:00', 'cancelled')
+  )
+  await page.route('**/jiedan/portal/orders', r => ok(r, [{...project,
+    requirements:project.bugs.filter(item => item.review.state === 'pending').map(item => ({
+      id:item.id, title:item.content, status:item.status, reviewId:item.review.id, reviewTime:item.review.time
+    }))
+  }, {
+    ...order, id:2, requirements:[{id:88, title:'另一项目的修改', status:'confirm', reviewId:90}]
+  }]))
+  const accepted = []
+  await page.route('**/jiedan/portal/bug/*/review/*', r => {
+    const parts = new URL(r.request().url()).pathname.split('/')
+    const issueId = Number(parts.at(-3))
+    const reviewId = Number(parts.at(-1))
+    const target = project.bugs.find(item => item.id === issueId)
+    expect(r.request().postDataJSON().decision).toBe('accept')
+    expect(target.review).toMatchObject({id:reviewId, state:'pending'})
+    target.status = target.progressStatus = 'resolved'
+    target.review.state = 'accepted'
+    accepted.push([issueId, reviewId])
+    project.version++
+    return ok(r, project)
+  })
+  await page.goto('/#/customer/messages')
+  await page.getByRole('link').filter({hasText:'修改按钮'}).click()
+  const review = page.getByRole('region', {name:'本次修改'})
+  const confirm = review.getByRole('button', {name:'确认好了'})
+  const next = review.getByRole('button', {name:/查看下一条待确认/})
+  await expect(next).toHaveCount(0)
+  await confirm.click()
+  await expect(next).toHaveText('查看下一条待确认（剩 2 条）')
+  expect(accepted).toEqual([[22, 74]])
+
+  await next.click()
+  await expect(page).toHaveURL(/issue=24&review=78$/)
+  await expect(review).toContainText('修改说明 78')
+  await expect(review.locator('header')).toBeFocused()
+  await expect(next).toHaveCount(0)
+  expect(accepted).toEqual([[22, 74]])
+
+  await confirm.click()
+  await expect(next).toHaveText('查看下一条待确认（剩 1 条）')
+  await next.click()
+  await expect(page).toHaveURL(/issue=23&review=75$/)
+  await expect(review).toContainText('修改说明 75')
+  expect(accepted).toEqual([[22, 74], [24, 78]])
+  await confirm.click()
+  await expect(page.getByText('已确认，本项目暂无其他待确认需求', {exact:true})).toBeVisible()
+  await expect(next).toHaveCount(0)
+  await expect(confirm).toHaveCount(0)
+  await expect(page).toHaveURL(/issue=23&review=75$/)
+  expect(accepted).toEqual([[22, 74], [24, 78], [23, 75]])
+  await review.getByRole('button', {name:'返回消息列表'}).click()
+  await expect(page).toHaveURL(/#\/customer\/messages$/)
+})

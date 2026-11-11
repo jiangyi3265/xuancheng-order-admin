@@ -1,7 +1,7 @@
 <template>
   <div class="detail-page">
     <header class="topbar">
-      <button type="button" class="back" aria-label="返回列表" @click="backToProjects"><el-icon :size="20"><ArrowLeft /></el-icon></button>
+      <button type="button" class="back" :aria-label="listBackLabel()" @click="backToProjects"><el-icon :size="20"><ArrowLeft /></el-icon></button>
       <div class="tt">
         <strong>{{ order?.title || '项目详情' }}</strong>
         <span v-if="order">{{ detailTab === 'bugs' ? order.orderNo : (subtitle) }}</span>
@@ -35,7 +35,7 @@
         <strong>项目暂时没有打开</strong>
         <span>{{ loadError }}</span>
         <div>
-          <el-button :icon="ArrowLeft" @click="router.push('/projects')">返回项目</el-button>
+          <el-button :icon="ArrowLeft" @click="backToProjects">{{ listOriginPath() === '/customer/messages' ? '返回消息列表' : '返回项目' }}</el-button>
           <el-button type="primary" :icon="Refresh" @click="load(true)">重新加载</el-button>
         </div>
       </div>
@@ -75,7 +75,9 @@
                   <IssueReview v-else-if="issueId && bug.review" :key="bug.review.id" :review="bug.review"
                     :pending="isPendingReview(bug) && !projectClosed" :adjusting="reviewAdjusting"
                     :busy="!!statusUpdatingBugId || !!updateDraft?.sending || !!updateDraft?.annotating"
-                    @accept="acceptReview(bug)" @adjust="startAdjustment(bug)" />
+                    :remaining-count="!projectClosed && isBugResolved(bug) && bug.review.state === 'accepted' ? pendingReviews.length : undefined"
+                    :back-label="listBackLabel()" @accept="acceptReview(bug)" @adjust="startAdjustment(bug)"
+                    @next="viewLatest(pendingReviews[0])" @back="backToProjects" />
                   <div class="bug-body" :class="{'split-record': issueId && historyFor(bug).length}">
                     <div class="issue-original">
                     <div class="issue-heading"><strong><el-icon aria-hidden="true"><Document /></el-icon>需求 #{{ bug.id }}</strong><RequirementStatus :status="bug.progressStatus || bug.status" /></div>
@@ -224,9 +226,15 @@ const detailTabs=[{key:'overview',label:'项目概况'},{key:'chat',label:'沟�
 const router = useRouter()
 const id = route.params.id
 const order = ref(null)
+function listOriginPath() {
+  return history.state?.back?.split(/[?#]/, 1)[0]
+}
+function listBackLabel() {
+  return listOriginPath() === '/customer/messages' ? '返回消息列表' : '返回列表'
+}
 function backToProjects() {
-  if (history.state?.back === '/projects') router.back()
-  else router.push('/projects')
+  if (['/projects', '/customer/messages'].includes(listOriginPath())) return router.back()
+  return router.push('/projects')
 }
 function showProjectIssues() {
   if (route.params.id !== id) return
@@ -288,6 +296,9 @@ const staleReviewLink = computed(() => !!linkedReview.value && !!focusedBug.valu
 function isPendingReview(bug) {
   return bug?.review?.state === 'pending' && (bug.progressStatus || bug.status) === 'confirm'
 }
+const pendingReviews = computed(() => bugItems.value.filter(isPendingReview).sort((a, b) =>
+  String(b.review.time || '').localeCompare(String(a.review.time || '')) || b.review.id - a.review.id
+))
 watch(() => [issueId.value, focusedBug.value?.review?.id, route.query.review], () => {
   const bug = focusedBug.value
   if (isPendingReview(bug) && !linkedReview.value) {
@@ -298,9 +309,16 @@ function historyFor(bug) {
   const updates = bug.updates || []
   return issueId.value && bug.review ? updates.filter(u => String(u.id) !== String(bug.review.id)) : updates
 }
+function navigateToIssue(query) {
+  const target = {path:route.path, query}
+  return issueId.value || listOriginPath() === '/customer/messages' ? router.replace(target) : router.push(target)
+}
 async function viewLatest(bug) {
-  await router[issueId.value ? 'replace' : 'push']({path:route.path, query:{tab:'bugs', issue:String(bug.id), review:bug.review?.id}})
+  if (!bug) return
+  await navigateToIssue({tab:'bugs', issue:String(bug.id), review:bug.review?.id})
+  await nextTick()
   scroller.value?.scrollTo({top:0})
+  if (bug.review) document.getElementById('issue-reply-' + bug.review.id)?.focus({preventScroll:true})
 }
 async function openOrdinaryComposer() {
   await router.replace({path:route.path,query:{...route.query, adjust:undefined, compose:'1'}})
@@ -494,11 +512,10 @@ async function changeBugStatus(bug, status) {
 }
 
 async function startAdjustment(bug) {
-  const method = issueId.value ? 'replace' : 'push'
   const query = {tab:'bugs', issue:String(bug.id)}
   if (isPendingReview(bug)) Object.assign(query,{review:String(bug.review.id), adjust:'review'})
   else if (isBugResolved(bug)) query.adjust='1'
-  await router[method]({path:route.path, query})
+  await navigateToIssue(query)
   await nextTick()
   issueComposer.value?.focus()
 }
@@ -521,7 +538,7 @@ async function acceptReview(bug) {
     const vo = await decideIssueReview(bug.id, reviewId, 'accept')
     applySnapshot(vo)
     publishDecision(bug.id, reviewId, 'resolved', owner)
-    ElMessage.success('已确认，这条需求已解决')
+    ElMessage.success(pendingReviews.value.length ? '已确认，这条需求已解决' : '已确认，本项目暂无其他待确认需求')
   } catch (e) {
     ElMessage.error(e.message || '确认失败，请重试')
     await load(false, true)

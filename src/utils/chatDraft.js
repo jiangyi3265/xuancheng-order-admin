@@ -1,5 +1,5 @@
 import { effectScope, reactive, watch } from 'vue'
-import { token, customerToken } from '@/mock/store'
+import { token, customerToken, me } from '@/mock/store'
 
 const expiredDrafts = new WeakSet()
 
@@ -99,8 +99,8 @@ function draftStore(session, tokenKey) {
     return ready
   }
 
-  function get(kind, id, participant, schema = messageDraft) {
-    const key = prefix + JSON.stringify([kind, String(id), String(participant)])
+  function get(kind, id, participant, schema = messageDraft, persistentKey) {
+    const key = persistentKey || prefix + JSON.stringify([kind, String(id), String(participant)])
     if (rooms.has(key)) return rooms.get(key).draft
     const draft = reactive(schema.empty())
     if (!id) return draft
@@ -109,22 +109,23 @@ function draftStore(session, tokenKey) {
       return draft
     }
     rooms.set(key, {draft, schema})
-    if (!persisted) return draft
+    if (!persistentKey && !persisted) return draft
+    const storage = () => persistentKey ? window.localStorage : window.sessionStorage
     try {
-      const saved = JSON.parse(sessionStorage.getItem(key))
+      const saved = JSON.parse(storage().getItem(key))
       if (saved && typeof saved === 'object') Object.assign(draft, schema.snapshot(saved))
     } catch { /* Ignore an invalid or unreadable draft. */ }
     // The watcher also survives the originating panel closing during delivery.
     effects.run(() => watch(() => schema.snapshot(draft), saved => {
       try {
         if (schema.hasContent(saved)) {
-          sessionStorage.setItem(key, JSON.stringify(saved))
+          storage().setItem(key, JSON.stringify(saved))
         } else {
-          sessionStorage.removeItem(key)
+          storage().removeItem(key)
         }
       } catch {
         // A full store must not resurrect an older draft on refresh.
-        try { sessionStorage.removeItem(key) } catch { /* Memory remains available. */ }
+        try { storage().removeItem(key) } catch { /* Memory remains available. */ }
       }
     }, { deep: true, flush: 'sync' }))
     return draft
@@ -140,6 +141,12 @@ export function prepareChatDraftSession() {
 }
 export function customerIntakeDraft(projectId = 'new') {
   return customers.get('intake', projectId, '', intakeDraft)
+}
+// A member can return to an unfinished issue after closing the browser or signing in again.
+export function staffIssueDraft(projectId) {
+  const memberId = me.value?.id
+  const key = memberId && projectId ? `xc.issueDraft.v1.${memberId}.${projectId}` : undefined
+  return staff.get('staff-issue', projectId, '', messageDraft, key)
 }
 export function clearCustomerIntakeDraft(draft) {
   Object.assign(draft, intakeDraft.empty())

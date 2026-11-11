@@ -45,3 +45,86 @@ test('一键处理传入当前问题和项目版本，重复点击只提交一�
   await expect(notice).toHaveCount(0)
   expect(submitted).toEqual([{kind:'bug',bugId:91,version:1}])
 })
+
+test('稍后处理 30 分钟使用第一次点选的时间，刷新后准时重新显示且仍可直接处理', async ({ page }) => {
+  await prepare(page, 'employee', [{ id: 91, content: '核对交付截图' }])
+  await page.clock.install({ time: new Date('2026-11-10T10:00:00Z') })
+  await page.goto('/#/workbench')
+  const notice = page.getByRole('region', { name: '需要我处理的问题' })
+  await notice.getByRole('button', { name: /稍后处理.*30 分钟/ }).click()
+  await expect(page.getByText('已稍后处理，30 分钟后提醒', { exact: true })).toBeVisible()
+  await page.clock.fastForward(20 * 60 * 1000)
+  await page.reload()
+  await expect(page.locator('.pending-bell')).toBeVisible()
+  await expect(notice).toHaveCount(0)
+  await page.clock.fastForward(9 * 60 * 1000)
+  await expect(notice).toHaveCount(0)
+  await page.clock.fastForward(60 * 1000)
+  await expect(notice).toContainText('核对交付截图')
+  await expect(notice.getByRole('button', { name: '标为已处理' })).toBeEnabled()
+})
+
+test('已由他人处理的问题到期后不重新弹出，重新激活后可再次提醒', async ({ page }) => {
+  const project = await prepare(page, 'employee', [{ id: 91, content: '检查再次提交' }])
+  await page.clock.install({ time: new Date('2026-11-10T10:00:00Z') })
+  await page.goto('/#/workbench')
+  const notice = page.getByRole('region', { name: '需要我处理的问题' })
+  await notice.getByRole('button', { name: /稍后处理/ }).click()
+  let resolved = true
+  let checked = 0
+  await page.route('**/jiedan/order/list', route => {
+    checked++
+    const data = resolved
+      ? [{ ...project, version: 2, actionBugCount: 0, actionBugPreviews: [] }]
+      : [{ ...project, version: 3 }]
+    return route.fulfill({ json: { code: 200, data } })
+  })
+  await page.clock.fastForward(30 * 60 * 1000)
+  await expect.poll(() => checked).toBeGreaterThan(0)
+  await expect.poll(() => page.evaluate(() => localStorage.getItem('xc:issue-notices:2'))).toBe('{}')
+  await expect(notice).toHaveCount(0)
+  resolved = false
+  await page.route('**/jiedan/order/stamp', route => route.fulfill({ json: { code: 200, data: { stamp: '3' } } }))
+  await page.clock.fastForward(10_000)
+  await expect(notice).toContainText('检查再次提交')
+})
+
+test('同一浏览器换账号后不会继承其他负责人的稍后时间', async ({ page }) => {
+  await prepare(page, 'employee', [{ id: 91, content: '已分配的问题' }])
+  await page.goto('/#/workbench')
+  const notice = page.getByRole('region', { name: '需要我处理的问题' })
+  await notice.getByRole('button', { name: /稍后处理/ }).click()
+  await page.reload()
+  await expect(page.locator('.pending-bell')).toBeVisible()
+  await expect(notice).toHaveCount(0)
+  await page.route('**/jiedan/staff/me', r => r.fulfill({ json: {
+    code: 200, data: { id: 1, userName: 'boss', nickName: '管理员', role: 'boss', status: '0' }
+  } }))
+  await page.route('**/jiedan/order/list', r => r.fulfill({ json: { code: 200, data: [
+    { ...order, ownerId: 1, actionBugCount: 1, actionBugPreviews: [{ id: 91, content: '转交给新负责人' }] }
+  ] } }))
+  await page.reload()
+  await expect(notice).toContainText('转交给新负责人')
+})
+
+test('到期离线时保留稍后记录，恢复连接后重新核对负责人再提醒', async ({ page }) => {
+  const project = await prepare(page, 'employee', [{ id: 91, content: '待联网确认' }])
+  await page.clock.install({ time: new Date('2026-11-10T10:00:00Z') })
+  await page.goto('/#/workbench')
+  const notice = page.getByRole('region', { name: '需要我处理的问题' })
+  await notice.getByRole('button', { name: /稍后处理/ }).click()
+  let connected = false
+  let checks = 0
+  await page.route('**/jiedan/order/list', route => {
+    checks++
+    return connected
+      ? route.fulfill({ json: { code: 200, data: [project] } })
+      : route.fulfill({ status: 503, json: { code: 503, msg: '连接暂不可用' } })
+  })
+  await page.clock.fastForward(30 * 60 * 1000)
+  await expect.poll(() => checks).toBeGreaterThan(0)
+  await expect(notice).toHaveCount(0)
+  connected = true
+  await page.clock.fastForward(31_000)
+  await expect(notice).toContainText('待联网确认')
+})

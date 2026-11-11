@@ -3,7 +3,7 @@ const {randomUUID} = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 
-test('单条需求从团队请确认，到客户对照图片、退回，再确认完成', async ({request,browser,baseURL}) => {
+test('客户对照图片、退回调整，再连续确认同项目两条修改', async ({request,browser,baseURL}) => {
   const apiBase = process.env.E2E_BASE
   if (!apiBase || new URL(apiBase).hostname !== '127.0.0.1' || !/^xc_e2e_\d+$/.test(process.env.E2E_DB)) {
     throw new Error('此流程仅用于本地隔离测试库')
@@ -103,11 +103,27 @@ test('单条需求从团队请确认，到客户对照图片、退回，再确�
     await expect(card.locator('.bug-disclosure')).toHaveAttribute('aria-expanded','true')
     const second=await requestReview('字号已调大')
     expect(second.id).not.toBe(first.id)
+    const otherSubject='更新联系页电话'
+    const otherIssue=(await api('/jiedan/order/intake',clientToken,{
+      orderId:project.id,requirement:otherSubject,attachments:[],submissionKey:randomUUID()
+    })).data.bugId
+    const otherNote='联系页电话号码已更正'
+    const requested=(await api('/jiedan/order/bug/'+otherIssue+'/review',staffToken,{
+      content:otherNote,requestKey:randomUUID()
+    })).data
+    const otherReviewId=requested.bugs.find(b=>b.id===otherIssue).review.id
+    async function customerIssues() {
+      return (await api('/jiedan/portal/orders/'+project.id,clientToken)).data.bugs
+    }
+    const pending=await customerIssues()
+    for (const [id, reviewId] of [[issue,second.id],[otherIssue,otherReviewId]]) {
+      expect(pending.find(b=>b.id===id)).toMatchObject({progressStatus:'confirm',review:{id:reviewId,state:'pending'}})
+    }
     await customer.setViewportSize({width:1440,height:850})
     await customer.reload()
     const inbox=customer.locator('.review-inbox')
-    await expect(inbox).toContainText('等我确认')
-    await inbox.getByRole('link').first().click()
+    await inbox.locator('summary').filter({hasText:'等我确认（2）'}).click()
+    await inbox.getByRole('link').filter({hasText:subject}).click()
     await expect(customer).toHaveURL(new RegExp('review='+second.id+'(?:&|$)'))
     await expect(panel).toBeVisible()
     for (const label of ['改前','改后']) {
@@ -115,8 +131,20 @@ test('单条需求从团队请确认，到客户对照图片、退回，再确�
     }
     await panel.getByRole('button',{name:'确认好了',exact:true}).click()
     await expect.poll(async()=>(await getBug()).status).toBe('resolved')
-    await customer.goto('/#/projects')
+    await panel.getByRole('button',{name:'查看下一条待确认（剩 1 条）'}).click()
+    await expect(customer).toHaveURL(new RegExp('issue='+otherIssue+'&review='+otherReviewId+'$'))
+    await expect(panel).toContainText(otherNote)
+    expect((await customerIssues()).find(b=>b.id===otherIssue)).toMatchObject({progressStatus:'confirm',review:{state:'pending'}})
+    await panel.getByRole('button',{name:'确认好了',exact:true}).click()
+    await expect(panel.getByRole('button',{name:/查看下一条/})).toHaveCount(0)
+    await panel.getByRole('button',{name:'返回列表',exact:true}).click()
+    await expect(customer).toHaveURL(/#\/projects$/)
     await expect(customer.locator('.request-row').filter({hasText:subject})).toContainText('已解决')
+    await expect(customer.locator('.request-row').filter({hasText:otherSubject})).toContainText('已解决')
     await expect(inbox).toHaveCount(0)
+    const resolved=await customerIssues()
+    for (const id of [issue,otherIssue]) {
+      expect(resolved.find(b=>b.id===id)).toMatchObject({progressStatus:'resolved',review:{state:'accepted'}})
+    }
   } finally { await Promise.all(contexts.map(context=>context.close())) }
 })

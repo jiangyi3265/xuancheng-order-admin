@@ -3,7 +3,7 @@
     <section v-if="item" class="issue-inbox-notice" role="region" aria-label="需要我处理的问题">
       <div class="notice-top">
         <strong aria-live="polite">需要我处理 <small v-if="unseen.length > 1">{{ unseen.length }} 条</small></strong>
-        <button type="button" class="later" @click="dismiss(item)">稍后处理</button>
+        <button type="button" class="later" title="30 分钟后再提醒" @click="snooze(item)">稍后处理 · 30 分钟</button>
       </div>
       <div class="notice-project">{{ item.title }} · 问题 #{{ item.bugId }}</div>
       <p>{{ item.text }}</p>
@@ -26,40 +26,104 @@ import { toast } from '@/utils/toast'
 const route = useRoute()
 const router = useRouter()
 const busy = ref(false)
-const dismissed = ref([])
+const SNOOZE_MS = 30 * 60 * 1000
+const notices = ref({})
 const storageKey = computed(() => me.value?.id ? 'xc:issue-notices:' + me.value.id : '')
-const mine = computed(() => pendingItems(orders).filter(row =>
-  row.kind === 'bug' && row.bugId && String(row.recipientId) === String(me.value?.id)))
-const unseen = computed(() => mine.value.filter(row => !dismissed.value.includes(row.key)))
+const mine = computed(() => !storageKey.value || !ordersReady.value ? [] : pendingItems(orders).filter(row =>
+  row.kind === 'bug' && row.bugId && String(row.recipientId) === String(me.value.id)))
+const unseen = computed(() => mine.value.filter(row => !notices.value[row.key]))
 const item = computed(() => unseen.value.find(row => !(route.query.tab === 'bugs' &&
   String(route.query.id) === String(row.id) && String(route.query.bug) === String(row.bugId))))
 
-function loadDismissed() {
+let timer
+let checking = false
+let disposed = false
+
+function readNotices() {
+  if (!storageKey.value) return {}
   try {
-    const value = JSON.parse(localStorage.getItem(storageKey.value) || '[]')
-    dismissed.value = Array.isArray(value) ? value : []
-  } catch { dismissed.value = [] }
+    const value = JSON.parse(localStorage.getItem(storageKey.value) || '{}')
+    // The previous version only stored hidden keys. Give pending items a fresh reminder.
+    if (Array.isArray(value)) {
+      const until = Date.now() + SNOOZE_MS
+      const migrated = Object.fromEntries(value.map(key => [key, until]))
+      localStorage.setItem(storageKey.value, JSON.stringify(migrated))
+      return migrated
+    }
+    return Object.fromEntries(Object.entries(value || {}).filter(([, state]) =>
+      state === 'viewed' || Number.isFinite(state)))
+  } catch { return notices.value }
 }
-function remember(keys) {
-  dismissed.value = keys
-  try { localStorage.setItem(storageKey.value, JSON.stringify(keys)) } catch { /* 当前页面仍可稍后处理 */ }
+
+function changeNotices(edit) {
+  if (!storageKey.value) return
+  const next = { ...readNotices() }
+  edit(next)
+  notices.value = next
+  try { localStorage.setItem(storageKey.value, JSON.stringify(next)) } catch { /* Still available in this tab. */ }
 }
-watch(storageKey, loadDismissed, { immediate: true })
+
+function scheduleReminder() {
+  clearTimeout(timer)
+  if (disposed || !storageKey.value || !ordersReady.value || checking || document.hidden) return
+  const deadlines = Object.values(notices.value).filter(Number.isFinite)
+  if (deadlines.length) timer = setTimeout(recheckDue, Math.max(0, Math.min(...deadlines) - Date.now()))
+}
+
+async function recheckDue() {
+  if (disposed || checking || document.hidden) return
+  const account = storageKey.value
+  const due = Object.entries(notices.value).filter(([, time]) => Number.isFinite(time) && time <= Date.now())
+  if (!due.length) return scheduleReminder()
+  checking = true
+  let failed = false
+  try {
+    // A colleague may have finished the issue or reassigned the project while this tab slept.
+    await syncOrders(true)
+    if (!disposed && account === storageKey.value) changeNotices(next => {
+      for (const [key, time] of due) if (next[key] === time) delete next[key]
+    })
+  } catch { failed = true } finally {
+    checking = false
+    if (!disposed && failed && account === storageKey.value && !document.hidden) timer = setTimeout(recheckDue, 30_000)
+    else scheduleReminder()
+  }
+}
+
+watch(storageKey, () => {
+  notices.value = {}
+  notices.value = readNotices()
+}, { immediate: true })
 watch([mine, ordersReady], ([rows, ready]) => {
   if (!storageKey.value || !ready) return
   const pending = new Set(rows.map(row => row.key))
-  const keep = dismissed.value.filter(key => pending.has(key))
-  if (keep.length !== dismissed.value.length) remember(keep)
+  const removed = Object.keys(notices.value).filter(key => !pending.has(key))
+  if (removed.length) changeNotices(next => { for (const key of removed) delete next[key] })
 })
-function onStorage(event) { if (event.key === storageKey.value) loadDismissed() }
-onMounted(() => window.addEventListener('storage', onStorage))
-onBeforeUnmount(() => window.removeEventListener('storage', onStorage))
-function dismiss(row) {
-  if (!dismissed.value.includes(row.key)) remember([...dismissed.value, row.key])
+watch([notices, ordersReady], scheduleReminder, { immediate: true })
+function onStorage(event) {
+  if (event.key === storageKey.value || event.key === null) notices.value = readNotices()
+}
+onMounted(() => {
+  window.addEventListener('storage', onStorage)
+  document.addEventListener('visibilitychange', scheduleReminder)
+  window.addEventListener('pageshow', scheduleReminder)
+})
+onBeforeUnmount(() => {
+  disposed = true
+  clearTimeout(timer)
+  window.removeEventListener('storage', onStorage)
+  document.removeEventListener('visibilitychange', scheduleReminder)
+  window.removeEventListener('pageshow', scheduleReminder)
+})
+function snooze(row) {
+  changeNotices(next => { next[row.key] = Date.now() + SNOOZE_MS })
+  toast.success('已稍后处理，30 分钟后提醒')
 }
 async function openIssue(row) {
+  const account = storageKey.value
   await router.push(pendingDestination(row))
-  dismiss(row)
+  if (storageKey.value === account) changeNotices(next => { next[row.key] = 'viewed' })
 }
 async function finish(row) {
   if (busy.value || !mine.value.some(entry => entry.key === row.key)) return
