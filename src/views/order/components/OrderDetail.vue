@@ -317,6 +317,13 @@
                         @click="resolveCurrentIssue(bug, $event)">
                         {{ actionableBugs.length > 1 ? '解决并继续' : '解决最后一条' }}
                       </el-button>
+                      <div v-else-if="bug.status==='ai_review'" class="issue-awaiting">
+                        待内部验收
+                        <template v-if="isBoss">
+                          <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'resolved')">验收通过 · 已解决</el-button>
+                          <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'action')">退回修改</el-button>
+                        </template>
+                      </div>
                       <span v-else-if="bug.status==='confirm'" class="issue-awaiting">等客户确认</span>
                       <el-radio-group v-else
                         :key="statusUpdatingBugId === bug.id"
@@ -330,7 +337,7 @@
                         <el-radio-button v-if="!isBugResolved(bug)" value="action" :disabled="['done','cancelled'].includes(order.status)">需处理</el-radio-button>
                         <el-radio-button value="resolved">已解决</el-radio-button>
                       </el-radio-group>
-                      <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && bug.status!=='confirm'"
+                      <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && !['confirm','ai_review'].includes(bug.status)"
                         type="primary" plain size="small" :disabled="!!statusUpdatingBugId || !!deletingBugId" @click="reviewBugId=bug.id">请客户确认</el-button>
                       <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
                         {{ activeUpdateBugId === bug.id ? '收起' : '补充说明' }}
@@ -724,10 +731,10 @@ const processingBugs = ref(false)
 const processingBugId = ref(null)
 const bugNavigator = ref(null)
 const bugExpansion = ref(new Map())
-const bugStatusLabels = { open: '未标记', action: '需处理', confirm:'等客户确认', resolved: '已解决' }
+const bugStatusLabels = { open: '未标记', action: '需处理', confirm:'等客户确认', ai_review:'待内部验收', resolved: '已解决' }
 const bugDetailsId = bug => `issue-details-${props.order.id}-${bug.id}`
 function isBugExpanded(bug) {
-  return bugExpansion.value.get(String(bug.id)) ?? (bugStatus(bug) === 'action')
+  return bugExpansion.value.get(String(bug.id)) ?? (['action','ai_review'].includes(bugStatus(bug)))
 }
 function toggleBugExpanded(bug) {
   const expanded = !isBugExpanded(bug)
@@ -827,7 +834,7 @@ watch([drawerReady, () => props.visible, () => props.loading, () => props.order?
 }, { flush: 'post' })
 
 function bugStatus(bug) {
-  return ['resolved', 'action', 'confirm'].includes(bug?.status) ? bug.status : 'open'
+  return ['resolved', 'action', 'confirm','ai_review'].includes(bug?.status) ? bug.status : 'open'
 }
 
 function isBugResolved(bug) {

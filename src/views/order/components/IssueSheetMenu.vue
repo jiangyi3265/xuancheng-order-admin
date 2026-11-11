@@ -35,6 +35,17 @@
           <a class="sheet-preview" :href="freshUrl" target="_blank" rel="noopener noreferrer">打开预览，查看问题和图片</a>
         </div>
         <p v-else-if="info?.state === 'active'" class="sheet-note">链接仅在生成时显示。若遗失，可重新生成。</p>
+        <section v-if="isBoss && info?.state === 'active'" class="reply-access">
+          <strong>Codex 回复权限</strong>
+          <p>仅用于这个项目。每条回复须写明修改内容和测试结果，提交后等你验收。</p>
+          <label>同步查看回复 <el-select v-model="readerId" clearable placeholder="仅项目负责人和管理员">
+            <el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id"/>
+          </el-select></label>
+          <el-button size="small" :disabled="saving || verifying" @click="manageKey(true)">{{ info.replyRevision ? '更换回复凭据' : '开启回复权限' }}</el-button>
+          <el-button v-if="info.replyRevision" size="small" :disabled="saving || verifying" @click="manageKey(false)">关闭回复权限</el-button>
+          <el-button v-if="secret" size="small" type="primary" @click="copyInstructions">复制 Codex 回复说明</el-button>
+          <p v-if="secret">请在关闭前复制，回复凭据只显示一次。</p>
+        </section>
       </div>
       <template #footer>
         <div class="sheet-footer">
@@ -57,7 +68,8 @@ import { ElMessageBox } from 'element-plus'
 import { copyText } from '@/utils/customerNudge'
 import { toast } from '@/utils/toast'
 import { issueSheet, sheetIssues } from '@/utils/issueSheet'
-import { adminHttp } from '@/mock/store'
+import { MEMBERS } from '@/constants/options'
+import { adminHttp, isBoss } from '@/mock/store'
 
 const props = defineProps({ project: { type: Object, required: true } })
 const count = computed(() => sheetIssues(props.project.bugs).length)
@@ -67,6 +79,8 @@ const saving = ref(false)
 const loading = ref(false)
 const verifying = ref(false)
 const freshUrl = ref('')
+const readerId = ref(null)
+const secret = ref('')
 const error = ref('')
 const info = ref(null)
 let generation = 0
@@ -105,6 +119,7 @@ async function copyLink() {
 }
 
 function clearUnverified(e) {
+  secret.value = ''
   info.value = null
   freshUrl.value = ''
   error.value = e.message
@@ -114,7 +129,8 @@ function acceptStatus(data) {
   if (!data || !Object.prototype.hasOwnProperty.call(stateText, data.state) ||
       (data.state === 'active' && !data.revision)) throw new Error('暂时无法读取链接状态')
   if (info.value?.revision !== data.revision || data.state !== 'active') freshUrl.value = ''
-  info.value = { state: data.state, revision: data.revision, expiresAt: data.expiresAt, lastReadAt: data.lastReadAt }
+  if (info.value?.replyRevision !== data.replyRevision || data.state !== 'active') secret.value = ''
+  info.value = { replyRevision:data.replyRevision, state: data.state, revision: data.revision, expiresAt: data.expiresAt, lastReadAt: data.lastReadAt }
 }
 
 async function refresh() {
@@ -155,7 +171,43 @@ async function change(action) {
   }
 }
 
+async function manageKey(enable) {
+  if (saving.value || verifying.value || !open.value) return
+  const ticket = ++generation
+  saving.value = true
+  loading.value = false
+  try {
+    if (info.value?.replyRevision) {
+      try { await ElMessageBox.confirm('操作后原回复凭据立即失效。', enable ? '更换回复凭据' : '关闭回复权限') }
+      catch { return }
+    }
+    if (ticket !== generation) return
+    const result = await adminHttp('/jiedan/agent/orders/' + props.project.id + '/reply-key/' + (enable ? 'enable' : 'disable') + (enable && readerId.value ? '?readerId='+encodeURIComponent(readerId.value) : ''), {method:'POST'})
+    if (ticket !== generation) return
+    secret.value = ''
+    const data = await getStatus()
+    if (ticket !== generation) return
+    acceptStatus(data)
+    secret.value = data.state === 'active' && result.replyRevision === data.replyRevision ? result.secret || '' : ''
+    error.value = ''
+  } catch (e) {
+    if (ticket === generation) clearUnverified(e)
+  } finally { if (ticket === generation) saving.value = false }
+}
+function copyInstructions() {
+  if (!secret.value) return
+  const origin = location.origin
+  const source = freshUrl.value || '使用我提供的本项目只读清单'
+  copyText([source, '逐条完成实际修改和测试后，用对应需求编号提交一次结果。',
+    'POST ' + origin + '/jiedan/agent/issue-reports/{需求编号}',
+    '请求头 Content-Type: application/json',
+    '请求头 X-Codex-Reply-Key: ' + secret.value,
+    'JSON 正文 {"requestId":"每次报告使用新UUID，重试沿用","changes":"实际修改内容","tests":"实际测试方法和结果"}',
+    '成功以响应 JSON 的 code=200 为准。不要把回复凭据写入代码、提交记录或回复正文。'].join('\n'), '回复说明已复制')
+}
 function reset() {
+  readerId.value = MEMBERS.find(m=>m.name==='费鹏飞')?.id || null
+  secret.value = ''
   generation++
   clearInterval(poll)
   freshUrl.value = ''

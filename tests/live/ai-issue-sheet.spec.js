@@ -166,6 +166,63 @@ test('真实客户提交、负责人复制和管理链接、匿名 curl 与浏�
     expect(all).toContain('已完成的旧问题')
     expect(all).toContain('等待客户确认这项修改')
 
+    const reviewerName='observe'+suffix
+    await api('/jiedan/staff',boss,{userName:reviewerName,nickName:'费鹏飞',password})
+    const reviewer=(await api('/login','',{username:reviewerName,password})).token
+    const manager = await browser.newContext({baseURL,permissions:['clipboard-read','clipboard-write']})
+    try {
+      await manager.addInitScript(t=>localStorage.setItem('token',t),boss)
+      const adminPage = await manager.newPage()
+      await adminPage.goto('/#/order?id='+project.id+'&tab=bugs')
+      await adminPage.getByRole('button',{name:'AI 任务单选项'}).click()
+      await adminPage.getByText('AI 链接',{exact:true}).click()
+      const dialog = adminPage.getByRole('dialog',{name:'AI 链接',exact:true})
+      await dialog.getByRole('button',{name:'开启回复权限'}).click()
+      await dialog.getByRole('button',{name:'复制 Codex 回复说明'}).click()
+      const instructions = await adminPage.evaluate(()=>navigator.clipboard.readText())
+      const key = instructions.match(/X-Codex-Reply-Key: ([A-Za-z0-9_-]{43})/)[1]
+      const report = {changes:'修好了图片预览',tests:'手机和电脑均能打开原图',requestId:randomUUID()}
+      const submit = async (credential,id=added,data=report) => (await (await request.post(server+'/jiedan/agent/issue-reports/'+id,
+        {headers:{'X-Codex-Reply-Key':credential},data})).json()).code
+      const unrelated=(await api('/jiedan/order',boss,{title:'独立项目',ownerId})).data
+      const separate=(await api('/jiedan/order/bug',boss,{orderId:unrelated.id,content:'独立需求'})).data.bugs[0]
+      expect(await submit(key,separate.id)).not.toBe(200)
+      expect(await submit(new URL(url).pathname.split('/').pop())).not.toBe(200)
+      expect(await submit(key,added,{...report,tests:''})).not.toBe(200)
+      expect(await submit(key)).toBe(200)
+      expect(await submit(key)).toBe(200)
+      for (const account of [boss,team]) {
+        const detail=(await api('/jiedan/order/'+project.id,account)).data
+        const issue=detail.bugs.find(b=>b.id===added)
+        expect(issue.status).toBe('ai_review')
+        const replies=issue.updates.filter(u=>u.createdBy==='Codex')
+        expect(replies).toHaveLength(1)
+        expect(replies[0].content).toContain(report.tests)
+      }
+      expect((await (await request.put(server+'/jiedan/order/bug/'+added+'/status',{headers:{Authorization:'Bearer '+team},data:{status:'resolved'}})).json()).code).not.toBe(200)
+      const receiver=await browser.newContext({baseURL})
+      try {
+        await receiver.addInitScript(t=>localStorage.setItem('token',t),reviewer)
+        const viewer=await receiver.newPage()
+        await viewer.goto('/#/messages')
+        await viewer.getByRole('tab',{name:'Codex 回复'}).click()
+        await expect(viewer.locator('.report-list article').filter({hasText:report.changes})).toContainText(report.tests)
+        await expect(viewer.locator('.report-list').getByText('查看问题')).toHaveCount(0)
+      } finally { await receiver.close() }
+      await adminPage.goto('/#/order?id='+project.id+'&tab=bugs&bug='+added)
+      await adminPage.reload()
+      const row=adminPage.locator('.bug-item[data-notice-id="'+added+'"]')
+      await expect(row).toContainText(report.changes)
+      await row.getByRole('button',{name:'验收通过 · 已解决'}).click()
+      await expect.poll(async()=> (await api('/jiedan/order/'+project.id,boss)).data.bugs.find(b=>b.id===added).status).toBe('resolved')
+      expect(await submit(key,second,{...report,requestId:randomUUID()})).toBe(200)
+      await api('/jiedan/order/bug/'+second+'/status',boss,{status:'action'},'PUT')
+      expect(await submit(key,second,{...report,requestId:randomUUID(),changes:'退回后再次修改'})).toBe(200)
+      expect((await api('/jiedan/order/'+project.id,boss)).data.bugs.find(b=>b.id===second).updates.filter(u=>u.createdBy==='Codex')).toHaveLength(2)
+      await api('/jiedan/agent/orders/'+project.id+'/reply-key/disable',boss,{})
+      expect(await submit(key,second,{...report,requestId:randomUUID()})).not.toBe(200)
+    } finally { await manager.close() }
+
     const reopened = await openLinks()
     await expect(reopened.getByRole('textbox')).toHaveCount(0)
     await reopened.getByRole('button',{name:'停用',exact:true}).click()

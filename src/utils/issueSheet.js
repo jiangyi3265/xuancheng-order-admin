@@ -49,8 +49,9 @@ export function issueSheet(project, origin = location.origin, now = new Date(), 
     lines.push('', '## #' + bug.id + ' ' + (body || '（只有图片）'),
       '- 提出：' + author(bug, project) + ' · ' + (bug.time || '').slice(0, 16) + ' · 状态：' + (labels[bug.status] || '未标记'),
       ...mediaLines(bug.attachments, origin, bug.id))
-    if (bug.updates?.length) lines.push('- 补充说明：')
-    for (const row of bug.updates || []) lines.push('  - ' + (row.time || '').slice(0, 16) + ' ' + author(row, project) + '：' + (row.content || '（只有附件）'), ...mediaLines(row.attachments, origin, bug.id, true))
+    const replies = (bug.updates || []).filter(row => row.senderKind !== 'codex')
+    if (replies.length) lines.push('- 补充说明：')
+    for (const row of replies) lines.push('  - ' + (row.time || '').slice(0, 16) + ' ' + author(row, project) + '：' + (row.content || '（只有附件）'), ...mediaLines(row.attachments, origin, bug.id, true))
   }
   lines.push('', '---', '汇报格式（每条一段）：',
     '#' + (issues[0]?.id ?? '编号') + ' 已修改：改了什么、改了哪些文件、怎么验证的',

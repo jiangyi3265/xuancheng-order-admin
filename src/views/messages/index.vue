@@ -1,19 +1,44 @@
 <template><div class="inbox-page"><div class="page-heading"><div><h1>消息中心</h1><p>所有项目动态都在这里；要处理的事看工作台「需要我处理」</p></div><el-button v-if="unreadCount" :loading="marking" @click="readAll">全部已读（{{ unreadCount }}）</el-button><el-icon v-else class="heading-icon"><ChatDotRound /></el-icon></div>
 <el-button class="system-notification-entry" :icon="Bell" @click="router.push('/settings')">系统通知设置</el-button>
-<el-tabs v-model="tab"><el-tab-pane label="全部" name="all"/><el-tab-pane label="项目消息" name="projects"/><el-tab-pane label="审批提醒" name="approvals"/><el-tab-pane label="报价提醒" name="quotes"/></el-tabs>
-<div class="message-list"><button v-for="item in items" :key="item.key" class="message-card" @click="router.push(item.path)"><span class="message-symbol"><el-icon><component :is="item.icon" /></el-icon></span><div><strong>{{ item.title }}</strong><p>{{ item.text }}</p><span class="muted" :title="fmtTime(item.time)">{{ item.caption }}</span></div><i v-if="item.unread" class="unread-dot"></i><el-icon><ArrowRight /></el-icon></button></div><el-empty v-if="!items.length" description="暂无新消息，项目动态会出现在这里" /></div></template>
+<el-tabs v-model="tab"><el-tab-pane label="全部" name="all"/><el-tab-pane label="项目消息" name="projects"/><el-tab-pane label="审批提醒" name="approvals"/><el-tab-pane label="Codex 回复" name="codex"/><el-tab-pane label="报价提醒" name="quotes"/></el-tabs>
+<section v-if="tab==='codex'" class="report-list">
+<el-button :loading="reportLoading" @click="loadReports">刷新回复</el-button>
+<p v-if="reportError" role="alert">{{ reportError }}</p>
+<article v-for="r in reports" :key="r.id"><strong>{{r.title}} · 需求 #{{r.bugId}}</strong>
+<small>{{r.time}} · {{r.status==='ai_review'?'待内部验收':r.status==='resolved'?'已解决':'跟进中'}}</small>
+<p>{{r.issue}}</p><div>{{r.report}}</div>
+<el-button v-if="isBoss || currentMember.id===r.ownerId" link type="primary" @click="router.push({path:'/order',query:{id:r.orderId,tab:'bugs',bug:r.bugId}})">查看问题</el-button></article>
+<el-empty v-if="!reports.length && !reportLoading && !reportError" description="暂无 Codex 回复"/></section>
+<div v-else class="message-list"><button v-for="item in items" :key="item.key" class="message-card" @click="router.push(item.path)"><span class="message-symbol"><el-icon><component :is="item.icon" /></el-icon></span><div><strong>{{ item.title }}</strong><p>{{ item.text }}</p><span class="muted" :title="fmtTime(item.time)">{{ item.caption }}</span></div><i v-if="item.unread" class="unread-dot"></i><el-icon><ArrowRight /></el-icon></button></div><el-empty v-if="tab!=='codex' && !items.length" description="暂无新消息，项目动态会出现在这里" /></div></template>
 <script setup>
 import { colleagueTask } from '@/utils/todos'
 import { money } from '@/utils/payment'
 import { friendlyTime, fmtTime } from '@/utils/time'
 import {quoteTodos, unreadQuotes, isQuoteUnread, markInboxRead} from '@/stores/quotes'
-import {ref,computed} from 'vue'
+import {ref,computed,watch,onBeforeUnmount} from 'vue'
 import {Bell} from '@element-plus/icons-vue'
 import {useRouter} from 'vue-router'
 import { toast as ElMessage } from '@/utils/toast'
-import {orders,approvals,currentMember,isBoss} from '@/mock/store'
+import {adminHttp,orders,approvals,currentMember,isBoss} from '@/mock/store'
 import {statusMap,memberMap,MEMBERS} from '@/constants/options'
 const router=useRouter(),tab=ref('all')
+const reports=ref([]), reportLoading=ref(false), reportError=ref('')
+let reportTimer
+async function loadReports() {
+  if (reportLoading.value) return
+  reportLoading.value=true
+  try {reports.value=await adminHttp('/jiedan/agent/reports',{cache:'no-store'});reportError.value=''}
+  catch(e){reportError.value=e.message}
+  finally {reportLoading.value=false}
+}
+watch(tab,t=>{
+  clearInterval(reportTimer)
+  if(t==='codex'){
+    loadReports()
+    reportTimer=setInterval(()=>{if(!document.hidden)loadReports()},15000)
+  }
+})
+onBeforeUnmount(()=>clearInterval(reportTimer))
 // 项目“有新动态”只能一个个点开才消失；这里可以一次清掉
 const unreadCount=computed(()=>orders.filter(o=>o.unread?.includes(currentMember.value.id)).length + unreadQuotes.value.length)
 const marking=ref(false)
@@ -61,3 +86,7 @@ const items=computed(()=>{
  return tab.value==='quotes'?quoteItems:tab.value==='projects'?projectItems:tab.value==='approvals'?approvalItems:[...quoteItems,...projectItems,...approvalItems]
 })
 </script>
+
+<style scoped>
+.report-list article{margin:12px 0;padding:16px;background:white;border:1px solid #dce5f1;border-radius:12px;overflow-wrap:anywhere}.report-list small{display:block;color:#65758a}.report-list article div{white-space:pre-wrap}
+</style>
