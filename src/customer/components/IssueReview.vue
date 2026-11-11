@@ -1,7 +1,7 @@
 <template>
   <section class="issue-review" aria-label="本次修改">
     <header :id="'issue-reply-'+review.id" :data-team-reply="review.id" tabindex="-1">
-      <h3>本次修改</h3><time v-if="review.time">{{ review.time }}</time>
+      <h3>本次修改 <IssueNumber :id="issueId" /></h3><time v-if="review.time">{{ review.time }}</time>
     </header>
     <p v-if="review.content" class="review-note">{{ review.content }}</p>
     <div v-if="pictures.length === 2" class="review-switch" role="group" aria-label="切换对照图">
@@ -30,9 +30,10 @@
 </template>
 
 <script setup>
+import IssueNumber from '@/components/IssueNumber.vue'
 import {computed, reactive, ref} from 'vue'
 import {openImage} from '@/utils/imagePreview'
-const props = defineProps({review:{type:Object,required:true}, pending:Boolean, adjusting:Boolean, busy:Boolean, remainingCount:Number, backLabel:String})
+const props = defineProps({issueId:{type:[Number,String],required:true}, review:{type:Object,required:true}, pending:Boolean, adjusting:Boolean, busy:Boolean, remainingCount:Number, backLabel:String})
 defineEmits(['accept','adjust','next','back'])
 const selected = ref('after')
 const failed = reactive({})

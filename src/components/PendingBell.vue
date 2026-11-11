@@ -16,7 +16,7 @@
         <li v-for="item in items" :key="item.key">
           <router-link :to="pendingDestination(item, route.path === '/order' ? route.query : {})" @click="open = false">
             <span class="item-head"><small :class="item.kind">{{ (pendingLabels[item.kind] || reviewLabels[item.kind]) }}</small><strong>{{ item.title }}</strong></span>
-            <span class="item-text">{{ item.text }}</span>
+            <span class="item-text"><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</span>
             <span v-if="item.meta" class="meta">{{ item.meta }}</span>
           </router-link>
           <UrgentReviewActions v-if="item.kind === 'urgentReview'" :order="item.order" />
@@ -34,6 +34,7 @@
 </template>
 
 <script setup>
+import IssueNumber from '@/components/IssueNumber.vue'
 import { computed, reactive, ref } from 'vue'
 import UrgentReviewActions from './UrgentReviewActions.vue'
 import { reviewItems, reviewLabels } from '@/utils/handoffs'

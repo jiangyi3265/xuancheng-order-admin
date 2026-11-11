@@ -51,6 +51,10 @@ for (const width of [390,1440]) {
     await page.getByRole('button',{name:'返回列表'}).click()
     const row=page.getByRole('link').filter({hasText:text})
     await expect(row).toContainText('等团队处理')
+    const search = page.getByRole('searchbox',{name:'搜索需求名称或编号'})
+    await search.fill('需求 #' + bugId)
+    await expect(page.locator('.request-row .request-main .issue-number')).toHaveText('#' + bugId)
+    await search.fill('')
     await expect(page.locator('.project')).toHaveCount(1)
     const showFilters=async()=>{
       const toggle=page.getByRole('button',{name:'筛选',exact:true})

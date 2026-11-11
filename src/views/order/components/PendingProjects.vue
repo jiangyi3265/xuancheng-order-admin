@@ -23,7 +23,7 @@
           <span class="pending-kind" :class="item.kind">{{ labels[item.kind] }}</span>
           <span class="pending-copy">
             <strong>{{ item.title }}</strong>
-            <span>{{ item.text }}</span>
+            <span><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</span>
             <small v-if="item.meta">{{ item.meta }}</small>
             <small v-if="item.receipt" class="pending-receipt" :title="receiptLabel(item)">{{ receiptLabel(item) }}</small>
           </span>
@@ -41,6 +41,7 @@
 </template>
 
 <script setup>
+import IssueNumber from '@/components/IssueNumber.vue'
 import { computed, reactive, ref } from 'vue'
 import { toast as ElMessage } from '@/utils/toast'
 import { loadOrders, remindPendingItem } from '@/mock/store'

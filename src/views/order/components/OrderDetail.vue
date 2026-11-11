@@ -208,6 +208,8 @@
               </div>
 
               <div v-if="bugItems.length && !processingBugs" class="issue-filters">
+                <input v-model="issueSearch" class="issue-number-search" type="search" aria-label="查找问题编号"
+                  placeholder="查找问题编号，如 #128" maxlength="40" />
                 <div role="group" aria-label="按提交时间筛选" class="issue-filter-row">
                   <span>提交时间</span>
                   <button v-for="option in issueTimeOptions" :key="option.days" type="button"
@@ -259,6 +261,7 @@
                   <button type="button" class="bug-disclosure"
                     :aria-expanded="isBugExpanded(bug)" :aria-controls="isBugExpanded(bug) ? bugDetailsId(bug) : undefined"
                     @click="toggleBugExpanded(bug)">
+                    <IssueNumber :id="bug.id" />
                     <span class="bug-summary-title">{{ bug.content || '只有附件' }}</span>
                     <span v-if="!isBugExpanded(bug)" class="bug-summary-status" :class="'status-' + bugStatus(bug)">{{ bugStatusLabels[bugStatus(bug)] }}</span>
                     <span class="bug-disclosure-label">{{ isBugExpanded(bug) ? '收起' : '展开' }}<el-icon aria-hidden="true"><ArrowDown /></el-icon></span>
@@ -517,6 +520,7 @@
 </template>
 
 <script setup>
+import IssueNumber from '@/components/IssueNumber.vue'
 import { useRoute, useRouter } from 'vue-router'
 import LinkText from '@/components/LinkText.vue'
 import { friendlyTime, fmtTime } from '@/utils/time'
@@ -543,7 +547,7 @@ import InlineEdit from '@/components/InlineEdit.vue'
 import AssignMenu from '@/components/AssignMenu.vue'
 import AttachmentView from '@/components/AttachmentView.vue'
 import { issueGallery } from '@/utils/imagePreview'
-import { issueStateOptions, issueTimeOptions, matchesIssueFilters, newestIssueFirst } from '@/utils/issueFilters'
+import { issueNumberQuery, issueStateOptions, issueTimeOptions, matchesIssueFilters, newestIssueFirst } from '@/utils/issueFilters'
 import MediaThumb from '@/components/MediaThumb.vue'
 import PaymentDialog from '@/components/PaymentDialog.vue'
 import IssueReviewRequest from './IssueReviewRequest.vue'
@@ -706,17 +710,21 @@ const recordItems = computed(() => (props.order?.timeline || []).filter((t) => !
 // 内部记录最新的排最上面（输入框就在上面）：刚写的那条紧跟在输入框下面，打开项目先看到的也是最新进展。
 // 以前最早的在最上面，记录一多，新写的一条落在最底下，写完看不到，得往下翻才知道记上了没有
 const shownRecords = computed(() => [...recordItems.value].reverse())
+const issueSearch = ref('')
+const searchedNumber = computed(() => issueNumberQuery(issueSearch.value))
 const issueDays = ref(0)
 const issueState = ref('all')
 const currentMinute = ref(Math.floor(Date.now() / 60000))
-const hasIssueFilters = computed(() => issueDays.value !== 0 || issueState.value !== 'all')
+const hasIssueFilters = computed(() => !!issueSearch.value.trim() || issueDays.value !== 0 || issueState.value !== 'all')
 
 const bugItems = computed(() => [...(props.order?.bugs || [])].sort(newestIssueFirst))
 const mayExportIssues = computed(() => isBoss.value || (currentMember.value?.id != null && String(currentMember.value.id) === String(props.order?.ownerId)))
 const filteredBugs = computed(() => hasIssueFilters.value
-  ? bugItems.value.filter(bug => matchesIssueFilters(bug, issueDays.value, issueState.value, currentMinute.value))
+  ? bugItems.value.filter(bug => (!issueSearch.value.trim() || String(bug.id) === searchedNumber.value)
+      && matchesIssueFilters(bug, issueDays.value, issueState.value, currentMinute.value))
   : bugItems.value)
 function resetIssueFilters() {
+  issueSearch.value = ''
   issueDays.value = 0
   issueState.value = 'all'
 }
@@ -1121,6 +1129,7 @@ async function submitBug(needsAction = false) {
     const saved = await sendDraft(draft, ({content, attachments}) => createBug(projectId, content, attachments, needsAction))
     if (!saved || draft !== bugDraft.value) return
     bugOpen.value = bugHasDraft.value
+    issueSearch.value = ''
     if (issueState.value === 'resolved') issueState.value = 'all'
     processingBugs.value = false
     currentMinute.value = Math.floor(Date.now() / 60000)
@@ -1640,6 +1649,8 @@ function dotColor(type) {
   cursor: pointer;
 }
 .bug-disclosure:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.issue-number-search { box-sizing: border-box; width: min(100%, 235px); padding: 6px 9px; border: 1px solid #c9d5e5; border-radius: 6px; font: inherit; font-size: 13px; color: #263d5b; background: white; }
+.issue-number-search:focus { outline: 2px solid #447dcc; outline-offset: 1px; }
 .bug-summary-title { flex: 1; min-width: 0; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
 .bug-disclosure[aria-expanded="false"] .bug-summary-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .bug-summary-status, .bug-disclosure-label { flex: none; font-size: 12px; }

@@ -52,7 +52,7 @@
     <aside v-if="recent.length" class="recent-panel" aria-label="此项目最近提交的需求">
       <h2><el-icon><Clock /></el-icon>最近提交</h2>
       <router-link v-for="r in recent" :key="r.id" :to="{path:'/projects/'+projectId,query:{tab:'bugs',issue:r.id}}">
-        <strong>{{ r.title || '附件需求' }}</strong><span class="recent-meta"><small>#{{ r.id }}</small><time v-if="r.submittedAt">{{ r.submittedAt }} 提交</time></span>
+        <IssueNumber :id="r.id" /> <strong>{{ r.title || '附件需求' }}</strong><span v-if="r.submittedAt" class="recent-meta"><time>{{ r.submittedAt }} 提交</time></span>
         <span class="recent-status"><RequirementStatus :status="r.status" /></span>
       </router-link>
       <router-link class="all-link" :to="{path:'/projects/'+projectId,query:{tab:'bugs'}}">查看项目全部需求 <el-icon><ArrowRight /></el-icon></router-link>
@@ -62,6 +62,7 @@
 </template>
 
 <script setup>
+import IssueNumber from '@/components/IssueNumber.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ArrowRight, CircleCheckFilled, Clock, FolderOpened } from '@element-plus/icons-vue'

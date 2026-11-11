@@ -72,7 +72,7 @@
                   <div v-if="issueId && staleReviewLink" class="stale-review" role="status">
                     这次确认已结束。<button type="button" @click="viewLatest(bug)">查看最新需求</button>
                   </div>
-                  <IssueReview v-else-if="issueId && bug.review" :key="bug.review.id" :review="bug.review"
+                  <IssueReview v-else-if="issueId && bug.review" :key="bug.review.id" :issue-id="bug.id" :review="bug.review"
                     :pending="isPendingReview(bug) && !projectClosed" :adjusting="reviewAdjusting"
                     :busy="!!statusUpdatingBugId || !!updateDraft?.sending || !!updateDraft?.annotating"
                     :remaining-count="!projectClosed && isBugResolved(bug) && bug.review.state === 'accepted' ? pendingReviews.length : undefined"

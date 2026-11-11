@@ -20,14 +20,14 @@
     <section v-if="waiting.length" class="review-inbox" aria-label="等我确认">
       <router-link v-if="waiting.length===1" class="review-link" :to="reviewRoute(waiting[0].project,waiting[0].item)">
         <span class="review-count">等我确认（1）</span>
-        <span class="review-name">{{ waiting[0].item.title || '截图需求' }}<small v-if="!single">{{ waiting[0].project.title }}</small></span>
+        <span class="review-name"><IssueNumber :id="waiting[0].item.id" /> {{ waiting[0].item.title || '截图需求' }}<small v-if="!single">{{ waiting[0].project.title }}</small></span>
         <el-icon aria-hidden="true"><ArrowRight /></el-icon>
       </router-link>
       <details v-else>
         <summary>等我确认（{{ waiting.length }}）<el-icon aria-hidden="true"><ArrowDown /></el-icon></summary>
         <div class="review-list">
           <router-link v-for="entry in waiting" :key="entry.item.id" class="review-link" :to="reviewRoute(entry.project,entry.item)">
-            <span class="review-name">{{ entry.item.title || '截图需求' }}<small>#{{ entry.item.id }}<template v-if="!single"> · {{ entry.project.title }}</template></small></span>
+            <span class="review-name"><IssueNumber :id="entry.item.id" /> {{ entry.item.title || '截图需求' }}<small v-if="!single">{{ entry.project.title }}</small></span>
             <el-icon aria-hidden="true"><ArrowRight /></el-icon>
           </router-link>
         </div>
@@ -81,10 +81,10 @@
           </button>
           <div class="request-content">
             <router-link class="request-row" :to="item.status==='confirm' ? reviewRoute(project,item) : issueRoute(project,item)">
-              <span class="request-main"><b>{{ item.title || (item.firstImage ? '截图需求' : '附件需求') }}</b></span>
+              <span class="request-main"><IssueNumber :id="item.id" /> <b>{{ item.title || (item.firstImage ? '截图需求' : '附件需求') }}</b></span>
               <RequirementStatus :status="item.status" />
               <el-icon class="chevron" aria-hidden="true"><ArrowRight /></el-icon>
-              <small class="row-meta"><span>#{{ item.id }}</span><time v-if="item.submittedAt">{{ item.submittedAt }} 提交</time></small>
+              <small v-if="item.submittedAt" class="row-meta"><time>{{ item.submittedAt }} 提交</time></small>
             </router-link>
             <router-link v-if="item.latestTeamReply" class="reply-link" :to="issueRoute(project,item,item.latestTeamReply.id)">
               <i v-if="item.latestTeamReply.unread" class="unread" aria-label="未读"></i>
@@ -106,6 +106,7 @@
 </template>
 
 <script setup>
+import IssueNumber from '@/components/IssueNumber.vue'
 import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { ArrowDown, ArrowRight, ChatDotRound, Close, Document, Filter, FolderOpened, Plus, Search } from '@element-plus/icons-vue'
@@ -115,7 +116,7 @@ import { hasNewReply } from '@/customer/utils/seen'
 import { statusMap } from '@/customer/constants/options'
 import { customerToken, getMyOrder } from '@/customer/mock/store'
 import RequirementStatus from '@/customer/components/RequirementStatus.vue'
-import { issueTimeOptions, matchesIssueFilters, newestIssueFirst, useIssueFilterClock } from '@/utils/issueFilters'
+import { issueNumberQuery, issueTimeOptions, matchesIssueFilters, newestIssueFirst, useIssueFilterClock } from '@/utils/issueFilters'
 import { imageEntries, openImage } from '@/utils/imagePreview'
 import { issueRoute, reviewRoute, replyText, replyTime } from '@/customer/utils/requirementReplies'
 
@@ -154,11 +155,11 @@ const waiting = computed(() => orders.value.flatMap(project =>
 ).sort((a,b) => String(b.item.reviewTime || '').localeCompare(String(a.item.reviewTime || '')) || b.item.reviewId-a.item.reviewId))
 const groups = computed(() => {
   const term = query.value.normalize('NFKC').trim().toLowerCase()
-  const numbered = /^#\s*(\d+)$/.exec(term)
+  const numbered = /^(?:#|问题|需求)/.test(term) ? issueNumberQuery(term) : null
   const result = []
   for (const project of orders.value) {
     const matches = (project.requirements || []).filter(item => {
-      if (numbered) return String(item.id) === numbered[1]
+      if (numbered) return String(item.id) === numbered
       return !term || String(item.title || '附件需求').normalize('NFKC').toLowerCase().includes(term) || String(item.id).includes(term)
     })
     if (term && !matches.length) continue

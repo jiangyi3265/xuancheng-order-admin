@@ -14,6 +14,12 @@ export const issueStateOptions = [
   {value: 'resolved', label: '已解决'}
 ]
 
+// The same persisted issue ID appears in the customer portal, project details and AI task sheets.
+export function issueNumberQuery(value) {
+  const match = /^(?:(?:问题|需求)(?:编号)?\s*)?#?\s*(\d+)$/.exec(value.normalize('NFKC').trim())
+  return match ? match[1].replace(/^0+(?=\d)/, '') : null
+}
+
 function submissionTime(issue) {
   const value = issue.submittedAt || issue.time
   if (!value) return -Infinity
