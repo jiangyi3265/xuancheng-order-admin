@@ -37,11 +37,7 @@
         <p v-else-if="info?.state === 'active'" class="sheet-note">链接仅在生成时显示。若遗失，可重新生成。</p>
         <section v-if="isBoss && info?.state === 'active'" class="reply-access">
           <strong>Codex 回复权限</strong>
-          <p>仅用于这个项目。每条回复须写明修改内容和测试结果，提交后等你验收。</p>
-          <label>同步查看回复 <el-select v-model="readerId" :disabled="saving || verifying" clearable placeholder="仅项目负责人和管理员">
-            <el-option v-for="m in MEMBERS" :key="m.id" :label="m.name" :value="m.id"/>
-          </el-select></label>
-          <el-button v-if="info.replyRevision && (readerId || null) !== info.replyReaderId" size="small" :disabled="saving || verifying" @click="saveReader">保存查看人</el-button>
+          <p>回复仅项目负责人和管理员可见。每条回复须写明修改内容和测试结果，提交后等你验收。</p>
           <el-button size="small" :disabled="saving || verifying" @click="manageKey(true)">{{ info.replyRevision ? '更换回复凭据' : '开启回复权限' }}</el-button>
           <el-button v-if="info.replyRevision" size="small" :disabled="saving || verifying" @click="manageKey(false)">关闭回复权限</el-button>
           <el-button v-if="secret" :disabled="saving || verifying" size="small" type="primary" @click="copyInstructions">复制 Codex 回复说明</el-button>
@@ -69,7 +65,6 @@ import { ElMessageBox } from 'element-plus'
 import { copyText } from '@/utils/customerNudge'
 import { toast } from '@/utils/toast'
 import { issueSheet, sheetIssues } from '@/utils/issueSheet'
-import { MEMBERS } from '@/constants/options'
 import { adminHttp, isBoss } from '@/mock/store'
 
 const props = defineProps({ project: { type: Object, required: true } })
@@ -80,7 +75,6 @@ const saving = ref(false)
 const loading = ref(false)
 const verifying = ref(false)
 const freshUrl = ref('')
-const readerId = ref(null)
 const secret = ref('')
 const error = ref('')
 const info = ref(null)
@@ -131,9 +125,7 @@ function acceptStatus(data) {
       (data.state === 'active' && !data.revision)) throw new Error('暂时无法读取链接状态')
   if (info.value?.revision !== data.revision || data.state !== 'active') freshUrl.value = ''
   if (info.value?.replyRevision !== data.replyRevision || data.state !== 'active') secret.value = ''
-  const savedReader = data.replyReaderId ?? null
-  if (data.replyRevision && (!info.value || info.value.replyRevision !== data.replyRevision || info.value.replyReaderId !== savedReader)) readerId.value = savedReader
-  info.value = { replyReaderId:savedReader, replyRevision:data.replyRevision, state: data.state, revision: data.revision, expiresAt: data.expiresAt, lastReadAt: data.lastReadAt }
+  info.value = { replyRevision:data.replyRevision, state: data.state, revision: data.revision, expiresAt: data.expiresAt, lastReadAt: data.lastReadAt }
 }
 
 async function refresh() {
@@ -185,7 +177,7 @@ async function manageKey(enable) {
       catch { return }
     }
     if (ticket !== generation) return
-    const result = await adminHttp('/jiedan/agent/orders/' + props.project.id + '/reply-key/' + (enable ? 'enable' : 'disable') + (enable && readerId.value ? '?readerId='+encodeURIComponent(readerId.value) : ''), {method:'POST'})
+    const result = await adminHttp('/jiedan/agent/orders/' + props.project.id + '/reply-key/' + (enable ? 'enable' : 'disable'), {method:'POST'})
     if (ticket !== generation) return
     secret.value = ''
     const data = await getStatus()
@@ -193,23 +185,6 @@ async function manageKey(enable) {
     acceptStatus(data)
     secret.value = data.state === 'active' && result.replyRevision === data.replyRevision ? result.secret || '' : ''
     error.value = ''
-  } catch (e) {
-    if (ticket === generation) clearUnverified(e)
-  } finally { if (ticket === generation) saving.value = false }
-}
-async function saveReader() {
-  if (saving.value || verifying.value || !info.value?.replyRevision) return
-  const ticket = ++generation
-  saving.value = true
-  loading.value = false
-  try {
-    const reader = readerId.value
-    const path = '/jiedan/agent/orders/' + props.project.id + '/reply-reader'
-    const data = await adminHttp(path + (reader ? '?readerId=' + encodeURIComponent(reader) : ''), {method:'POST'})
-    if (ticket !== generation) return
-    acceptStatus(data)
-    error.value = ''
-    toast.success('已保存查看人')
   } catch (e) {
     if (ticket === generation) clearUnverified(e)
   } finally { if (ticket === generation) saving.value = false }
@@ -240,7 +215,6 @@ function copyVerifiedInstructions() {
     '成功以响应 JSON 的 code=200 为准。不要把回复凭据写入代码、提交记录或回复正文。'].join('\n'), '回复说明已复制')
 }
 function reset() {
-  readerId.value = MEMBERS.find(m=>m.name==='费鹏飞')?.id || null
   secret.value = ''
   generation++
   clearInterval(poll)

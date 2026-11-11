@@ -201,27 +201,17 @@ test('真实客户提交、负责人复制和管理链接、匿名 curl 与浏�
         expect(replies[0].content).toContain(report.tests)
       }
       expect((await (await request.put(server+'/jiedan/order/bug/'+added+'/status',{headers:{Authorization:'Bearer '+team},data:{status:'resolved'}})).json()).code).not.toBe(200)
-      const accessPath='/jiedan/agent/orders/'+project.id
-      const granted=(await api(accessPath+'/link',boss)).data
-      expect(granted.replyReaderId).toBeTruthy()
-      await api(accessPath+'/reply-reader',boss,{})
+      for (const account of [boss,team]) {
+        expect((await api('/jiedan/agent/reports',account)).data.some(r=>r.bugId===added)).toBe(true)
+      }
       expect((await api('/jiedan/agent/reports',reviewer)).data.some(r=>r.bugId===added)).toBe(false)
-      await dialog.getByRole('button',{name:'关闭',exact:true}).click()
-      await adminPage.getByRole('button',{name:'AI 任务单选项'}).click()
-      await adminPage.getByText('AI 链接',{exact:true}).click()
-      await expect(dialog.getByText('仅项目负责人和管理员',{exact:true})).toBeVisible()
-      await dialog.getByText('仅项目负责人和管理员',{exact:true}).click()
-      await adminPage.getByRole('option',{name:'费鹏飞',exact:true}).click()
-      await dialog.getByRole('button',{name:'保存查看人'}).click()
-      await expect.poll(async()=> (await api(accessPath+'/link',boss)).data.replyReaderId).toBe(granted.replyReaderId)
-      expect((await api(accessPath+'/link',boss)).data.replyRevision).toBe(granted.replyRevision)
       const receiver=await browser.newContext({baseURL})
       try {
         await receiver.addInitScript(t=>localStorage.setItem('token',t),reviewer)
         const viewer=await receiver.newPage()
         await viewer.goto('/#/messages')
         await viewer.getByRole('tab',{name:'Codex 回复'}).click()
-        await expect(viewer.locator('.report-list article').filter({hasText:report.changes})).toContainText(report.tests)
+        await expect(viewer.getByText('暂无 Codex 回复',{exact:true})).toBeVisible()
         await expect(viewer.locator('.report-list').getByText('查看问题')).toHaveCount(0)
       } finally { await receiver.close() }
       await adminPage.goto('/#/order?id='+project.id+'&tab=bugs&bug='+added)
