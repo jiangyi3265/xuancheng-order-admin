@@ -200,12 +200,10 @@
                     @click="setAllIssuesExpanded(!anyIssueExpanded)">{{ anyIssueExpanded ? '全部收起' : '全部展开' }}</button>
                 </div>
                 <div class="issue-tools">
-                  <span v-if="mayExportIssues" :title="copyCount ? '复制待处理的问题和附件' : '没有待处理的问题'">
-                    <el-button size="small" :disabled="!copyCount" @click="copyIssueSheet">复制给 AI</el-button>
-                  </span>
-                <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
-                  {{ bugOpen ? '收起' : '记一条问题' }}
-                </el-button>
+                  <IssueSheetMenu v-if="visible && mayExportIssues" :key="order.id + '-' + currentMember.id" :project="order" />
+                  <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
+                    {{ bugOpen ? '收起' : '记一条问题' }}
+                  </el-button>
                 </div>
               </div>
 
@@ -244,11 +242,15 @@
                   :rows="2"
                   resize="none"
                   placeholder="写清楚是什么问题，可以直接粘贴截图"
-                  @keydown.enter.ctrl.prevent="submitBug"
-                  @keydown.enter.meta.prevent="submitBug"
+                  @keydown.enter.ctrl.prevent="submitBug()"
+                  @keydown.enter.meta.prevent="submitBug()"
                 />
                 <AttachmentUploader v-model="bugFiles" compact class="note-upload" />
-                <el-button type="primary" plain :icon="Promotion" :loading="bugSubmitting" @click="submitBug">记下问题</el-button>
+                <div class="bug-submit-actions">
+                  <el-button plain :loading="bugSubmitting" @click="submitBug()">记下问题</el-button>
+                  <el-button v-if="bugRecipient" type="primary" :icon="Promotion" :loading="bugSubmitting"
+                    @click="submitBug(true)">发给{{ bugRecipient }}处理</el-button>
+                </div>
               </div>
 
               <p v-if="missingNoticeItem && noticeTab === 'bugs'" class="muted" role="status">这条通知对应的问题已删除。</p>
@@ -524,8 +526,8 @@ import { toast as ElMessage } from '@/utils/toast'
 import { chatDraft, sendDraft } from '@/utils/chatDraft'
 import ChatInput from '@/components/ChatInput.vue'
 import QuickPhrases from '@/components/QuickPhrases.vue'
-import { sheetIssues, issueSheet } from "@/utils/issueSheet"
-import { copyText, awaitingCustomer, nudgedToday, nudgeCustomerAccept, copyAcceptNudge, copyDunning } from '@/utils/customerNudge'
+import IssueSheetMenu from './IssueSheetMenu.vue'
+import { awaitingCustomer, nudgedToday, nudgeCustomerAccept, copyAcceptNudge, copyDunning } from '@/utils/customerNudge'
 import AttachmentUploader from '@/components/AttachmentUploader.vue'
 import NextStepBar from '@/components/NextStepBar.vue'
 import InlineEdit from '@/components/InlineEdit.vue'
@@ -599,7 +601,7 @@ const { text: replyText, files: replyFiles, sending: replying } = toRefs(draft)
 const bugOpen = ref(false)
 // 点「记一条问题」：光标直接在输入框里
 const bugInput = ref(null)
-watch(bugOpen, (open) => { if (open) nextTick(() => bugInput.value?.focus?.()) })
+watch(bugOpen, (open) => { if (open && !isMobile.value) nextTick(() => bugInput.value?.focus?.()) })
 const bugText = ref('')
 const bugFiles = ref([])
 const bugSubmitting = ref(false)
@@ -697,10 +699,6 @@ const hasIssueFilters = computed(() => issueDays.value !== 0 || issueState.value
 
 const bugItems = computed(() => [...(props.order?.bugs || [])].sort(newestIssueFirst))
 const mayExportIssues = computed(() => isBoss.value || (currentMember.value?.id != null && String(currentMember.value.id) === String(props.order?.ownerId)))
-const copyCount = computed(() => sheetIssues(bugItems.value).length)
-function copyIssueSheet() {
-  if (mayExportIssues.value && copyCount.value) copyText(issueSheet(props.order), '已复制 ' + copyCount.value + ' 条问题，粘给 Codex / Claude 就行')
-}
 const filteredBugs = computed(() => hasIssueFilters.value
   ? bugItems.value.filter(bug => matchesIssueFilters(bug, issueDays.value, issueState.value, currentMinute.value))
   : bugItems.value)
@@ -1094,18 +1092,25 @@ async function addNote() {
     sendingNote.value = false
   }
 }
-async function submitBug() {
+const bugRecipient = computed(() => {
+  const order = props.order
+  if (!order?.ownerId || String(order.ownerId) === String(currentMember.value?.id) || ['done', 'cancelled'].includes(order.status)) return ''
+  const owner = order.collaborators?.find(person => String(person.id) === String(order.ownerId))
+  return owner?.name || memberMap[order.ownerId]?.name || order.ownerName || '负责人'
+})
+async function submitBug(needsAction = false) {
   if (bugSubmitting.value || (!bugText.value.trim() && !bugFiles.value.length)) return
   bugSubmitting.value = true
   try {
-    await createBug(props.order.id, bugText.value.trim(), [...bugFiles.value])
+    const recipient = bugRecipient.value
+    await createBug(props.order.id, bugText.value.trim(), [...bugFiles.value], needsAction)
     bugText.value = ''
     bugFiles.value = []
     bugOpen.value = false
     if (issueState.value === 'resolved') issueState.value = 'all'
     processingBugs.value = false
     currentMinute.value = Math.floor(Date.now() / 60000)
-    ElMessage.success('问题已记下')
+    ElMessage.success(needsAction ? '已发给' + recipient + '处理' : '问题已记下')
   } catch (e) {
     ElMessage.error(e.message || '创建失败')
   } finally {
@@ -1970,5 +1975,7 @@ function dotColor(type) {
 }
 .issue-tools { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; }
 .issue-tools .el-button { margin-left: 0; }
+.bug-submit-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.bug-submit-actions .el-button { margin-left: 0; }
 </style>
 <style>.el-drawer.order-workspace-drawer>.el-drawer__body{padding:0;overflow:hidden}</style>

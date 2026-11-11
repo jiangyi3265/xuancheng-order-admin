@@ -27,8 +27,9 @@ function author(row, project) {
 function mediaLines(files = [], origin, nested = false) {
   const prefix = nested ? '    - ' : '- '
   const images = [], others = []
-  for (const file of files) {
-    const path = String(file?.url || '').replace(origin + '/', '/')
+  for (const file of files || []) {
+    const raw = String(file?.url || '')
+    const path = raw.startsWith(origin + '/') ? raw.slice(origin.length) : raw
     if (!/^\/jiedan\/media\/[0-9a-f]{32}\.[a-z0-9]{1,10}$/.test(path)) continue
     const url = origin + path
     if (file.type === 'image') images.push(url)
@@ -39,7 +40,7 @@ function mediaLines(files = [], origin, nested = false) {
 }
 
 export function issueSheet(project, origin = location.origin, now = new Date(), all = false) {
-  const issues = sheetIssues(project.bugs, all)
+  const issues = sheetIssues(project.bugs || [], all)
   const time = new Date(now.getTime() + 8 * 3600000).toISOString().slice(0, 16).replace('T', ' ')
   const lines = ['# 客户问题清单：' + project.title + '（' + project.orderNo + '）',
     '生成时间：' + time + '（北京时间） · ' + (all ? '全部' : '待处理') + ' ' + issues.length + ' 条', '', ...instructions]

@@ -77,6 +77,7 @@
     </nav>
     <QuickCapture ref="quickCapture" :show-fab="false" />
     <SettleDialog />
+    <IssueInboxNotice />
     <ChangePasswordDialog v-model:visible="pwdVisible" />
   </el-container>
 </template>
@@ -84,6 +85,7 @@
 <script setup>
 import {syncQuotes,unreadQuotes,quotes} from '@/stores/quotes'
 import WorkSearch from '@/components/WorkSearch.vue'
+import IssueInboxNotice from '@/components/IssueInboxNotice.vue'
 import PendingBell from '@/components/PendingBell.vue'
 import BrandLogo from '@/components/board/BrandLogo.vue'
 import { isMobile } from '@/utils/useMobile'

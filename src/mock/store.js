@@ -549,8 +549,9 @@ export async function removeOrder(id) {
   if (i > -1) orders.splice(i, 1)
 }
 
-export async function createBug(id, content, attachments = []) {
+export async function createBug(id, content, attachments = [], needsAction = false) {
   const payload = {
+    needsAction,
     orderId: id,
     content,
     attachments: attachments || []
