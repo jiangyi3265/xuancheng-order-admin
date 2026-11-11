@@ -7,15 +7,18 @@
       </div>
       <div class="notice-project">{{ item.title }} · {{ item.fresh ? '客户提了新问题' : '问题' }} #{{ item.bugId }}</div>
       <p>{{ item.text }}</p>
+      <HandoffReturn :turn="item.turn" />
       <div class="notice-actions">
         <button type="button" @click="openIssue(item)">查看问题</button>
-        <button v-if="!item.fresh" type="button" class="finish" :disabled="busy" @click="finish(item)">{{ busy ? '处理中…' : item.turn ? '提交确认' : '标为已处理' }}</button>
+        <button v-if="!item.fresh" type="button" class="finish" :disabled="busy" @click="finish(item)">{{ busy ? '处理中…' : item.turn ? submitLabel(item.turn) : '标为已处理' }}</button>
       </div>
     </section>
   </Teleport>
 </template>
 
 <script setup>
+import HandoffReturn from '@/components/HandoffReturn.vue'
+import { submitLabel } from '@/utils/handoffs'
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { me, orders, ordersReady, syncOrders } from '@/mock/store'
@@ -30,7 +33,8 @@ const SNOOZE_MS = 30 * 60 * 1000
 const notices = ref({})
 const storageKey = computed(() => me.value?.id ? 'xc:issue-notices:' + me.value.id : '')
 const mine = computed(() => !storageKey.value || !ordersReady.value ? [] : pendingItems(orders).filter(row =>
-  row.kind === 'bug' && row.bugId && String(row.recipientId) === String(me.value.id)))
+  row.kind === 'bug' && row.bugId && String(row.recipientId) === String(me.value.id))
+  .map(row => row.turn?.returnedAt ? { ...row, key: row.key + ':return:' + row.turn.returnedAt } : row))
 const unseen = computed(() => mine.value.filter(row => !notices.value[row.key]))
 const item = computed(() => unseen.value.find(row => !(route.query.tab === 'bugs' &&
   String(route.query.id) === String(row.id) && String(route.query.bug) === String(row.bugId))))

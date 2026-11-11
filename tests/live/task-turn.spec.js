@@ -73,7 +73,7 @@ test('两人从看板来回交接，问题、加急、下一步和手动标记�
     for(const kind of ['问题','下一步','手动标记']) {
       const row=active.filter({has:owner.page.locator('.pending-kind',{hasText:kind})})
       await expect(row).toContainText('完成后交给')
-      await row.getByRole('button',{name:'提交验收'}).click()
+      await row.getByRole('button',{name:/交给.+验收/}).click()
       await expect(row).toHaveCount(0)
     }
     // The reviewer's open tab picks up the transfer without a reload.
@@ -97,20 +97,44 @@ test('两人从看板来回交接，问题、加急、下一步和手动标记�
     const current=await ok(boss,path)
     expect(current.taskTurns.next.requesterId).toBe(sender.id)
     expect((await api(staff,path+'/task-review','POST',{kind:'next',decision:'confirm',version:current.version})).code).toBe(403)
-    await reviewRow('处理结果确认').getByRole('button',{name:'确认完成'}).click()
+    const manualReview = reviewRow('处理结果确认')
+    await manualReview.getByRole('button',{name:'退回给交接处理人'}).click()
+    await reviewer.page.locator('.el-message-box').getByRole('button',{name:'取消'}).click()
+    await expect(manualReview.getByRole('button',{name:'确认完成'})).toBeEnabled()
+    await manualReview.getByRole('button',{name:'确认完成'}).click()
     expect((await ok(boss,path)).urgentUntil).toBeTruthy()
-    await reviewRow('下一步确认').getByRole('button',{name:'退回处理'}).click()
-    await reviewRow('问题验收').getByRole('button',{name:'退回处理'}).click()
+    for (const [kind,note] of [['下一步确认','请核对两档报价'],['问题验收','手机按钮仍换行']]) {
+      await reviewRow(kind).getByRole('button',{name:'退回给交接处理人'}).click()
+      const prompt = reviewer.page.locator('.el-message-box')
+      await prompt.locator('textarea').fill(note)
+      await prompt.getByRole('button',{name:'退回给交接处理人'}).click()
+      await expect(reviewRow(kind)).toHaveCount(0)
+    }
+    const afterReturn = await ok(staff,path)
+    expect(afterReturn.taskTurns.next.returnNote).toBe('请核对两档报价')
+    expect(afterReturn.taskTurns['bug-'+bug.id].returnNote).toBe('手机按钮仍换行')
+    expect(afterReturn.taskTurns.next.returnedAt).toBeTruthy()
     await expect(active).toHaveCount(2, {timeout:25000}) // mobile shows two cards until expanded
     const returned = owner.area.getByRole('button',{name:/查看全部/})
     if(await returned.isVisible()) await returned.click()
+    await expect(active.first().locator('.return-info')).toContainText('退回修改')
     for(const kind of ['问题','下一步','加急']) {
       const row=active.filter({has:owner.page.locator('.pending-kind',{hasText:kind})})
       await expect(row).toHaveCount(1,{timeout:25000})
-      await row.getByRole('button',{name:'提交验收'}).click()
+      if (kind !== '加急') {
+        await expect(row.locator('.return-note')).toHaveText(kind === '下一步' ? '请核对两档报价' : '手机按钮仍换行')
+        await expect(row).toContainText('退回修改')
+      }
+      await row.getByRole('button',{name:/交给.+验收/}).click()
       await expect(row).toHaveCount(0)
     }
     await expect(inbox).toHaveCount(3,{timeout:25000})
+    const firstSubmission = current.taskTurns['bug-'+bug.id]
+    const stale = await api(boss,'/jiedan/order/bug/'+bug.id+'/status','PUT',{
+      status:'resolved', previousStatus:'ai_review', submittedAt:firstSubmission.submittedAt, returnedAt:firstSubmission.returnedAt
+    })
+    expect(stale.code).toBe(409)
+    await expect(reviewRow('问题验收')).toContainText('修改后重新提交')
     await reviewRow('问题验收').getByRole('button',{name:'确认完成'}).click()
     await reviewRow('下一步确认').getByRole('button',{name:'确认完成'}).click()
     await reviewRow('加急确认').getByRole('button',{name:'确认加急完成'}).click()
@@ -121,6 +145,14 @@ test('两人从看板来回交接，问题、加急、下一步和手动标记�
     expect(final.nextStep).toBeFalsy()
     expect(final.urgentHandoff).toBeFalsy()
     expect(final.handled).toBe(true)
+    const marked = await ok(boss,path+'/handling','PUT',{handled:false,version:final.version})
+    const first = await ok(staff,path+'/pending-completion','POST',{kind:'manual',version:marked.version})
+    const returnedMark = await ok(boss,path+'/task-review','POST',{kind:'manual',decision:'return',note:'核对交付清单',version:first.version})
+    expect(returnedMark.taskTurns.manual.returnNote).toBe('核对交付清单')
+    const second = await ok(staff,path+'/pending-completion','POST',{kind:'manual',version:returnedMark.version})
+    expect(second.taskTurns.manual.returnedAt).toBeTruthy()
+    const completed = await ok(boss,path+'/task-review','POST',{kind:'manual',decision:'confirm',version:second.version})
+    expect(completed.taskTurns?.manual).toBeFalsy()
     // When the sender is the project owner and gives the next step to their colleague,
     // that colleague submits to the owner, irrespective of role.
     const reverse=await ok(staff,path+'/next','PUT',{content:'反向确认',ownerId:sender.id})

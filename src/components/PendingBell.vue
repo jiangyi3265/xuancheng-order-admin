@@ -19,7 +19,7 @@
           <router-link :to="pendingDestination(item, route.path === '/order' ? route.query : {})" @click="open = false">
             <span class="item-head"><small :class="item.kind">{{ (pendingLabels[item.kind] || reviewLabels[item.kind]) }}</small><strong>{{ item.title }}</strong></span>
             <span class="item-text"><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</span>
-            <span v-if="item.handoffNote" class="meta">{{ item.handoffNote }}</span>
+            <HandoffStatus :item="item" />
             <span v-if="item.kind === 'next' && item.due" class="meta">截止 {{ item.due }}</span>
           </router-link>
           <UrgentReviewActions v-if="item.kind === 'urgentReview'" :order="item.order" />
@@ -39,11 +39,12 @@
 </template>
 
 <script setup>
+import HandoffStatus from './HandoffStatus.vue'
 import IssueNumber from '@/components/IssueNumber.vue'
 import { computed, reactive, ref } from 'vue'
 import TaskReviewActions from './TaskReviewActions.vue'
 import UrgentReviewActions from './UrgentReviewActions.vue'
-import { handoffItems, handoffGroups, reviewLabels } from '@/utils/handoffs'
+import { handoffItems, handoffGroups, reviewLabels, submitLabel } from '@/utils/handoffs'
 import { useRoute, useRouter } from 'vue-router'
 import { Bell } from '@element-plus/icons-vue'
 import { toast as ElMessage } from '@/utils/toast'
@@ -63,7 +64,7 @@ const items = computed(() => handoffItems(orders, me.value?.id, isBoss.value).fi
 const groups = computed(() => handoffGroups(items.value).filter(group => group.rows.length))
 
 function finishLabel(item) {
-  return item.turn ? '提交验收' : '标为已处理'
+  return item.turn ? submitLabel(item.turn) : '标为已处理'
 }
 
 function actionTitle(item) {
@@ -110,8 +111,8 @@ async function finish(item) {
 .bell-group h3 {margin:14px 0 6px;color:#233957;font-size:14px}
 .bell-group h3 small {margin-left:4px;color:#536b88}
 .bell-panel ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.bell-panel li { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e0e7f2; border-radius: 10px; background: #f8faff; }
-.bell-panel li a { min-width: 0; flex: 1; display: grid; gap: 5px; color: #263958; text-decoration: none; overflow-wrap: anywhere; }
+.bell-panel li { display: flex; flex-wrap:wrap; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e0e7f2; border-radius: 10px; background: #f8faff; }
+.bell-panel li a { min-width: min(100%,220px); flex:1 1 220px; display: grid; gap: 5px; color: #263958; text-decoration: none; overflow-wrap: anywhere; }
 .bell-panel li a:hover strong { color: #1757c7; text-decoration: underline; }
 .item-head { align-items: baseline; }
 .item-head small { flex: none; padding: 2px 5px; border-radius: 5px; color: #2456a4; background: #e7efff; }
@@ -120,7 +121,7 @@ async function finish(item) {
 .item-text { font-size: 14px; }
 .meta, .bell-panel p { color: #596d89; font-size: 13px; }
 .complete, .load-error button { border: 1px solid #c4d5f1; border-radius: 7px; background: white; color: #1757c7; padding: 7px 9px; font: inherit; font-size: 13px; cursor: pointer; }
-.complete { flex: none; }
+.complete {max-width:100%;white-space:normal;min-height:36px;font-weight:650}
 .complete:disabled { opacity: .6; cursor: wait; }
 .load-error { color: #a33230; margin-bottom: 12px; }
 @media (max-width: 768px) { .pending-bell, .complete { min-height: 44px; } .pending-bell { min-width: 44px; } }

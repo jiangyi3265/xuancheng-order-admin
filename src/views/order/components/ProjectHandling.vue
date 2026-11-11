@@ -7,10 +7,11 @@
           :disabled="saving" @click="mark(false)">加入待处理</button>
         <TaskReviewActions v-if="order.taskTurns?.manual?.submittedAt && order.taskTurns.manual.requesterId === currentMember.id" :item="{ order, id:order.id, kind:'manualReview' }" />
         <button v-if="!order.taskTurns?.manual || (!order.taskTurns.manual.submittedAt && order.ownerId===currentMember.id)" type="button" class="handling-action" :disabled="saving" @click="mark(!order.handled)">
-          {{ saving ? '保存中…' : order.handled ? '改为未处理' : order.taskTurns?.manual ? '提交确认' : '标为已处理' }}
+          {{ saving ? '保存中…' : order.handled ? '改为未处理' : order.taskTurns?.manual ? submitLabel(order.taskTurns.manual) : '标为已处理' }}
         </button>
       </div>
     </div>
+    <HandoffReturn :turn="order.taskTurns?.manual" />
     <small v-if="order.handledTime || order.createTime">{{ order.handledTime ? '标记于' : '创建于' }}
       <time>{{ (order.handledTime || order.createTime).slice(0, 16) }}</time>
     </small>
@@ -19,6 +20,8 @@
 </template>
 
 <script setup>
+import HandoffReturn from '@/components/HandoffReturn.vue'
+import { submitLabel } from '@/utils/handoffs'
 import TaskReviewActions from '@/components/TaskReviewActions.vue'
 import { offerOrderUndo } from '@/utils/orderUndo'
 import { ref, computed } from 'vue'

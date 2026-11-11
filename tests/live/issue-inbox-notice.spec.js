@@ -61,7 +61,7 @@ test('分配反馈后负责人看到内容、直达具体问题、一键处理�
     await expect(notice).toHaveCount(0)
     await staff.clock.fastForward(10 * 60 * 1000)
     await expect(notice).toContainText('请处理：反馈截图')
-    await notice.getByRole('button',{name:'提交确认'}).click()
+    await notice.getByRole('button',{name:/交给.+验收/}).click()
     const read=()=>api(boss,'/jiedan/order/'+id)
     await expect.poll(async()=>(await read()).bugs.find(row=>row.content==='请处理：反馈截图').status).toBe('ai_review')
     const bugs=(await read()).bugs

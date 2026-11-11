@@ -33,13 +33,13 @@
                   <el-button size="small" :loading="acting === t.order.id" @click="doMyself(t.order)">我自己做</el-button>
                 </template>
                 <template v-else>
-                  <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click="finishPending(t)">{{ t.kind === 'urgent' && t.order.urgentHandoff ? '提交确认' : '标为已处理' }}</el-button>
+                  <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click="finishPending(t)">{{ workButton(t.order, t.kind) }}</el-button>
                   <el-button v-else-if="t.kind === 'reply'" size="small" type="primary" @click="openDetail(t.order, 'chat')">回复</el-button>
                   <template v-else-if="t.kind === 'mention' || t.kind === 'nudge'">
                     <el-button size="small" type="primary" plain @click.stop="openTodo(t)">{{ t.kind === 'mention' ? '查看' : '写进展' }}</el-button>
                     <el-button size="small" :disabled="acknowledging.has(t.order.id)" @click.stop="acknowledge(t.order)">知道了</el-button>
                   </template>
-                  <el-button v-else-if="t.kind === 'next' && isMyNext(t.order)" size="small" type="success" :loading="completing === t.order.id" :aria-label="'完成这一步：' + t.order.title" @click="quickCompleteNext(t.order)">完成这一步</el-button>
+                  <el-button v-else-if="t.kind === 'next' && isMyNext(t.order)" size="small" type="success" :loading="completing === t.order.id" :aria-label="workButton(t.order, t.kind) + '：' + t.order.title" @click="quickCompleteNext(t.order)">{{ workButton(t.order, t.kind) }}</el-button>
                   <el-button v-else-if="naOf(t.order)" size="small" type="primary" :loading="acting === t.order.id" :aria-label="naOf(t.order).label + '：' + t.order.title" @click="mobileNext(t.order)">{{ naOf(t.order).label }}</el-button>
                   <!-- 交付了客户还没点验收：一键催 -->
                   <el-button v-if="t.kind === 'review' && awaitingCustomer(t.order)" size="small" plain :loading="nudgingAccept === t.order.id" @click="quickAcceptNudge(t.order)">{{ acceptNudged(t.order) ? '今天已催' : '催客户验收' }}</el-button>
@@ -123,7 +123,7 @@
                 <el-button size="small" :loading="acting === t.order.id" @click.stop="doMyself(t.order)">我自己做</el-button>
               </template>
               <template v-else>
-                <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click.stop="finishPending(t)">{{ t.kind === 'urgent' && t.order.urgentHandoff ? '提交确认' : '标为已处理' }}</el-button>
+                <el-button v-if="t.kind === 'urgent' || t.kind === 'manual'" size="small" type="primary" plain :loading="finishing === t.key" @click.stop="finishPending(t)">{{ workButton(t.order, t.kind) }}</el-button>
                 <el-button v-else-if="t.kind === 'reply'" size="small" type="primary" :icon="ChatDotRound" @click.stop="openDetail(t.order, 'chat')">回复</el-button>
                 <template v-else-if="t.kind === 'mention' || t.kind === 'nudge'">
                     <el-button size="small" type="primary" plain @click.stop="openTodo(t)">{{ t.kind === 'mention' ? '查看' : '写进展' }}</el-button>
@@ -136,7 +136,7 @@
                   :icon="Check"
                   :loading="completing === t.order.id"
                   @click.stop="quickCompleteNext(t.order)"
-                >完成这一步</el-button>
+                >{{ workButton(t.order, t.kind) }}</el-button>
                 <el-button
                   v-else-if="naOf(t.order)"
                   size="small"
@@ -322,6 +322,7 @@
 </template>
 
 <script setup>
+import { submitLabel } from '@/utils/handoffs'
 import ProjectHandoffs from '@/components/ProjectHandoffs.vue'
 import OrdersLoading from '@/components/OrdersLoading.vue'
 import { ordersReady } from '@/mock/store'
@@ -445,6 +446,11 @@ const greeting = (() => {
 })()
 
 // 待办上直接「完成这一步」，不用点进项目；完成后顺手问接下来做什么（默认交给项目负责人，可以不填）
+function workButton(order, kind) {
+  const turn = kind === 'urgent' ? order.urgentHandoff : order.taskTurns?.[kind]
+  return turn ? submitLabel(turn) : kind === 'next' ? '完成这一步' : '标为已处理'
+}
+
 const completing = ref(null)
 async function quickCompleteNext(o) {
   if (completing.value) return

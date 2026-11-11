@@ -74,6 +74,22 @@ export function handoffItems(orders, memberId, isBoss) {
   })
 }
 
+export function submitLabel(turn) {
+  return '交给' + (turn?.requesterName || '发起人') + '验收'
+}
+
+export function executorName(order, kind) {
+  const next = kind === 'next' || kind === 'nextReview'
+  const id = next ? order.nextOwnerId ?? order.ownerId : order.ownerId
+  return (next && order.nextOwnerName) || memberMap[id]?.name || order.collaborators?.find(person => sameMember(person.id, id))?.name || '负责人'
+}
+
 export function handoffGroups(items) {
-  return handoffLanes.map(lane => ({ ...lane, rows: items.filter(item => item.lane === lane.key) }))
+  return handoffLanes.map(lane => {
+    const rows = items.filter(item => item.lane === lane.key)
+    if (lane.key === 'work' || lane.key === 'waitingWork') {
+      rows.sort((a, b) => (b.turn?.returnedAt || '').localeCompare(a.turn?.returnedAt || ''))
+    }
+    return { ...lane, rows }
+  })
 }

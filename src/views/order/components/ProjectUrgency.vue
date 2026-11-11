@@ -1,6 +1,7 @@
 <template>
   <span v-if="order.urgentHandoff?.submittedAt" class="urgency-actions" @click.stop>
     <el-tag size="small" type="warning">加急已提交 · 等{{ order.urgentHandoff.requesterId === currentMember.id ? '我' : order.urgentHandoff.requesterName }}确认</el-tag>
+    <HandoffReturn :turn="order.urgentHandoff" :compact="compact" />
     <UrgentReviewActions v-if="!selecting && order.urgentHandoff.requesterId === currentMember.id" :order="order" />
   </span>
   <span v-else-if="canEdit || order.urgentUntil" class="urgency-actions" :class="{ 'urgency-card-row': compact }">
@@ -8,8 +9,9 @@
       :aria-label="fullLabel" :title="order.urgentUntil ? fullLabel + '（北京时间）' : undefined"
       @click.stop="open">{{ label }}</el-button>
     <el-tag v-else size="small" type="danger" :title="fullLabel + '（北京时间）'">{{ label }}</el-tag>
+    <HandoffReturn :turn="order.urgentHandoff" :compact="compact" />
     <el-button v-if="!selecting && order.urgentHandoff && !closed && order.urgentUntil && (!order.handled || order.urgentHandoff) && order.ownerId === currentMember.id && order.urgentHandoff.requesterId !== currentMember.id && order.assignState !== 'pending'"
-      size="small" link type="primary" :loading="submitting" @click.stop="submit">提交确认</el-button>
+      size="small" link type="primary" :loading="submitting" @click.stop="submit">{{ submitLabel(order.urgentHandoff) }}</el-button>
     <el-button v-if="canRemind" size="small" link type="primary" :loading="reminding" :aria-label="'提醒' + ownerName" :title="'提醒' + ownerName" @click.stop="remind">{{ compact ? '提醒' : '提醒' + ownerName }}</el-button>
   </span>
   <el-dialog v-if="visible" v-model="visible" title="加急截止时间" width="360px" align-center append-to-body
@@ -27,6 +29,8 @@
 </template>
 
 <script setup>
+import HandoffReturn from '@/components/HandoffReturn.vue'
+import { submitLabel } from '@/utils/handoffs'
 import UrgentReviewActions from '@/components/UrgentReviewActions.vue'
 import { finishPendingWithUndo } from '@/utils/orderUndo'
 import { useFormClose } from '@/utils/dialogGuard'

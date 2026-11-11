@@ -7,7 +7,10 @@
         </button>
         <template v-else>待处理 <span>{{ items.length }} 条</span></template>
       </h2>
-      <small v-if="isMobile && !mobileOpen && items.length" class="mobile-turn-count">待我处理 {{ groups[1].rows.length }} · 待我验收 {{ groups[0].rows.length }}</small>
+      <div v-if="isMobile && !mobileOpen && items.length" class="mobile-turn-count">
+        <button v-for="group in personalGroups" :key="group.key" type="button" :class="group.key" aria-controls="pending-project-content"
+          @click="selectLane(group.key); mobileOpen = true">{{ group.label }} <b>{{ group.rows.length }}</b></button>
+      </div>
       <button v-if="(!isMobile || mobileOpen) && canFilterReminders && (unreminded.length || laneItems.some(item => item.receipt))" class="pending-filter" type="button"
         :aria-pressed="onlyUnreminded" @click="onlyUnreminded = !onlyUnreminded; expanded = false">
         只看未提醒 <span>{{ unreminded.length }}</span>
@@ -17,39 +20,35 @@
       <span v-if="(!isMobile || mobileOpen) && !items.length" class="pending-empty">当前没有待处理事项</span>
     </header>
     <div v-show="!isMobile || mobileOpen" id="pending-project-content">
-    <nav v-if="items.length" class="turn-filters" aria-label="按交接阶段筛选">
-      <button v-for="tab in tabs" :key="tab.key" type="button" :aria-pressed="activeLane === tab.key"
-        @click="selectLane(tab.key)">{{ tab.label }} {{ tab.count }}</button>
-    </nav>
+    <HandoffTabs v-if="items.length" :tabs="tabs" :active="activeLane" label="按交接阶段筛选" @select="selectLane" />
     <p v-if="items.length && !filteredItems.length" class="pending-empty">{{ onlyUnreminded && canFilterReminders ? '当前待处理事项都已提醒。' : groups.find(g => g.key === activeLane)?.empty }}</p>
     <ul v-if="filteredItems.length" id="pending-project-links">
-      <li v-for="item in visibleItems" :key="item.key">
+      <li v-for="item in visibleItems" :key="item.key" :class="item.lane">
         <router-link :to="pendingDestination(item, route.query)" class="pending-link">
           <span class="pending-kind" :class="item.kind">{{ labels[item.kind] }}</span>
           <span class="pending-copy">
             <strong>{{ item.title }}</strong>
-            <span><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</span>
-            <small class="turn-owner" :class="{mine:item.mine}">{{ item.currentAction }}</small>
-            <small v-if="item.handoffNote">{{ item.handoffNote }}</small>
-            <small v-else-if="item.fresh">客户新问题</small>
+            <span class="item-text"><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</span>
+            <HandoffStatus :item="item" />
             <small v-if="item.kind === 'next' && item.due">截止 {{ item.due }}</small>
             <small v-if="item.receipt" class="pending-receipt" :title="receiptLabel(item)">{{ receiptLabel(item) }}</small>
           </span>
           <el-icon aria-hidden="true"><ArrowRight /></el-icon>
         </router-link>
-        <div v-if="item.review && item.mine" class="turn-actions">
-          <UrgentReviewActions v-if="item.kind === 'urgentReview'" :order="item.order" />
-          <TaskReviewActions v-else-if="item.kind !== 'deliveryReview'" :item="item" />
-          <router-link v-else :to="pendingDestination(item)" class="pending-remind">去验收</router-link>
+        <div class="turn-actions">
+          <template v-if="item.review && item.mine">
+            <UrgentReviewActions v-if="item.kind === 'urgentReview'" :order="item.order" />
+            <TaskReviewActions v-else-if="item.kind !== 'deliveryReview'" :item="item" />
+            <router-link v-else :to="pendingDestination(item)" class="pending-remind">去验收</router-link>
+          </template>
+          <template v-else-if="item.mine && !item.review">
+            <router-link v-if="item.needsAcceptance || item.fresh || item.kind === 'bug' && !item.bugId" :to="pendingDestination(item)" class="pending-remind">{{ item.needsAcceptance ? '去接单' : '查看问题' }}</router-link>
+            <button v-else class="pending-remind primary-action" type="button" :disabled="sending.has(item.key)" @click="submitItem(item)">{{ item.turn ? submitLabel(item.turn) : '标为已处理' }}</button>
+          </template>
+          <button v-if="!item.review && !item.fresh && (!item.mine || !item.turn) && item.recipientId != null" type="button" class="pending-remind" :disabled="sending.has(item.key)"
+            :aria-label="item.title + (item.receipt ? '，再提醒' : '，提醒') + (item.recipient || '负责人') + '处理' + labels[item.kind]"
+            @click.stop="remind(item, $event)">{{ sending.has(item.key) ? '发送中' : item.receipt ? '再提醒' : item.mine ? '提醒自己' : '提醒' }}</button>
         </div>
-        <button v-else-if="item.mine && item.turn && !item.fresh && !item.needsAcceptance" class="pending-remind"
-          type="button" :disabled="sending.has(item.key)" @click="submitItem(item)">提交验收</button>
-        <router-link v-else-if="item.mine && item.needsAcceptance" :to="pendingDestination(item)" class="pending-remind">去接单</router-link>
-        <button v-else-if="!item.review && !item.fresh" type="button" class="pending-remind" :disabled="sending.has(item.key)"
-          :aria-label="item.title + (item.receipt ? '，再提醒' : '，提醒') + (item.recipient || '负责人') + '处理' + labels[item.kind]"
-          :title="'微信提醒' + (item.recipient || '负责人')" @click.stop="remind(item, $event)">
-          {{ sending.has(item.key) ? '发送中' : item.receipt ? '再提醒' : '提醒' }}
-        </button>
       </li>
     </ul>
     </div>
@@ -57,9 +56,11 @@
 </template>
 
 <script setup>
+import HandoffStatus from '@/components/HandoffStatus.vue'
+import HandoffTabs from '@/components/HandoffTabs.vue'
 import TaskReviewActions from '@/components/TaskReviewActions.vue'
 import UrgentReviewActions from '@/components/UrgentReviewActions.vue'
-import { handoffGroups, handoffItems, reviewLabels } from '@/utils/handoffs'
+import { handoffGroups, handoffItems, reviewLabels, submitLabel } from '@/utils/handoffs'
 import { finishPendingWithUndo } from '@/utils/orderUndo'
 import IssueNumber from '@/components/IssueNumber.vue'
 import { computed, reactive, ref } from 'vue'
@@ -82,6 +83,7 @@ const labels = { ...pendingLabels, ...reviewLabels }
 const lane = ref('')
 const items = computed(() => handoffItems(props.orders, currentMember.value.id, isBoss.value))
 const groups = computed(() => handoffGroups(items.value))
+const personalGroups = computed(() => groups.value.filter(g => g.key === 'work' || g.key === 'review'))
 const tabs = computed(() => [
   ...groups.value.map(group => ({ key: group.key, label: group.label, count: group.rows.length })),
   { key: 'all', label: '全部', count: items.value.length }
@@ -104,7 +106,7 @@ async function submitItem(item) {
   if (sending.has(item.key)) return
   lane.value = activeLane.value
   sending.add(item.key)
-  try { await finishPendingWithUndo(item.order,item.kind,item.bugId,'已提交处理结果') }
+  try { await finishPendingWithUndo(item.order,item.kind,item.bugId, item.turn ? '已提交处理结果' : '已处理：' + item.title) }
   catch (err) { ElMessage.error(err.message || '提交失败'); await loadOrders().catch(() => {}) }
   finally { sending.delete(item.key) }
 }
@@ -130,14 +132,13 @@ async function remind(item, event) {
 </script>
 
 <style scoped>
-.turn-filters {display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 5px}
-.turn-filters button {font:inherit;font-size:13px;color:#53657b;background:#f3f5f9;border:1px solid transparent;border-radius:7px;padding:5px 9px;cursor:pointer}
-.turn-filters [aria-pressed=true] {color:#1856b7;background:#eaf1ff;border-color:#c7d8f5}
-.turn-actions {display:flex;align-items:center;padding:0 8px 0 0;max-width:126px}
-.pending-copy small.turn-owner {font-weight:600;color:#425573;white-space:normal}
+.turn-actions {display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:0 12px 10px;margin-top:auto}
+.turn-actions:empty {display:none}
 .pending-copy small {line-height:1.45}
-.pending-copy small.turn-owner.mine {color:#1557ba}
-.mobile-turn-count {font-size:12px;color:#536780}
+.mobile-turn-count {display:flex;flex-wrap:wrap;gap:5px}
+.pending-projects header .mobile-turn-count button {min-height:36px;padding:4px 7px;border-radius:7px;font-size:12px;font-weight:600}
+.mobile-turn-count .review {color:#874200;background:#fff1dd}
+.mobile-turn-count .work {color:#164b9b;background:#eaf2ff}
 
 .pending-projects { background: #fff; border: 1px solid #e2e9f4; border-radius: 14px; padding: 12px 16px; margin: 0 0 12px; }
 .pending-projects header { flex-wrap: wrap; display: flex; align-items: center; gap: 12px; }
@@ -151,10 +152,10 @@ async function remind(item, event) {
 .pending-projects p.pending-empty { margin: 9px 0 0; }
 .pending-projects .pending-receipt { color: #346453; white-space: normal; overflow-wrap: anywhere; }
 .pending-projects ul { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(245px,100%),1fr)); gap: 8px; padding: 0; margin: 8px 0 0; list-style: none; }
-.pending-projects li { display: flex; min-width: 0; background: #f7f9fc; border: 1px solid #e5ebf4; border-radius: 9px; }
+.pending-projects li { display: flex; flex-direction:column; min-width: 0; background: #f7f9fc; border: 1px solid #e5ebf4; border-radius: 9px; }
 .pending-link { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px; padding: 10px; border-radius: 8px; text-decoration: none; color: #263958; }
 .pending-link:hover, .pending-link:focus-visible { background: #edf3ff; }
-.pending-remind { align-self: center; flex: none; margin: 0 8px 0 2px; padding: 5px 9px; color: #1757c7; background: white; border: 1px solid #c3d5f3; border-radius: 7px; font: inherit; font-size: 13px; cursor: pointer; }
+.pending-remind { align-self: center; flex: none; margin: 0; padding: 5px 9px; color: #1757c7; background: white; border: 1px solid #c3d5f3; border-radius: 7px; font: inherit; font-size: 13px; cursor: pointer; }
 .pending-remind:hover, .pending-remind:focus-visible { background: #eaf1ff; border-color: #7b9de4; }
 .pending-remind:disabled { color: #68788d; cursor: wait; }
 .pending-kind { flex: none; padding: 2px 6px; border-radius: 5px; background: #e8f0ff; color: #2355a4; font-size: 12px; line-height: 18px; }
@@ -162,11 +163,15 @@ async function remind(item, event) {
 .pending-kind.bug { color: #854403; background: #fff0d6; }
 .pending-kind.manual { color: #57428c; background: #efeafa; }
 .pending-copy { display: grid; min-width: 0; gap: 3px; flex: 1; }
-.pending-copy strong { font-size: 14px; }
-.pending-copy > span { color: #40536e; font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.pending-copy strong { font-size: 15px; }
+.pending-copy .item-text { color: #40536e; font-size: 13px; line-height: 1.45; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .pending-copy strong, .pending-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pending-copy small { color: #64748b; font-size: 12px; }
 .pending-link > .el-icon { margin: auto 0; color: #6a7e9e; }
+.pending-projects li.work {border-top:3px solid #3981da}
+.pending-projects li.review {border-top:3px solid #dc8b2d}
+.pending-projects .primary-action {background:#1959bd;color:#fff;border-color:#1959bd;font-weight:650}
+.pending-copy {gap:6px}
 @media (max-width: 768px) {
   .pending-projects { margin: 6px 0 8px; padding: 10px; }
   .pending-projects ul { grid-template-columns: 1fr; gap: 5px; }

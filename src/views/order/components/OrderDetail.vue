@@ -266,6 +266,7 @@
                     <span v-if="!isBugExpanded(bug)" class="bug-summary-status" :class="'status-' + bugStatus(bug)">{{ bugStatusLabels[bugStatus(bug)] }}</span>
                     <span class="bug-disclosure-label">{{ isBugExpanded(bug) ? '收起' : '展开' }}<el-icon aria-hidden="true"><ArrowDown /></el-icon></span>
                   </button>
+                  <HandoffReturn :turn="order.taskTurns?.['bug-' + bug.id]" />
                   <button v-if="!['done','cancelled'].includes(order.status) &&
                     (isBugResolved(bug) || (!isBugExpanded(bug) && bugStatus(bug) === 'open'))"
                     type="button" class="bug-reactivate" :disabled="!!statusUpdatingBugId"
@@ -318,13 +319,13 @@
                       <el-button v-if="processingBugs && (!order.taskTurns?.['bug-'+bug.id] || order.ownerId === currentMember.id)" type="primary" size="small"
                         :loading="statusUpdatingBugId === bug.id" :disabled="issueNavigationLocked"
                         @click="resolveCurrentIssue(bug, $event)">
-                        {{ order.taskTurns?.['bug-' + bug.id] ? '提交确认' : actionableBugs.length > 1 ? '解决并继续' : '解决最后一条' }}
+                        {{ order.taskTurns?.['bug-' + bug.id] ? submitLabel(order.taskTurns['bug-'+bug.id]) : actionableBugs.length > 1 ? '解决并继续' : '解决最后一条' }}
                       </el-button>
                       <div v-else-if="bug.status==='ai_review'" class="issue-awaiting">
                         待内部验收<span v-if="order.taskTurns?.['bug-'+bug.id]"> · 等{{ order.taskTurns['bug-'+bug.id].requesterName }}确认</span>
                         <template v-if="order.taskTurns?.['bug-'+bug.id] ? order.taskTurns['bug-'+bug.id].requesterId === currentMember.id : isBoss">
                           <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'resolved')">验收通过 · 已解决</el-button>
-                          <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'action')">退回修改</el-button>
+                          <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'action')">退回给{{ executorName(order, 'bug') }}</el-button>
                         </template>
                       </div>
                       <span v-else-if="bug.status==='confirm'" class="issue-awaiting">等客户确认</span>
@@ -341,7 +342,7 @@
                         <el-radio-button v-if="!order.taskTurns?.['bug-'+bug.id]" value="resolved">已解决</el-radio-button>
                       </el-radio-group>
                       <el-button v-if="(!isBoss || order.taskTurns?.['bug-'+bug.id]) && order.ownerId === currentMember.id && !pendingAccept && !['done','cancelled'].includes(order.status) && ['open','action'].includes(bugStatus(bug))"
-                        size="small" type="primary" plain :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'submitReview')">提交内部验收</el-button>
+                        size="small" type="primary" plain :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'submitReview')">{{ order.taskTurns?.['bug-'+bug.id] ? submitLabel(order.taskTurns['bug-'+bug.id]) : '提交内部验收' }}</el-button>
                       <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && !['confirm','ai_review'].includes(bug.status) && !(bug.status==='action' && order.taskTurns?.['bug-'+bug.id] && order.taskTurns['bug-'+bug.id].requesterId!==currentMember.id)"
                         type="primary" plain size="small" :disabled="!!statusUpdatingBugId || !!deletingBugId" @click="reviewBugId=bug.id">请客户确认</el-button>
                       <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
@@ -520,6 +521,9 @@
 </template>
 
 <script setup>
+import HandoffReturn from '@/components/HandoffReturn.vue'
+import { askReturnNote } from '@/utils/handoffReturn'
+import { executorName, submitLabel } from '@/utils/handoffs'
 import IssueNumber from '@/components/IssueNumber.vue'
 import { useRoute, useRouter } from 'vue-router'
 import LinkText from '@/components/LinkText.vue'
@@ -1178,7 +1182,18 @@ async function changeBugStatus(bug, status) {
   const reactivating = isBugResolved(bug) && status === 'action'
   statusUpdatingBugId.value = bug.id
   try {
-    const result = await updateBugStatus(bug.id, status, bug.status)
+    const prior = bug.status
+    const order = props.order
+    const turn = order.taskTurns?.['bug-' + bug.id]
+    const submission = prior === 'ai_review' && turn?.submittedAt ? { ...turn } : undefined
+    const returning = prior === 'ai_review' && status === 'action'
+    const owner = executorName(order, 'bug')
+    const note = returning ? await askReturnNote(order.title + ' · 问题 #' + bug.id, owner) : undefined
+    const result = await updateBugStatus(bug.id, status, prior, note, submission)
+    if (returning) {
+      ElMessage.success('已退回给' + owner + '继续处理')
+      return true
+    }
     if (result?.taskTurns?.['bug-'+bug.id]?.submittedAt) {
       ElMessage.success('已提交，等' + result.taskTurns['bug-'+bug.id].requesterName + '确认')
       return true
@@ -1187,6 +1202,7 @@ async function changeBugStatus(bug, status) {
     ElMessage.success(reactivating ? '已重新激活，加入逐条处理' : { resolved: '已解决', action: '已标记需处理', open: '已取消处理标记', submitReview: '已提交，等待内部验收' }[status])
     return true
   } catch (e) {
+    if (e === 'cancel' || e === 'close') return false
     ElMessage.error(e.message || '状态更新失败')
     return false
   } finally {

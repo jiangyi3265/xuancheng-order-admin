@@ -163,3 +163,17 @@ test('客户的两条未标记问题可以一起加入处理并撤销',async({pa
   await expect(page.getByRole('button',{name:'都加入处理',exact:true})).toBeVisible()
   expect(project.bugs.map(b=>b.status)).toEqual(['open','open'])
 })
+
+test('已经看过的问题退回后重新提醒，说明属于本次退回', async ({page}) => {
+  const project = await prepare(page,'employee',[{id:91,content:'调整移动端按钮'}])
+  const turn = { requesterId:1, requesterName:'发起人', returnedAt:'2026-11-11 10:12:00', returnNote:'请检查小屏幕换行' }
+  project.taskTurns = {'bug-91':turn}
+  await page.addInitScript(() => localStorage.setItem('xc:issue-notices:2',JSON.stringify({'1-bug-91':'viewed'})))
+  await page.goto('/#/workbench')
+  const popup = page.getByRole('region',{name:'需要我处理的问题'})
+  await expect(popup).toContainText('退回修改')
+  await expect(popup).toContainText(turn.returnNote)
+  await expect(popup.getByRole('button',{name:'交给发起人验收'})).toBeVisible()
+  await popup.getByRole('button',{name:'查看问题'}).click()
+  await expect(page.locator('.bug-item.notice-target .return-note')).toHaveText(turn.returnNote)
+})
