@@ -49,6 +49,12 @@ test('批量创建短账号、复制登录资料、绑定项目和请求重试',
     await expect(dialog.getByRole('status')).toContainText('已创建 2 个账号')
     const codes=await dialog.locator('code').allTextContents()
     expect(new Set(codes).size).toBe(2)
+    const ownCandidates = await ok('/jiedan/customer/list?picker=true&projectId='+project.id,admin)
+    const newProjectCandidates = await ok('/jiedan/customer/list?picker=true',admin)
+    for(const code of codes) {
+      expect(ownCandidates.map(c=>c.userName)).toContain(code)
+      expect(newProjectCandidates.map(c=>c.userName)).not.toContain(code)
+    }
     await dialog.getByRole('button',{name:'复制全部'}).click()
     const clipboard=await page.evaluate(()=>navigator.clipboard.readText())
     for(const code of codes) expect(clipboard).toContain(code)

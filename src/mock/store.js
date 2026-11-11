@@ -814,8 +814,9 @@ export async function saveOrderNotes(id, notes, noteAttachments = []) {
 }
 
 // ---------- 客户账号管理 ----------
-export async function listCustomers() {
-  return await http('/jiedan/customer/list')
+export async function listCustomers(context) {
+  const query = context ? '?' + new URLSearchParams({ picker: 'true', ...context }) : ''
+  return await http('/jiedan/customer/list' + query)
 }
 
 export async function createCustomer(payload) {

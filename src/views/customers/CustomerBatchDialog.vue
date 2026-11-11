@@ -44,7 +44,7 @@ import { computed, ref, watch } from 'vue'
 import { createCustomerBatch, currentMember } from '@/mock/store'
 import { copyText } from '@/utils/customerNudge'
 
-const props = defineProps({ visible: Boolean, projectHint: String, scope: { type: String, default: 'customers' } })
+const props = defineProps({ visible: Boolean, projectHint: String, accountContext: { type: Object, default: () => ({}) }, scope: { type: String, default: 'customers' } })
 const emit = defineEmits(['update:visible', 'created'])
 const count = ref(1)
 const text = ref('')
@@ -80,7 +80,9 @@ async function submit() {
   try { sessionStorage.setItem(key, JSON.stringify(pending)) } catch { /* Same-dialog retries still work. */ }
   busy.value = true
   try {
-    accounts.value = await createCustomerBatch(pending)
+    const rows = await createCustomerBatch({ ...pending, ...props.accountContext })
+    if (key !== storageKey()) return
+    accounts.value = rows
     pending = null
     try { sessionStorage.removeItem(key) } catch { /* optional */ }
     emit('created', accounts.value)

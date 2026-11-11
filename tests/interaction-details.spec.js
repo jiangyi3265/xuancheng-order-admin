@@ -84,7 +84,7 @@ test('手机提示在底栏上方，同文合并且有数量上限', async ({pag
 test('电脑版极速建单在标题栏，空客户列表提供创建并保护已填内容', async ({page}) => {
   await enter(page)
   await page.setViewportSize({width:1366,height:850})
-  await page.route('**/jiedan/customer/list', r => ok(r, []))
+  await page.route('**/jiedan/customer/list*', r => ok(r, []))
   await page.goto('/#/customers')
   await expect(page.locator('.header').getByRole('button',{name:'极速建单'})).toBeVisible()
   await page.locator('.el-table .el-empty').getByRole('button',{name:'新建客户账号'}).click()

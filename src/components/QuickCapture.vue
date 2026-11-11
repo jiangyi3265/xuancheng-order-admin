@@ -108,6 +108,7 @@ watch(text, (val) => {
   if (parts.length) autoHint.value = '已识别：' + parts.join('、')
 }, { flush: 'sync' })
 
+let rosterRequest = 0
 function onOpen() {
   clearForm()
   baseline = JSON.stringify(snapshotFields())
@@ -115,8 +116,13 @@ function onOpen() {
   restored.value = !!saved
   if (saved) setFields(saved)
   nextTick(() => focusField(textRef))
-  // 客户账号：老板看全部，员工看自己名下的；拿不到就只按以前的项目提示
-  listCustomers().then((list) => { accounts.value = (list || []).filter((c) => c.status === '0') }).catch(() => {})
+  const request = ++rosterRequest
+  accounts.value = []
+  listCustomers({}).then(list => {
+    if (request !== rosterRequest || !open.value) return
+    accounts.value = (list || []).filter(c => c.status === '0')
+    if (customerAccount.value && !accounts.value.some(c => c.userName === customerAccount.value)) unbindAccount()
+  }).catch(() => {})
 }
 // 以前填过的客户：按最近用到的排前面，选中后把联系方式也带上
 // 也把客户账号列进来：选中就自动绑定账号（account），并带上客户归属的员工（ownerId）
@@ -127,7 +133,7 @@ const knownCustomers = computed(() => {
   for (const o of orders) {
     const name = (o.customer || '').trim()
     if (!name) continue
-    const acc = (o.customerAccount && byAccount.get(o.customerAccount)) || byNick.get(name)
+    const acc = o.customerAccount ? byAccount.get(o.customerAccount) : byNick.get(name)
     if (!seen.has(name)) seen.set(name, { value: name, contact: (o.contact || '').trim(), account: acc?.userName || '', ownerId: acc?.ownerId || null })
     else {
       const it = seen.get(name)
