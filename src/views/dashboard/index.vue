@@ -7,7 +7,11 @@
       <template #title>收款数据没加载出来 <el-button link type="primary" @click="loadIncome">重试收款数据</el-button></template>
     </el-alert>
     <header class="income-hero"><div><p>本月实收</p><h1>{{ income ? money(income.thisMonth) : '—' }}</h1><span>按真实收款流水统计</span></div><el-icon><TrendCharts /></el-icon></header>
-    <section v-if="isMobile" class="board-stats"><div><strong>{{ countedOrders.length }}</strong><small>项目总数</small></div><div><strong>{{ orders.filter(o=>o.status==='doing').length }}</strong><small>进行中</small></div><div><strong>{{ orders.filter(o=>o.status==='done').length }}</strong><small>已完成</small></div></section>
+    <section v-if="isMobile" class="board-stats">
+      <div><strong>{{ orders.filter(o=>o.status==='doing').length }}</strong><small>进行中</small></div>
+      <div><strong>{{ orders.filter(o=>o.status==='review').length }}</strong><small>待验收</small></div>
+      <div><button class="owed-link" @click="$router.push('/order?status=owing')"><strong>{{ money(owedTotal) }}</strong><small>待收款 ›</small></button></div>
+    </section>
     <section v-if="isMobile" class="board-chart"><h3>近 6 个月实收</h3><ChartCard :option="incomeBar" :height="170"/></section>
     <section v-if="isMobile" class="board-chart"><h3>项目状态分布</h3><ChartCard :option="statusPie" @select="showChartProjects" :height="175"/></section>
     <details v-if="isMobile" class="board-extra-stats"><summary>查看更多统计与预警</summary><div v-for="s in moneyCards" :key="s.label"><span>{{ s.label }}</span><b>{{ s.value }}</b></div><p v-for="o in unpaidDone" :key="o.id" class="m-unpaid" role="button" tabindex="0" @click="openProject(o)" @keydown.enter="openProject(o)">{{ o.title }} · 待收 {{ money(owed(o)) }} ›</p><ChartCard :option="trendBar" :height="200"/><ChartCard :option="channelPie" @select="showChartProjects" :height="200"/><ChartCard :option="memberBar" @select="showChartProjects" :height="200"/></details>
@@ -525,4 +529,8 @@ const memberBar = computed(() => {
     font-size: 18px;
   }
 }
+</style>
+
+<style scoped>
+.owed-link { font: inherit; color: inherit; background: transparent; border: 0; padding: 0; cursor: pointer; }
 </style>

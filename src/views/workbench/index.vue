@@ -19,7 +19,11 @@
               <p>{{ t.text }}</p>
               <p v-if="todoDeadline(t)" class="todo-deadline"><el-icon><Calendar/></el-icon>截止：{{ todoDeadline(t) }}</p>
               <div class="wb-todo-actions" @click.stop>
-                <template v-if="t.kind === 'assign'">
+                <template v-if="t.kind === 'newIssues'">
+                  <el-button size="small" @click.stop="openTodo(t)">查看</el-button>
+                  <el-button size="small" type="primary" :loading="finishing === t.key" @click.stop="takeIssues(t)">都加入处理</el-button>
+                </template>
+                <template v-else-if="t.kind === 'assign'">
                   <el-button size="small" type="primary" :loading="accepting === t.order.id" :aria-label="'接收：' + t.order.title" @click="doAccept(t.order)">接收</el-button>
                   <el-button size="small" @click="openReject(t.order)">拒绝…</el-button>
                 </template>
@@ -104,7 +108,11 @@
           <div class="rc-meta">
             <!-- 按钮一行、状态和期限一行（电脑上这两层不占位，和原来一样排成一行） -->
             <div class="rc-actions">
-              <template v-if="t.kind === 'assign'">
+              <template v-if="t.kind === 'newIssues'">
+                  <el-button size="small" @click.stop="openTodo(t)">查看</el-button>
+                  <el-button size="small" type="primary" :loading="finishing === t.key" @click.stop="takeIssues(t)">都加入处理</el-button>
+                </template>
+                <template v-else-if="t.kind === 'assign'">
                 <el-button size="small" type="primary" :loading="accepting === t.order.id" @click.stop="doAccept(t.order)">接收</el-button>
                 <el-button size="small" @click.stop="openReject(t.order)">拒绝…</el-button>
               </template>
@@ -342,6 +350,8 @@ import {
 } from '@/mock/store'
 import { statusMap, MEMBERS, memberMap } from '@/constants/options'
 import { isWaitingOther, nextAction, stalledDays, shortDue } from '@/utils/workbench'
+import { undoToast } from '@/utils/undoToast'
+import { updateBugStatus } from '@/mock/store'
 import { todoItems, todoOrderIds, isMyNextStep } from '@/utils/todos'
 import { owed, money } from '@/utils/payment'
 import { awaitingCustomer, nudgedToday, nudgeCustomerAccept, copyAcceptNudge } from '@/utils/customerNudge'
@@ -580,6 +590,7 @@ async function quickNext(o) {
   const na = naOf(o)
   if (!na) return
   if (na.to === 'bugs') return openDetail(o, 'bugs')
+  if (['review','done'].includes(na.to) && (Number(o.openBugCount) || o.bugs?.some(bug => !['resolved','closed'].includes(bug.status)))) return mobileNext(o)
   try {
     await changeOrderStatus(o, na.to)
   } catch (e) {
@@ -692,7 +703,31 @@ async function acknowledge(order) {
     acknowledging.value.delete(order.id)
   }
 }
+async function takeIssues(t) {
+  if (finishing.value) return
+  finishing.value=t.key
+  const changed=[]
+  try {
+    const detail=await getOrder(t.order.id)
+    for (const issue of detail.bugs || []) {
+      if (issue.senderKind !== 'customer' || issue.status !== 'open') continue
+      await updateBugStatus(issue.id,'action')
+      changed.push(issue.id)
+    }
+  } catch(e) { ElMessage.error(e.message) }
+  finally {
+    finishing.value=''
+    if (changed.length) undoToast('take-issues:'+t.order.id,changed.length+' 条问题已加入处理',async()=>{
+      for (const id of changed) {
+        const latest=await getOrder(t.order.id)
+        if (latest.bugs?.find(b=>b.id===id)?.status === 'action') await updateBugStatus(id,'open')
+      }
+    })
+  }
+}
 function openTodo(t) {
+  if (t.kind === 'newIssues') return routeToDetail(t.order,'bugs',{bug:String(t.order.newBugPreview.id)})
+
   const tabs = { mention: 'internal', nudge: 'internal' }
   openDetail(t.order, tabs[t.kind] || '')
 }

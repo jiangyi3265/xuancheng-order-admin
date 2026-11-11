@@ -54,6 +54,7 @@ function projectLine(o){
  // 没有新动态、只是在等接收的，直接说等谁
  if(pending&&!o.unread?.includes(me))return pending
  const task=colleagueTask(o,me)
+ if(o.newBugCount>0 && o.newBugPreview)return {text:'客户提了新问题：'+(o.newBugPreview.content||'查看问题附件'),tab:'bugs',query:'&bug='+o.newBugPreview.id,icon:'Warning'}
  if(task)return {text:brief(task.text),tab:'internal',time:task.time,icon:'ChatLineSquare'}
  if(o.ownerId===me&&Number(o.actionBugCount)>0)return {text:`${o.actionBugCount} 条问题需要你处理`,tab:'bugs',query:'&todo=1',icon:'Warning'}
  // 最近一条动态就是这次的新消息：谁说了什么、谁改了什么
@@ -80,7 +81,7 @@ function projectLine(o){
  return {text:parts.join(' · ')}
 }
 const items=computed(()=>{
- const projectItems=orders.filter(o=>o.unread?.includes(currentMember.value.id)||o.assignState==='pending').map(o=>{const l=projectLine(o);return {key:'p'+o.id,title:o.title,text:l.text,time:l.time||o.updateTime,caption:[o.orderNo,friendlyTime(l.time||o.updateTime)].filter(Boolean).join(' · '),path:'/order?id='+o.id+(l.tab?'&tab='+l.tab:'')+(l.query||''),icon:l.icon||'ChatDotRound',unread:!!o.unread?.includes(currentMember.value.id),at:stamp(l.time||o.updateTime)}}).sort((a,b)=>(b.unread-a.unread)||(b.at-a.at))
+ const projectItems=orders.filter(o=>o.newBugCount>0||o.unread?.includes(currentMember.value.id)||o.assignState==='pending').map(o=>{const l=projectLine(o);return {key:'p'+o.id,title:o.title,text:l.text,time:l.time||o.updateTime,caption:[o.orderNo,friendlyTime(l.time||o.updateTime)].filter(Boolean).join(' · '),path:'/order?id='+o.id+(l.tab?'&tab='+l.tab:'')+(l.query||''),icon:l.icon||'ChatDotRound',unread:!!o.unread?.includes(currentMember.value.id),at:stamp(l.time||o.updateTime)}}).sort((a,b)=>(b.unread-a.unread)||(b.at-a.at))
  const approvalItems=approvals.filter(a=>isBoss.value?a.status==='pending':a.requesterId===currentMember.value.id).map(a=>({key:'a'+a.id,title:a.orderTitle||'项目审批',text:(a.reason||'项目变更申请')+' · '+(labels[a.status]||a.status),caption:isBoss.value?'待我审批':'我的申请',path:'/approvals?id='+a.id,icon:'Finished',unread:a.status==='pending'}))
  const quoteItems=quoteTodos.value.map(q=>({key:'q'+q.id,title:q.title,text:q.replyVersion?'对方在报价单中回复了你':isBoss.value?`${q.employeeName} 已提交报价 ${money(q.amount)}`:`${q.creatorName} 发来了需求，请查看附件并报价`,time:q.updateTime,caption:friendlyTime(q.updateTime),path:'/quotes?id='+q.id+(q.replyVersion?'&tab=chat':''),icon:'PriceTag',unread:isQuoteUnread(q)}))
  return tab.value==='quotes'?quoteItems:tab.value==='projects'?projectItems:tab.value==='approvals'?approvalItems:[...quoteItems,...projectItems,...approvalItems]

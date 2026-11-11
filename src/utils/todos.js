@@ -87,6 +87,7 @@ export function todoReason(o, me, boss, today = todayStr()) {
   if (open && mine && o.urgentUntil && !o.handled) return { kind: 'urgent', rank: 2, text: '加急：' + o.urgentUntil + ' 前要处理' }
   if (mine && waitingReply(o)) return { kind: 'reply', rank: 4, text: messageText(o.lastMessage) }
   if (!open) return null
+  if (mine && o.newBugCount > 0) return { kind:'newIssues', rank:4.5, text:'客户提了 ' + o.newBugCount + ' 条新问题：' + (o.newBugPreview?.content || '查看问题附件') }
   if (myNext && nextDueState(o)) return { kind: 'next', rank: 5, text: nextText(o) }
   if (!boss && mine && o.assignState === 'pending') return { kind: 'assign', rank: 6, text: '分配给你的新项目：先接收，再开工' }
   // 客户自己提交、还没人动过的新需求

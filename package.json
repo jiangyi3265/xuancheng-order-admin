@@ -21,6 +21,7 @@
     "@playwright/test": "^1.65.0",
     "@vitejs/plugin-vue": "^5.0.5",
     "sass": "^1.77.6",
+    "unplugin-vue-components": "^0.27.5",
     "vite": "^5.3.3"
   }
 }

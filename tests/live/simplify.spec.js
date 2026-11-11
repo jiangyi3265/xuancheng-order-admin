@@ -93,7 +93,10 @@ test('real browser: fewer clicks on workbench and project detail', async ({ brow
 
     await test.step('long lists are collapsed and switching pages starts at the top', async () => {
       expect(await boss.locator('.row-card.waiting').count()).toBeLessThanOrEqual(6)
+      // 独立验收库数据较少，也应在可滚动的窗口里验证返回顶部。
+      await boss.setViewportSize({width: 1440, height: 420})
       const main = boss.locator('.el-main.main')
+      await expect.poll(() => main.evaluate(el=>el.scrollHeight-el.clientHeight)).toBeGreaterThan(0)
       await main.evaluate((el) => (el.scrollTop = 600))
       expect(await main.evaluate((el) => el.scrollTop)).toBeGreaterThan(0)
       await boss.locator('.el-menu-item').filter({ hasText: '项目管理' }).click()

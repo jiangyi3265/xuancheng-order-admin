@@ -1,5 +1,4 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
-import Layout from '@/layout/index.vue'
 import { ensureMe, isBoss, recoverWechatLogin } from '@/mock/store'
 import { prepareChatDraftSession } from '@/utils/chatDraft'
 
@@ -81,7 +80,7 @@ const routes = [
   },
   {
     path: '/',
-    component: Layout,
+    component: () => import('@/layout/index.vue'),
     redirect: '/workbench',
     children: menuRoutes
   },

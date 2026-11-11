@@ -5,11 +5,11 @@
         <strong aria-live="polite">需要我处理 <small v-if="unseen.length > 1">{{ unseen.length }} 条</small></strong>
         <button type="button" class="later" title="30 分钟后再提醒" @click="snooze(item)">稍后处理 · 30 分钟</button>
       </div>
-      <div class="notice-project">{{ item.title }} · 问题 #{{ item.bugId }}</div>
+      <div class="notice-project">{{ item.title }} · {{ item.fresh ? '客户提了新问题' : '问题' }} #{{ item.bugId }}</div>
       <p>{{ item.text }}</p>
       <div class="notice-actions">
         <button type="button" @click="openIssue(item)">查看问题</button>
-        <button type="button" class="finish" :disabled="busy" @click="finish(item)">{{ busy ? '处理中…' : '标为已处理' }}</button>
+        <button v-if="!item.fresh" type="button" class="finish" :disabled="busy" @click="finish(item)">{{ busy ? '处理中…' : '标为已处理' }}</button>
       </div>
     </section>
   </Teleport>
@@ -139,6 +139,8 @@ async function finish(row) {
 
 <style scoped>
 .issue-inbox-notice { position: fixed; z-index: 2050; right: 18px; bottom: 22px; width: min(340px, calc(100vw - 32px)); box-sizing: border-box; padding: 15px 17px; border: 1px solid #d4e3ff; border-left: 3px solid #2866e8; border-radius: 12px; background: white; box-shadow: 0 8px 36px #17386424; color: #172d50; }
+/* 临时操作优先，收起菜单或撤销提示后继续展示原提醒。 */
+:global(body:has(.el-dropdown [aria-expanded="true"], .el-message button, .el-message-box) .issue-inbox-notice) { visibility: hidden; }
 .notice-top, .notice-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .notice-top small { margin-left: 4px; color: #46618d; font-weight: 500; }
 .notice-project { margin-top: 9px; font-size: 12px; color: #526783; overflow-wrap: anywhere; }

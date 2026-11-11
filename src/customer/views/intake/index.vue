@@ -174,7 +174,7 @@ async function submit() {
     receiptHeading.value?.focus()
   } catch (e) {
     if (id !== projectId.value) return
-    failure.value = /failed to fetch|network|load failed|超时/i.test(e.message)
+    failure.value = /failed to fetch|network|load failed|网络连不上|超时/i.test(e.message)
       ? '暂未收到提交回执。草稿已保留，请再次提交核对。' : e.message || '未能提交，请重试。'
   } finally { draft.sending = false }
 }

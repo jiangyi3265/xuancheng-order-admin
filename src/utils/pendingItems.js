@@ -13,6 +13,11 @@ export function pendingItems(orders) {
       groups.urgent.push({ ...project, key: row.id + '-urgent', kind: 'urgent',
         text: '截止 ' + row.urgentUntil, meta: owner, due: row.urgentUntil })
     }
+    if (row.newBugCount > 0 && row.newBugPreview?.id) {
+      const bug = row.newBugPreview
+      groups.bug.push({ ...project, key: row.id + '-new-' + bug.id, kind:'bug', fresh:true, bugId:bug.id,
+        text:bug.content || '查看问题附件', meta:'客户新问题 · ' + owner })
+    }
     if (Number(row.actionBugCount) > 0) {
       const bugs = row.actionBugPreviews || []
       if (bugs.length) {

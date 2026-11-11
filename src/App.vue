@@ -1,11 +1,12 @@
 <template>
-  <el-config-provider :message="messageOptions">
+  <el-config-provider :message="messageOptions" :locale="zhCn">
   <router-view :key="$route.params.id" />
   <FullscreenImage />
   </el-config-provider>
 </template>
 
 <script setup>
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { computed } from 'vue'
 import { isMobile } from '@/utils/useMobile'
 const messageOptions = computed(() => ({

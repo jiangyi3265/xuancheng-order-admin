@@ -1023,7 +1023,7 @@ const isOverdue = computed(
 const na = computed(() => nextAction(props.order, currentMember.value.id))
 async function doNext() {
   if (!na.value) return
-  if (isMobile.value && ['review','done'].includes(na.value.to)) { deliveryVisible.value=true; return }
+  if (['review','done'].includes(na.value.to) && (isMobile.value || props.order.bugs?.some(b => !isBugResolved(b)))) { deliveryVisible.value=true; return }
   try {
     await changeOrderStatus(props.order, na.value.to)
   } catch (e) {
@@ -1989,3 +1989,11 @@ function dotColor(type) {
 .bug-submit-actions .el-button { margin-left: 0; }
 </style>
 <style>.el-drawer.order-workspace-drawer>.el-drawer__body{padding:0;overflow:hidden}</style>
+
+<style scoped>
+@media (max-width: 768px) {
+  .bug-panel .section-head { align-items: flex-start; flex-wrap: wrap; }
+  .bug-panel .section-head h3 .head-note { display: block; white-space: nowrap; margin: 4px 0 0; }
+  .bug-panel .section-head .issue-tools { display: flex; flex-wrap: nowrap; gap: 4px; }
+}
+</style>

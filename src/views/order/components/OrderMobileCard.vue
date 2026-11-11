@@ -3,6 +3,7 @@
   <div class="board-project-row" :class="{overdue}" role="button" tabindex="0" @click="emit('open')" @keydown.enter.self="emit('open')">
     <ProjectCover :order="order" :inert="selecting" compact/>
     <div class="board-project-copy"><h3><i v-if="unread" class="unread-dot"/>{{ order.title }}</h3><div class="board-project-meta"><strong v-if="!overdue && Number(order.amount)">{{ money(order.amount) }}</strong><span v-else-if="!overdue" class="board-project-unpriced">未报价</span><el-tag v-if="overdue" size="small" type="danger">逾期</el-tag><el-tag v-else size="small" :class="'project-status-'+order.status" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag><el-tag v-if="order.priority==='high'" size="small" type="danger">高</el-tag></div><small v-if="order.deadline || ownerName || stalled"><template v-if="order.deadline"><el-icon><Calendar/></el-icon>截止：{{ shortDeadline(order.deadline) }}</template><template v-if="ownerName">{{ order.deadline ? ' · ' : '' }}{{ ownerName }}</template><b v-if="stalled" class="board-project-stalled">{{ order.deadline || ownerName ? ' · ' : '' }}{{ stalled }} 天没动静</b></small>
+      <CustomerWaitBadges :order="order" />
       <ProjectUrgency :order="order" :selecting="selecting" />
       <p v-if="order.nextStep" class="board-project-next" :class="nextDueState(order)">下一步：{{ order.nextStep }}<em> · {{ nextWho }}{{ order.nextDue ? ' · ' + shortDue(order.nextDue) : '' }}</em></p>
       <div v-if="action || $slots.tools" class="board-project-quick" @click.stop>
@@ -17,6 +18,7 @@
 import { computed } from 'vue'
 import { money } from '@/utils/payment'
 import { Calendar } from '@element-plus/icons-vue'
+import CustomerWaitBadges from './CustomerWaitBadges.vue'
 import ProjectUrgency from './ProjectUrgency.vue'
 import ProjectCover from '@/components/ProjectCover.vue'
 import { isBoss, currentMember, collab } from '@/mock/store'

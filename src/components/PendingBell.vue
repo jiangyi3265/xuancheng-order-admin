@@ -21,7 +21,7 @@
           </router-link>
           <button v-if="item.kind === 'urgent' && !isBoss && item.order.assignState === 'pending'" class="complete"
             type="button" @click="open = false; router.push(pendingDestination(item))">去接单</button>
-          <button v-else-if="item.kind !== 'bug' || item.bugId" class="complete" type="button"
+          <button v-else-if="!item.fresh && (item.kind !== 'bug' || item.bugId)" class="complete" type="button"
             :disabled="loading || !!loadError || busy.has(item.id)" :aria-label="'标为已处理，' + actionTitle(item)" :title="actionTitle(item)" @click="finish(item)">
             {{ busy.get(item.id) === item.key ? '处理中…' : '标为已处理' }}
           </button>

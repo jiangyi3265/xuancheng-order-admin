@@ -29,7 +29,7 @@
           </span>
           <el-icon aria-hidden="true"><ArrowRight /></el-icon>
         </router-link>
-        <button type="button" class="pending-remind" :disabled="sending.has(item.key)"
+        <button v-if="!item.fresh" type="button" class="pending-remind" :disabled="sending.has(item.key)"
           :aria-label="item.title + (item.receipt ? '，再提醒' : '，提醒') + (item.recipient || '负责人') + '处理' + labels[item.kind]"
           :title="'微信提醒' + (item.recipient || '负责人')" @click.stop="remind(item, $event)">
           {{ sending.has(item.key) ? '发送中' : item.receipt ? '再提醒' : '提醒' }}

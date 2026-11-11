@@ -52,7 +52,7 @@
           <div class="title">{{ currentTitle }}</div>
         </div>
         <WorkSearch v-if="!isMobile" ref="jumpRef" class="header-search" :loading="searchLoading" />
-        <el-button v-if="!isMobile" type="primary" plain class="header-quick" title="极速建单（Alt+N）" @click="quickCapture.show()"><el-icon><Lightning /></el-icon>极速建单</el-button>
+        <el-button v-if="!isMobile" type="primary" plain class="header-quick" aria-label="极速建单" title="极速建单（Alt+N）" @click="quickCapture.show()"><el-icon><Lightning /></el-icon><span class="quick-caption">极速建单</span></el-button>
         <div class="user">
           <el-avatar :size="30" :style="{ background: currentMember.color }">
             {{ currentMember.name.slice(-1) }}
@@ -562,5 +562,13 @@ function badgeOf(path) {
     /* 给右下角悬浮的「极速建单」留位置，最后一张卡片不会被它盖住 */
     padding-bottom: 88px;
   }
+}
+</style>
+
+<style scoped>
+.header .header-quick { margin-inline-end: 14px; flex-shrink: 0; }
+@media (max-width: 1120px) {
+  .header-quick .quick-caption { display: none; }
+  .header .header-quick { padding-inline: 10px; }
 }
 </style>

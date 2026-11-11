@@ -21,21 +21,42 @@ export function isCustomerAuthed() {
   return !!customerToken.value
 }
 
+const systemError = '系统出了点问题，请稍后再试'
+const networkError = '网络连不上，请检查网络后重试'
+
+async function requestJson(url, init) {
+  let response
+  try {
+    response = await fetch(url, init)
+  } catch (error) {
+    if (error.name === 'AbortError') throw error
+    throw new Error(networkError)
+  }
+  if (response.status >= 500) {
+    console.error('接口异常', response.status, await response.text())
+    throw new Error(systemError)
+  }
+  try {
+    return await response.json()
+  } catch (error) {
+    console.error('接口响应格式异常', error)
+    throw new Error(systemError)
+  }
+}
+
 export async function getCaptcha() {
-  const res = await fetch('/captchaImage')
-  const json = await res.json()
-  if (json.code !== 200) throw new Error(json.msg || 'captcha failed')
+  const json = await requestJson('/captchaImage')
+  if (json.code !== 200) throw new Error(friendlyMessage(json.msg || '验证码加载失败'))
   return json
 }
 
 async function postLogin(username, password, captcha = {}) {
-  const res = await fetch('/login', {
+  const j = await requestJson('/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username, password, code: captcha.code || '', uuid: captcha.uuid || '' })
   })
-  const j = await res.json()
-  if (j.code !== 200) throw new Error(j.msg || '登录失败')
+  if (j.code !== 200) throw new Error(friendlyMessage(j.msg || '登录失败'))
   return j.token
 }
 
@@ -63,9 +84,8 @@ export async function signOutDevice() {
 export async function login(username, password, captcha, rememberDevice=inWeChat) {
   const nextToken = await postLogin(username, password, captcha)
   // Determine the role from the server, using the same successful login once.
-  const response = await fetch('/getInfo', { headers: { Authorization: 'Bearer ' + nextToken } })
-  const identity = await response.json()
-  if (identity.code !== 200) throw new Error(identity.msg || '无法确认账号身份')
+  const identity = await requestJson('/getInfo', { headers: { Authorization: 'Bearer ' + nextToken } })
+  if (identity.code !== 200) throw new Error(friendlyMessage(identity.msg || '无法确认账号身份'))
   const roles = identity.roles || []
   const customer = roles.includes('customer')
   if (inWeChat) {
@@ -143,7 +163,7 @@ async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), timeoutMs)
     try {
-      const res = await fetch(url, {
+      json = await requestJson(url, {
         headers: {
           'Content-Type': 'application/json',
           ...(requestToken ? { Authorization: 'Bearer ' + requestToken } : {}),
@@ -152,9 +172,6 @@ async function authedHttp(url, opts = {}, tokenRef = token, onExpired = logout, 
         signal: controller.signal,
         ...rest
       })
-      json = await res.json().catch(() => null)
-      if (!json) throw new Error(res.ok ? '服务器返回异常' : `服务器暂时不可用（${res.status}）`)
-      if (res.status >= 500 && attempt + 1 < attempts) throw new Error('服务器暂时繁忙')
       break
     } catch (e) {
       json = null
@@ -188,7 +205,8 @@ export function friendlyMessage(msg) {
   const text = String(msg || '').trim()
   if (!text) return '请求失败，请稍后重试'
   if (/###|SQL|Exception|java\.|org\.|nested exception|Cause:|\bat [a-z]+\.[a-z]/i.test(text) || text.length > 200) {
-    return '服务器出了点问题，请稍后重试；一直不行请联系管理员'
+    console.error('接口异常', text)
+    return systemError
   }
   return text
 }

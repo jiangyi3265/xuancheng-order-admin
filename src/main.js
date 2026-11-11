@@ -1,21 +1,19 @@
 import { createApp } from 'vue'
-import ElementPlus from 'element-plus'
-import 'element-plus/dist/index.css'
-import zhCn from 'element-plus/es/locale/lang/zh-cn'
-import * as ElementPlusIconsVue from '@element-plus/icons-vue'
-
+import 'element-plus/theme-chalk/base.css'
+import 'element-plus/theme-chalk/el-message.css'
+import 'element-plus/theme-chalk/el-message-box.css'
+import 'element-plus/theme-chalk/el-notification.css'
+import * as icons from './icons'
 import App from './App.vue'
 import router from './router'
 import './styles/index.scss'
 
 const app = createApp(App)
 
-// 全量注册 Element Plus 图标，模板里可直接用 <DataLine /> 等
-for (const [key, component] of Object.entries(ElementPlusIconsVue)) {
+for (const [key, component] of Object.entries(icons)) {
   app.component(key, component)
 }
 
-app.use(ElementPlus, { locale: zhCn })
 app.use(router)
 app.mount('#app')
 

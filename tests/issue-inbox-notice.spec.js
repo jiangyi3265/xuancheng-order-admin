@@ -128,3 +128,38 @@ test('到期离线时保留稍后记录，恢复连接后重新核对负责人�
   await page.clock.fastForward(31_000)
   await expect(notice).toContainText('待联网确认')
 })
+
+test('客户新问题在项目已读后仍进待办，消息和提醒定位同一条',async({page})=>{
+  const project=await prepare(page,'employee',[])
+  Object.assign(project,{unread:[],newBugCount:1,newBugPreview:{id:93,content:'核对轮播图'},bugs:[{id:93,content:'核对轮播图',status:'open',senderKind:'customer'}]})
+  await page.route('**/jiedan/order/list',r=>r.fulfill({json:{code:200,data:[project]}}))
+  await page.goto('/#/workbench')
+  await expect(page.getByText('客户提了 1 条新问题：核对轮播图',{exact:true}).first()).toBeVisible()
+  const notice=page.getByRole('region',{name:'需要我处理的问题'})
+  await expect(notice).toContainText('客户提了新问题 #93')
+  await notice.getByRole('button',{name:'稍后处理'}).click()
+  await page.goto('/#/messages')
+  await page.getByText('客户提了新问题：核对轮播图',{exact:true}).click()
+  await expect(page).toHaveURL(/tab=bugs.*bug=93/)
+})
+
+test('客户的两条未标记问题可以一起加入处理并撤销',async({page})=>{
+  const project=await prepare(page,'employee',[])
+  Object.assign(project,{bugs:[91,92].map(id=>({id,status:'open',senderKind:'customer',content:'客户问题'+id}))})
+  function summary(){
+    const pending=project.bugs.filter(b=>b.status==='open')
+    return {...project,newBugCount:pending.length,newBugPreview:pending.at(-1),actionBugCount:2-pending.length,
+      actionBugPreviews:project.bugs.filter(b=>b.status==='action')}
+  }
+  for(const path of ['list','1'])await page.route('**/jiedan/order/'+path,r=>r.fulfill({json:{code:200,data:path==='list'?[summary()]:summary()}}))
+  await page.route('**/jiedan/order/bug/*/status',r=>{
+    const id=Number(r.request().url().split('/').at(-2));project.bugs.find(b=>b.id===id).status=r.request().postDataJSON().status
+    return r.fulfill({json:{code:200,data:summary()}})
+  })
+  await page.goto('/#/workbench')
+  await page.getByRole('button',{name:'都加入处理',exact:true}).click()
+  await expect(page.getByText('2 条问题已标记需处理',{exact:true}).first()).toBeVisible()
+  await page.getByRole('button',{name:'撤销',exact:true}).click()
+  await expect(page.getByRole('button',{name:'都加入处理',exact:true})).toBeVisible()
+  expect(project.bugs.map(b=>b.status)).toEqual(['open','open'])
+})

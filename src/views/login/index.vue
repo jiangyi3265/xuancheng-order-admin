@@ -71,3 +71,15 @@ async function doLogin() {
 
 onMounted(loadCaptcha)
 </script>
+
+<style scoped>
+@media (max-width: 768px) and (max-height: 700px) {
+  .unified-login.login-page { padding: 12px 16px; min-height: 100dvh; }
+  .unified-login .login-art { min-height: 0; height: auto; padding: 8px 0 14px; }
+  .login-art :is(.login-ribbon,.login-promise,p) { display: none; }
+  .unified-login .login-card { margin-top: 0; padding: 18px; }
+  .login-card .sub { margin-bottom: 12px; }
+  .login-card :deep(.el-form-item) { margin-bottom: 14px; }
+  .login-card .login-submit { margin-top: 2px; }
+}
+</style>
