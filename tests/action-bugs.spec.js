@@ -118,7 +118,7 @@ test('逐条解决后，晚返回的项目详情不会将已解决问题移回�
   holdNext=true
   await page.evaluate(()=>dispatchEvent(new Event('focus')))
   await expect.poll(()=>Boolean(held)).toBe(true)
-  await panel.getByRole('button',{name:'完成'}).click()
+  await panel.getByRole('button',{name:'已解决',exact:true}).click()
   await expect(panel.getByRole('status')).toContainText('剩余 1 条')
   const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/jiedan/order/1')
   await ok(held,before)

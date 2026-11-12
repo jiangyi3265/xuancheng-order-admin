@@ -17,12 +17,14 @@
         </form>
       </el-popover>
       <small v-if="item.turn?.requesterName">交给{{ item.turn.requesterName }}确认</small>
+      <small v-else-if="requestConfirm">交给{{ reviewerName }}确认</small>
     </template>
-    <el-button v-else size="small" type="primary" :loading="busy" :disabled="disabled" @click="send">{{ label || '完成' }}</el-button>
+    <el-button v-else size="small" type="primary" :loading="busy" :disabled="disabled" @click="send">{{ label || (resolvesIssue ? '已解决' : '完成') }}</el-button>
   </span>
 </template>
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { memberMap } from '@/constants/options'
 import { focusField } from '@/utils/formKeys'
 import { getOrder, latestOrderVersion } from '@/mock/store'
 import { finishPendingWithUndo } from '@/utils/orderUndo'
@@ -33,6 +35,11 @@ const props = defineProps({
 })
 const emit = defineEmits(['done'])
 const asksForNote = computed(() => !!props.item.turn || props.requestConfirm)
+// 没人交办的问题，这个按钮直接把问题关掉，和详情里的状态「已解决」是同一件事，所以也叫「已解决」
+// （以前叫「完成」，员工在详情里看到的「做完了」却是交给老板确认，两个按钮结果不一样、名字也对不上）
+const resolvesIssue = computed(() => props.item.kind === 'bug' && !props.item.turn)
+// 员工把问题交上去时由管理员确认；员工的成员列表里看不到管理员，拿不到名字就写「管理员」
+const reviewerName = computed(() => Object.values(memberMap).find(m => m.role === 'boss')?.name || '管理员')
 const open = ref(false)
 const input = ref(null)
 const anchor = ref(null)
@@ -62,7 +69,7 @@ async function send() {
   try {
     const result = props.submit
       ? await props.submit(note.value.trim(), version)
-      : await finishPendingWithUndo(order, kind, bugId, '已完成：' + order.title, note.value.trim(), open.value ? version : undefined)
+      : await finishPendingWithUndo(order, kind, bugId, (resolvesIssue.value ? '问题 #' + bugId + ' 已解决：' : '已完成：') + order.title, note.value.trim(), open.value ? version : undefined)
     if (result === false) return
     open.value = false
     emit('done')

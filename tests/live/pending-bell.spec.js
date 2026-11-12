@@ -45,7 +45,8 @@ for (const width of [1440, 390]) {
       await expect(page.locator('.workspace-head')).toBeHidden()
       await bell.click()
       for (const [i, text] of ['修复测试问题','电话确认需求','加急','手动标记'].entries()) {
-        await rows.filter({hasText:text}).getByRole('button',{name:'完成',exact:true}).click()
+        // 问题那一行直接把问题关掉，按钮叫「已解决」；其余事项仍是「完成」
+        await rows.filter({hasText:text}).getByRole('button',{name:i === 0 ? '已解决' : '完成',exact:true}).click()
         await expect(rows).toHaveCount(3-i)
       }
       await page.reload()

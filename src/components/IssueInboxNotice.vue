@@ -7,7 +7,11 @@
           <strong aria-live="polite">需要我处理 <small v-if="unseen.length > 1">{{ unseen.length }} 条</small></strong>
           <span aria-hidden="true">{{ expanded ? '⌃' : '⌄' }}</span>
         </button>
-        <button type="button" class="later" title="30 分钟后再提醒" @click="snooze(item)">稍后处理 · 30 分钟</button>
+        <span class="notice-tools">
+          <!-- 「稍后处理」只推迟这一条（有下一条就接着显示）；× 是整个提醒 30 分钟内都不弹 -->
+          <button type="button" class="later" title="这一条 30 分钟后再提醒" @click="snooze(item)">稍后处理 · 30 分钟</button>
+          <button type="button" class="close" aria-label="关闭，30 分钟内不再弹出" title="看到了，30 分钟内不再弹出" @click="quietAll">×</button>
+        </span>
       </div>
       <HandoffCard v-if="expanded" id="current-issue-notice" :item="item" @open="markViewed" />
     </section>
@@ -33,7 +37,29 @@ const mine = computed(() => !storageKey.value || !ordersReady.value ? [] : hando
 const unseen = computed(() => mine.value.filter(row => !notices.value[row.key]))
 // 工作台和电脑上的项目管理（「待处理」面板一直展开着）已经列出这件事，不再弹一遍；手机上项目管理的面板默认收起，照常弹
 const listedOnPage = computed(() => route.path === '/workbench' || (route.path === '/order' && !route.query.id && !isMobile.value))
-const item = computed(() => listedOnPage.value ? null : unseen.value.find(row => !(route.query.tab === 'bugs' &&
+// 点 × 表示「看到了」：30 分钟内整个提醒都不弹，期间新来的也先不弹；到点后还没处理的照常弹出。
+// 存在本机，换页、刷新、另开标签页都算数；事情本身一直在铃铛和工作台里。
+const quietKey = computed(() => me.value?.id ? 'xc:issue-notices-quiet:' + me.value.id : '')
+const quietUntil = ref(0)
+const now = ref(Date.now())
+const quiet = computed(() => quietUntil.value > now.value)
+function readQuiet() {
+  try { return Number(localStorage.getItem(quietKey.value)) || 0 } catch { return quietUntil.value }
+}
+let quietTimer
+watch(quietKey, key => { quietUntil.value = key ? readQuiet() : 0 }, { immediate: true })
+watch(quietUntil, until => {
+  clearTimeout(quietTimer)
+  now.value = Date.now()
+  if (until > now.value) quietTimer = setTimeout(() => { now.value = Date.now() }, until - now.value + 50)
+}, { immediate: true })
+function quietAll() {
+  const until = Date.now() + SNOOZE_MS
+  quietUntil.value = until
+  try { localStorage.setItem(quietKey.value, String(until)) } catch { /* 本页仍然生效 */ }
+  toast.success('30 分钟内不再弹出，要处理的还在铃铛里')
+}
+const item = computed(() => listedOnPage.value || quiet.value ? null : unseen.value.find(row => !(route.query.tab === 'bugs' &&
   String(route.query.id) === String(row.id) && String(route.query.bug) === String(row.bugId))))
 
 const expanded = ref(true)
@@ -107,18 +133,26 @@ watch([mine, ordersReady], ([rows, ready]) => {
 watch([notices, ordersReady], scheduleReminder, { immediate: true })
 function onStorage(event) {
   if (event.key === storageKey.value || event.key === null) notices.value = readNotices()
+  if (event.key === quietKey.value || event.key === null) quietUntil.value = quietKey.value ? readQuiet() : 0
 }
+// 手机锁屏、切到别的应用时计时器可能被暂停，回来时按当前时间重新判断
+const refreshNow = () => { now.value = Date.now() }
 onMounted(() => {
   window.addEventListener('storage', onStorage)
   document.addEventListener('visibilitychange', scheduleReminder)
   window.addEventListener('pageshow', scheduleReminder)
+  document.addEventListener('visibilitychange', refreshNow)
+  window.addEventListener('pageshow', refreshNow)
 })
 onBeforeUnmount(() => {
   disposed = true
   clearTimeout(timer)
+  clearTimeout(quietTimer)
   window.removeEventListener('storage', onStorage)
   document.removeEventListener('visibilitychange', scheduleReminder)
   window.removeEventListener('pageshow', scheduleReminder)
+  document.removeEventListener('visibilitychange', refreshNow)
+  window.removeEventListener('pageshow', refreshNow)
 })
 function snooze(row) {
   changeNotices(next => { next[row.key] = Date.now() + SNOOZE_MS })
@@ -140,11 +174,16 @@ function markViewed(row) {
 .notice-toggle span {font-size:14px;color:#577299}
 .issue-inbox-notice :deep(.handoff-card) {margin-top:8px}
 .issue-inbox-notice .later { cursor:pointer; background:transparent; border:none; color:#51647e; padding:4px; font:inherit; font-size:13px; }
+.notice-tools { display:inline-flex; align-items:center; gap:2px; flex:none; }
+.issue-inbox-notice .close { cursor:pointer; display:inline-grid; place-items:center; width:30px; height:30px; margin-right:-6px; border:none; border-radius:8px;
+  background:transparent; color:#51647e; font-size:22px; line-height:1; padding:0; }
+.issue-inbox-notice .close:hover { background:#eef3fb; color:#172d50; }
 @media(max-width:768px) {
   .issue-inbox-notice {--notice-bottom:calc(72px + env(safe-area-inset-bottom));right:12px;bottom:var(--notice-bottom);
     max-height:calc(100dvh - var(--notice-bottom) - 12px);overflow:auto;padding:8px 12px;overscroll-behavior:contain}
   .issue-inbox-notice.above-create {--notice-bottom:calc(158px + env(safe-area-inset-bottom))}
   .notice-top {position:sticky;top:-8px;z-index:1}
   .notice-toggle,.issue-inbox-notice .later {min-height:40px}
+  .issue-inbox-notice .close {width:40px;height:40px}
 }
 </style>

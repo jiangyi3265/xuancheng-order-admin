@@ -55,11 +55,11 @@
       <!-- 报价单放在待办下面（以前排在最上面）；没有报价单时只占一行 -->
       <QuotePanel embedded/>
       <template v-if="!isBoss">
-        <!-- 待接收的项目已经在上面「需要我处理」里，这里不再重复列一遍 -->
+        <!-- 待接收的项目在上面「轮到我」里接收；这里是自己手上的全部项目，有事要做的标「轮到我」 -->
         <nav class="board-tabs"><button v-for="t in employeeTabs" :key="t.key" :class="{active:employeeTab===t.key}" @click="employeeTab=t.key">{{ t.label }} <b>{{ t.count }}</b></button></nav>
         <div class="board-section-title"><h2>{{ employeeTabs.find(t=>t.key===employeeTab)?.label }}项目（{{ employeeOrders.length }}）</h2></div>
-        <article v-for="o in employeeOrders" :key="o.id" class="employee-project"><ProjectCover :order="o" compact/><div class="employee-project-copy"><h3>{{ o.title }}</h3><!-- 截止日期直接写在卡片上（以前要点进详情才知道哪天交）；需求和项目名一样时不重复写 --><p>客户：{{ o.customer || '未填写' }}<template v-if="o.deadline"> · <span :class="{'due-late':isOverdue(o)}">{{ isOverdue(o) ? '已逾期（' + shortDue(o.deadline) + '）' : '截止 ' + shortDue(o.deadline) }}</span></template></p><p v-if="o.nextStep" class="two-lines">下一步<template v-if="memberMap[o.nextOwnerId] && o.nextOwnerId !== currentMember.id">（{{ memberMap[o.nextOwnerId].name }}）</template>：{{ o.nextStep }}<template v-if="o.nextDue"> · {{ shortDue(o.nextDue) }}前</template></p><p v-else-if="cardDesc(o)" class="two-lines">{{ cardDesc(o) }}</p><div class="employee-actions"><el-button @click="openDetail(o)">查看详情</el-button><el-button v-if="naOf(o)" type="primary" :loading="acting===o.id" :aria-label="naOf(o).label+'：'+o.title" @click="mobileNext(o)">{{ naOf(o).label }}</el-button></div></div></article>
-        <el-empty v-if="!employeeOrders.length" :description="todoItems.length ? '没有别的项目了，要处理的都在上面' : '暂无项目'" :image-size="72"/>
+        <article v-for="o in employeeOrders" :key="o.id" class="employee-project"><ProjectCover :order="o" compact/><div class="employee-project-copy"><h3>{{ o.title }}<span v-if="turnIds.has(o.id)" class="turn-chip">轮到我</span></h3><!-- 截止日期直接写在卡片上（以前要点进详情才知道哪天交）；需求和项目名一样时不重复写 --><p>客户：{{ o.customer || '未填写' }}<template v-if="o.deadline"> · <span :class="{'due-late':isOverdue(o)}">{{ isOverdue(o) ? '已逾期（' + shortDue(o.deadline) + '）' : '截止 ' + shortDue(o.deadline) }}</span></template></p><p v-if="o.nextStep" class="two-lines">下一步<template v-if="memberMap[o.nextOwnerId] && o.nextOwnerId !== currentMember.id">（{{ memberMap[o.nextOwnerId].name }}）</template>：{{ o.nextStep }}<template v-if="o.nextDue"> · {{ shortDue(o.nextDue) }}前</template></p><p v-else-if="cardDesc(o)" class="two-lines">{{ cardDesc(o) }}</p><div class="employee-actions"><el-button @click="openDetail(o)">查看详情</el-button><el-button v-if="naOf(o)" type="primary" :loading="acting===o.id" :aria-label="naOf(o).label+'：'+o.title" @click="mobileNext(o)">{{ naOf(o).label }}</el-button></div></div></article>
+        <el-empty v-if="!employeeOrders.length" description="暂无项目" :image-size="72"/>
         <section v-if="myRequests.length" class="employee-requests"><div class="board-section-title"><h2>我的申请</h2><button @click="router.push('/approvals')">查看全部 <el-icon><ArrowRight/></el-icon></button></div><ApprovalItem v-for="a in myRequests.slice(0,2)" :key="a.id" :a="a"/></section>
       </template>
       <!-- 快被忘了：待确认 / 进行中、超过 N 天没有任何动静的项目 -->
@@ -197,7 +197,7 @@
         <div v-for="o in shownHands" :key="'h' + o.id" class="row-card hands" @click="openDetail(o)">
           <span v-if="isUnread(o)" class="new-badge">NEW</span>
           <div class="rc-main">
-            <div class="rc-title">{{ o.title }}</div>
+            <div class="rc-title">{{ o.title }}<span v-if="turnIds.has(o.id)" class="turn-chip">轮到我</span></div>
             <div class="rc-reason blue">{{ handReason(o) }}</div>
           </div>
           <div class="rc-meta">
@@ -380,16 +380,15 @@ const waitingExpanded = ref(false)
 const shownWaiting = computed(() => (waitingExpanded.value ? waitingList.value : waitingList.value.slice(0, listLimit.value)))
 const shownStalled = computed(() => (stalledExpanded.value ? stalledList.value : stalledList.value.slice(0, listLimit.value)))
 
-// 我手上的：我负责、已接收、待开工 / 进行中，且不在「需要我处理」「快被忘了」里；有截止日期的排前面
+// 我手上的：我负责、已接收、待开工 / 进行中的全部项目；有截止日期的排前面。
+// 以前已经在「轮到我」里的项目会从这里拿掉，数字比实际少、项目一会儿在一会儿不在；现在全列出来，有事的标「轮到我」
 const myHands = computed(() =>
   orders
     .filter(
       (o) =>
         o.ownerId === currentMember.value.id &&
         ['pending', 'doing'].includes(o.status) &&
-        o.assignState !== 'pending' &&
-        !todoOrderIds.value.has(o.id) &&
-        !stalledIds.value.has(o.id)
+        o.assignState !== 'pending'
     )
     .sort((a, b) => (a.deadline || '9999').localeCompare(b.deadline || '9999'))
 )
@@ -466,14 +465,15 @@ const overview = computed(() => [
 // 已经列在「需要我处理」里的项目不再在下面重复出现
 const employeeTab=ref('doing')
 const inHand=(o)=>['pending','doing'].includes(o.status)&&o.assignState!=='pending'
-const notInTodo=(o)=>!todoOrderIds.value.has(o.id)
+// 「轮到我」里有这件事的项目（只算要我做的，不含等对方的），卡片上标一下
+const turnIds=computed(()=>new Set(todoItems.value.filter(t=>t.order).map(t=>t.order.id)))
 const employeeTabs=computed(()=>[
- {key:'doing',label:'手上的',count:orders.filter(o=>inHand(o)&&notInTodo(o)).length},
- {key:'review',label:'待验收',count:orders.filter(o=>o.status==='review'&&notInTodo(o)).length}
+ {key:'doing',label:'手上的',count:orders.filter(inHand).length},
+ {key:'review',label:'待验收',count:orders.filter(o=>o.status==='review').length}
 ])
 // 卡片上的需求摘要：和项目名一模一样就不重复写了
 const cardDesc=(o)=>{const r=String(o.requirement||'').trim();return r?(r===String(o.title||'').trim()?'':r):'打开详情查看项目需求'}
-const employeeOrders=computed(()=>orders.filter(o=>notInTodo(o)&&(employeeTab.value==='doing'?inHand(o):o.status==='review')))
+const employeeOrders=computed(()=>orders.filter(o=>employeeTab.value==='doing'?inHand(o):o.status==='review'))
 // 手机待办默认显示 6 条，「全部 N 条」原地展开
 const MOBILE_TODO_LIMIT=6
 const todoExpanded=ref(false)
@@ -1117,6 +1117,9 @@ async function handleDelete(row) {
 .row-card.hands { border-left-color: #409eff; }
 .rc-reason.blue { color: #4a6a9b; }
 .hands-tip { color: #6b7d99 !important; }
+/* 手上的项目里，「轮到我」有事的标一下（项目照常列着，不再从这里拿掉） */
+.turn-chip { display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 10px; background: #e1edff; color: #164b9b;
+  font-size: 12px; font-weight: 600; line-height: 18px; vertical-align: 2px; white-space: nowrap; }
 
 /* 快被忘了 */
 .row-card.stalled { border-left-color: #e6a23c; }

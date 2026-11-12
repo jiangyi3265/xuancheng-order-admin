@@ -43,7 +43,7 @@ test('一键处理传入当前问题和项目版本，重复点击只提交一�
   })
   await page.goto('/#/order')
   const notice=page.getByRole('region',{name:'需要我处理的问题'})
-  const button=notice.getByRole('button',{name:'完成'})
+  const button=notice.getByRole('button',{name:'已解决',exact:true})
   await button.click()
   await expect(notice).toHaveCount(0)
   expect(submitted).toEqual([{kind:'bug',bugId:91,version:1}])
@@ -64,7 +64,64 @@ test('稍后处理 30 分钟使用第一次点选的时间，刷新后准时重�
   await expect(notice).toHaveCount(0)
   await page.clock.fastForward(60 * 1000)
   await expect(notice).toContainText('核对交付截图')
-  await expect(notice.getByRole('button', { name: '完成' })).toBeEnabled()
+  await expect(notice.getByRole('button', { name: '已解决', exact: true })).toBeEnabled()
+})
+
+for (const width of [390, 1366]) {
+  test('点 × 表示看到了：30 分钟内整个提醒都不弹（新来的也不弹），刷新也算数，到点后照常弹 · ' + width, async ({ page }) => {
+    await page.setViewportSize({ width, height: 845 })
+    const project = await prepare(page, 'employee', [{ id: 91, content: '修改首页按钮' }, { id: 92, content: '核对新需求' }])
+    await page.clock.install({ time: new Date('2026-11-10T10:00:00Z') })
+    // 电脑上项目管理已经列出，不弹；换到客户账号页看弹窗
+    const where = width < 768 ? '/#/order' : '/#/customers'
+    await page.goto(where)
+    const notice = page.getByRole('region', { name: '需要我处理的问题' })
+    await expect(notice).toContainText('2 条')
+    const close = notice.getByRole('button', { name: '关闭，30 分钟内不再弹出', exact: true })
+    // 手机上要好点：至少 40×40
+    if (width < 768) expect(await close.evaluate(el => Math.min(el.offsetWidth, el.offsetHeight))).toBeGreaterThanOrEqual(40)
+    await close.click()
+    await expect(page.getByText('30 分钟内不再弹出，要处理的还在铃铛里', { exact: true })).toBeVisible()
+    await expect(notice).toHaveCount(0)
+    // 两条都还在铃铛里
+    await page.locator('.pending-bell').click()
+    await expect(page.locator('.bell-panel')).toContainText('修改首页按钮')
+    await expect(page.locator('.bell-panel')).toContainText('核对新需求')
+    await page.keyboard.press('Escape')
+    // 期间来了一条新的，也先不弹；刷新、换页都不弹
+    const fresh = { ...project, version: 2, actionBugCount: 3, actionBugPreviews: [...project.actionBugPreviews, { id: 93, content: '新来的问题' }],
+      bugs: [...project.bugs, { id: 93, content: '新来的问题', status: 'action' }] }
+    await page.route('**/jiedan/order/list', r => r.fulfill({ json: { code: 200, data: [fresh] } }))
+    await page.clock.fastForward(10 * 60 * 1000)
+    await page.reload()
+    await expect(page.locator('.pending-bell')).toBeVisible()
+    await page.goto('/#/order?id=1')
+    await page.goto(where)
+    await page.clock.fastForward(19 * 60 * 1000)
+    await expect(notice).toHaveCount(0)
+    // 满 30 分钟，还没处理的照常弹出，新来的也在
+    await page.clock.fastForward(61 * 1000)
+    await expect(notice).toBeVisible()
+    await expect(notice).toContainText('3 条')
+  })
+}
+
+test('× 只管自己这个账号：换了账号照常弹', async ({ page }) => {
+  await prepare(page, 'employee', [{ id: 91, content: '已分配的问题' }])
+  await page.goto('/#/order')
+  const notice = page.getByRole('region', { name: '需要我处理的问题' })
+  await notice.getByRole('button', { name: '关闭，30 分钟内不再弹出', exact: true }).click()
+  await page.reload()
+  await expect(page.locator('.pending-bell')).toBeVisible()
+  await expect(notice).toHaveCount(0)
+  await page.route('**/jiedan/staff/me', r => r.fulfill({ json: {
+    code: 200, data: { id: 1, userName: 'boss', nickName: '管理员', role: 'boss', status: '0' }
+  } }))
+  await page.route('**/jiedan/order/list', r => r.fulfill({ json: { code: 200, data: [
+    { ...order, ownerId: 1, actionBugCount: 1, actionBugPreviews: [{ id: 91, content: '转交给新负责人' }] }
+  ] } }))
+  await page.reload()
+  await expect(notice).toContainText('转交给新负责人')
 })
 
 test('已由他人处理的问题到期后不重新弹出，重新激活后可再次提醒', async ({ page }) => {

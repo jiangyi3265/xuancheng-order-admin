@@ -2,7 +2,7 @@
   <article class="handoff-card" :class="{returned: item.turn?.returnedAt && !item.review}" :data-kind="item.kind" :data-order-id="item.id">
     <router-link class="summary-link" :to="destination" @click="opened">
       <header><strong>{{ item.title }}</strong><span>{{ label }}</span></header>
-      <p class="task-text"><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</p>
+      <p v-if="showText" class="task-text"><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</p>
     </router-link>
     <HandoffStatus :item="item" />
     <div class="card-actions">
@@ -52,6 +52,13 @@ const emit = defineEmits(['open', 'done'])
 const route = useRoute()
 const destination = computed(() => pendingDestination(props.item, route.path === '/order' ? route.query : {}))
 const label = computed(() => reviewLabels[props.item.kind] || pendingLabels[props.item.kind])
+// 「项目验收」「处理结果确认」这两类，固定的那句话（项目已提交验收 / 核对本次项目处理结果）和标签、状态行说的是同一件事，
+// 卡片上就不再多写一行；加急确认的截止时间已经写在状态行里时也不重复
+const showText = computed(() => {
+  const { kind, due } = props.item
+  if (kind === 'deliveryReview' || kind === 'manualReview') return false
+  return !(kind === 'urgentReview' && due)
+})
 const canRemind = computed(() => (!props.item.mine || props.selfReminder && !props.item.turn && !props.item.review) && !props.item.fresh && props.item.recipientId != null && (props.item.review ? props.item.personal : true))
 const canWithdraw = computed(() => props.item.review && props.item.turn?.submittedAt &&
   !['done', 'cancelled'].includes(props.item.order.status) && String(props.item.turn.submittedBy) === String(currentMember.value.id))

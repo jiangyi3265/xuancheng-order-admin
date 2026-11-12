@@ -509,7 +509,7 @@ async function changeBugStatus(bug, status) {
     const vo = await updateBugStatus(bug.id, status === 'open' ? 'reopen' : status)
     if (order.value?.id !== projectId) return
     applySnapshot(vo)
-    ElMessage.success(status === 'resolved' ? '已标记已解决' : '已重新激活，等待处理')
+    ElMessage.success(status === 'resolved' ? '已标记已解决' : '已重新打开，等待处理')
   } catch (e) {
     ElMessage.error(e.message || '状态更新失败')
   } finally {

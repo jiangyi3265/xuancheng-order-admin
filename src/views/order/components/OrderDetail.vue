@@ -271,7 +271,7 @@
                   <button v-if="!['done','cancelled'].includes(order.status) &&
                     (isBugResolved(bug) || (!isBugExpanded(bug) && bugStatus(bug) === 'open'))"
                     type="button" class="bug-reactivate" :disabled="!!statusUpdatingBugId"
-                    @click="changeBugStatus(bug, 'action')">{{ isBugResolved(bug) ? '重新激活' : '加入逐条处理' }}</button>
+                    @click="changeBugStatus(bug, 'action')">{{ isBugResolved(bug) ? '重新打开' : '加入处理' }}</button>
                   <div v-if="!isBugExpanded(bug) && (bug.time || bug.attachments?.length || bug.updates?.length)" class="bug-summary-counts">
                     <!-- 收起时也写上是谁提的（以前只有时间，分不清是客户提的还是自己人记的，得一条条点开） -->
                     <span class="bug-summary-who">{{ bug.createdBy || '客户' }}</span>
@@ -322,7 +322,7 @@
                         :submit="(note, version) => submitIssue(bug, note, version)" />
                       <el-button v-else-if="processingBugs && !order.taskTurns?.['bug-'+bug.id]" type="primary" size="small"
                         :loading="statusUpdatingBugId === bug.id" :disabled="issueNavigationLocked"
-                        @click="resolveCurrentIssue(bug, $event)">完成</el-button>
+                        @click="resolveCurrentIssue(bug, $event)">已解决</el-button>
                       <div v-else-if="bug.status==='ai_review'" class="issue-awaiting">
                         待内部验收<span v-if="order.taskTurns?.['bug-'+bug.id]"> · 等{{ order.taskTurns['bug-'+bug.id].requesterId === currentMember.id ? '你' : order.taskTurns['bug-'+bug.id].requesterName }}确认</span>
                         <template v-if="order.taskTurns?.['bug-'+bug.id] ? order.taskTurns['bug-'+bug.id].requesterId === currentMember.id : isBoss">
@@ -1233,7 +1233,8 @@ async function changeBugStatus(bug, status, submitNote) {
       return true
     }
     if (reactivating) bugExpansion.value.set(String(bug.id), true)
-    ElMessage.success(reactivating ? '已重新激活，加入逐条处理' : { resolved: '已解决', action: '已标记需处理', open: '已取消处理标记', submitReview: '已提交，等待内部验收' }[status])
+    // 和工作台卡片同一套说法：加入处理 / 已解决 / 重新打开
+    ElMessage.success(reactivating ? '已重新打开，加入处理' : { resolved: '已解决', action: '已加入处理', open: '已取消处理', submitReview: '已提交，等待内部验收' }[status])
     return true
   } catch (e) {
     if (e === 'cancel' || e === 'close') return false
