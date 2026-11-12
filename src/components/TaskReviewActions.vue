@@ -10,6 +10,7 @@ import { executorName, reviewsInFlight } from '@/utils/handoffs'
 import { reviewTaskTurn, updateBugStatus, latestOrderVersion, getOrder } from '@/mock/store'
 import { askReturnNote } from '@/utils/handoffReturn'
 import { toast } from '@/utils/toast'
+import { sentToCustomer } from '@/utils/customerConfirm'
 const props = defineProps({ item:{ type:Object, required:true } })
 const executor = computed(() => executorName(props.item.order, props.item.kind))
 const busy = computed(() => reviewsInFlight.has(props.item.id))
@@ -23,9 +24,11 @@ async function decide(decision) {
   try {
     const title = row.order.title + (row.bugId ? ' · 问题 #' + row.bugId : '')
     const note = decision === 'return' ? await askReturnNote(title, executor.value) : undefined
-    if (row.kind === 'issueReview') await updateBugStatus(row.bugId, decision === 'confirm' ? 'resolved' : 'action', 'ai_review', note, submission)
+    let result
+    if (row.kind === 'issueReview') result = await updateBugStatus(row.bugId, decision === 'confirm' ? 'resolved' : 'action', 'ai_review', note, submission)
     else await reviewTaskTurn(row.order, row.kind === 'nextReview' ? 'next' : 'manual', decision, note, version)
-    toast.success(decision === 'confirm' ? '已验收完成' : '已退回给' + executor.value + '继续处理')
+    // 客户提的问题：通过后不是直接解决，而是「已处理」发给客户确认
+    toast.success(decision === 'confirm' ? (sentToCustomer(result, row.bugId) ? '已通过，已发给客户确认' : '已验收完成') : '已退回给' + executor.value + '继续处理')
   } catch (err) {
     if (err === 'cancel' || err === 'close') return
     toast.error(err.message || '操作失败，请重试')

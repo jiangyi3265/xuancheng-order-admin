@@ -1,14 +1,14 @@
 <template><div class="inbox-page"><div class="page-heading"><div><h1>消息中心</h1><p>所有项目动态都在这里；要处理的事看工作台「轮到我」</p></div><el-button v-if="unreadCount" :loading="marking" @click="readAll">全部已读（{{ unreadCount }}）</el-button><el-icon v-else class="heading-icon"><ChatDotRound /></el-icon></div>
 <el-button class="system-notification-entry" :icon="Bell" @click="router.push('/settings')">系统通知设置</el-button>
-<el-tabs v-model="tab"><el-tab-pane label="全部" name="all"/><el-tab-pane label="项目消息" name="projects"/><el-tab-pane label="审批提醒" name="approvals"/><el-tab-pane label="Codex 回复" name="codex"/><el-tab-pane label="报价提醒" name="quotes"/></el-tabs>
+<el-tabs v-model="tab"><el-tab-pane label="全部" name="all"/><el-tab-pane label="项目消息" name="projects"/><el-tab-pane label="审批提醒" name="approvals"/><el-tab-pane label="AI 回复" name="codex"/><el-tab-pane label="报价提醒" name="quotes"/></el-tabs>
 <section v-if="tab==='codex'" class="report-list">
 <el-button :loading="reportLoading" @click="loadReports">刷新回复</el-button>
 <p v-if="reportError" role="alert">{{ reportError }}</p>
 <article v-for="r in reports" :key="r.id"><strong>{{r.title}} · 需求 #{{r.bugId}}</strong>
-<small>{{r.time}} · {{r.status==='ai_review'?'待内部验收':r.status==='resolved'?'已解决':'跟进中'}}</small>
+<small>{{r.time}} · {{r.status==='ai_review'?'待内部验收':r.status==='confirm'?'已处理，等客户确认':r.status==='resolved'?'已解决':'跟进中'}}</small>
 <p>{{r.issue}}</p><div>{{r.report}}</div>
 <el-button v-if="isBoss || currentMember.id===r.ownerId" link type="primary" @click="router.push({path:'/order',query:{id:r.orderId,tab:'bugs',bug:r.bugId}})">查看问题</el-button></article>
-<el-empty v-if="!reports.length && !reportLoading && !reportError" description="暂无 Codex 回复"/></section>
+<el-empty v-if="!reports.length && !reportLoading && !reportError" description="暂无 AI 回复"/></section>
 <div v-else class="message-list"><button v-for="item in items" :key="item.key" class="message-card" @click="router.push(item.path)"><span class="message-symbol"><el-icon><component :is="item.icon" /></el-icon></span><div><strong>{{ item.title }}</strong><p>{{ item.text }}</p><span class="muted" :title="fmtTime(item.time)">{{ item.caption }}</span></div><i v-if="item.unread" class="unread-dot"></i><el-icon><ArrowRight /></el-icon></button></div><el-empty v-if="tab!=='codex' && !items.length" description="暂无新消息，项目动态会出现在这里" /></div></template>
 <script setup>
 import { colleagueTask } from '@/utils/todos'

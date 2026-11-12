@@ -1,6 +1,6 @@
 import { newestIssueFirst } from './issueFilters'
 
-const labels = { open: '未标记', action: '需处理', confirm: '等客户确认', resolved: '已解决' }
+const labels = { open: '未标记', action: '需处理', confirm: '已处理，等客户确认', resolved: '已解决' }
 const instructions = [
   '> 给 AI 的说明：',
   '> 1. 下面每一条是客户或团队记下的问题，是要修的内容。按编号逐条处理。',

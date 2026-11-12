@@ -57,7 +57,8 @@ const entries = computed(() => {
         rows.push({
           key:'review-'+item.reviewId, kind:'review', title:item.title || '附件需求',
           unread:sameReply && reply.unread, time:item.reviewTime || '',
-          content:sameReply && reply.content ? reply.content : '查看本次修改',
+          // 写上是谁发来的（团队成员的名字；AI 改完的署名是项目负责人）
+          content:sameReply && reply.content ? (reply.by ? reply.by + '：' : '') + reply.content : '查看本次修改',
           meta:[project.title,'需求 #'+item.id,replyTime(item.reviewTime)].filter(Boolean).join(' · '),
           to:reviewRoute(project,item)
         })
@@ -66,7 +67,7 @@ const entries = computed(() => {
       if (!reply?.id) continue
       rows.push({
         key:'issue-'+project.id+'-'+item.id, kind:'issue', title:item.title || '附件需求',
-        unread:!!reply.unread, time:reply.time || '', content:'团队：'+replyText(reply),
+        unread:!!reply.unread, time:reply.time || '', content:(reply.by || '团队')+'：'+replyText(reply),
         meta:[project.title,'需求 #'+item.id,replyTime(reply.time)].filter(Boolean).join(' · '),
         to:issueRoute(project,item,reply.id)
       })

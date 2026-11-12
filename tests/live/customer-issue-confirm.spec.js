@@ -60,12 +60,13 @@ test('客户对照图片、退回调整，再连续确认同项目两条修改',
     const card=worker.locator('.bug-item[data-notice-id="'+issue+'"]')
     await expect(card.locator('.bug-disclosure')).toHaveAttribute('aria-expanded','true')
     async function requestReview(text) {
-      await card.getByRole('button',{name:'请客户确认',exact:true}).click()
-      const dialog=worker.getByRole('dialog',{name:'请客户确认'})
+      // 客户提的问题：团队这边的按钮叫「已处理」，发给客户确认
+      await card.getByRole('button',{name:'已处理',exact:true}).click()
+      const dialog=worker.getByRole('dialog',{name:'已处理，请客户确认'})
       await dialog.getByRole('textbox',{name:'修改说明'}).fill(text)
       await dialog.locator('input[type=file]').first().setInputFiles(picture('改后截图.png'))
       const response=worker.waitForResponse(r=>r.url().endsWith('/bug/'+issue+'/review') && r.request().method()==='POST')
-      await dialog.getByRole('button',{name:'发送确认请求'}).click()
+      await dialog.getByRole('button',{name:'发给客户确认'}).click()
       const result=await (await response).json()
       expect(result.code,result.msg).toBe(200)
       await expect(dialog).toBeHidden()

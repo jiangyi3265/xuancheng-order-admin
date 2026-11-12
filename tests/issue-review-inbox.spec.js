@@ -79,7 +79,8 @@ test('团队能选客户补图作对照，重试沿用同一轮，发送后等�
   await card.getByRole('button',{name:'请客户确认'}).click()
   const dialog=page.getByRole('dialog',{name:'请客户确认'})
   const submit=dialog.getByRole('button',{name:'发送确认请求'})
-  await expect(submit).toBeDisabled()
+  // 说明和截图都可以不填（客户看到「请确认这次修改」），按钮一开始就能点
+  await expect(submit).toBeEnabled()
   await expect(dialog.getByRole('button',{name:/选择改前截图/})).toHaveCount(2)
   await dialog.getByRole('button',{name:/选择改前截图.*客户补图/}).click()
   await dialog.getByRole('textbox',{name:'修改说明'}).fill('标题已修好')

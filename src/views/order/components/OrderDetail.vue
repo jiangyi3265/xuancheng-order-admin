@@ -322,7 +322,7 @@
                         :submit="(note, version) => submitIssue(bug, note, version)" />
                       <el-button v-else-if="processingBugs && !order.taskTurns?.['bug-'+bug.id]" type="primary" size="small"
                         :loading="statusUpdatingBugId === bug.id" :disabled="issueNavigationLocked"
-                        @click="resolveCurrentIssue(bug, $event)">已解决</el-button>
+                        @click="resolveCurrentIssue(bug, $event)">{{ bug.customerConfirm ? '已处理' : '已解决' }}</el-button>
                       <div v-else-if="bug.status==='ai_review'" class="issue-awaiting">
                         待内部验收<span v-if="order.taskTurns?.['bug-'+bug.id]"> · 等{{ order.taskTurns['bug-'+bug.id].requesterId === currentMember.id ? '你' : order.taskTurns['bug-'+bug.id].requesterName }}确认</span>
                         <template v-if="order.taskTurns?.['bug-'+bug.id] ? order.taskTurns['bug-'+bug.id].requesterId === currentMember.id : isBoss">
@@ -330,7 +330,7 @@
                           <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'action')">退回</el-button>
                         </template>
                       </div>
-                      <span v-else-if="bug.status==='confirm'" class="issue-awaiting">等客户确认</span>
+                      <span v-else-if="bug.status==='confirm'" class="issue-awaiting">已处理，等客户确认</span>
                       <el-radio-group v-else
                         :key="statusUpdatingBugId === bug.id"
                         :model-value="bugStatus(bug)"
@@ -341,7 +341,8 @@
                       >
                         <el-radio-button value="open" :disabled="bug.status==='action' && !!order.taskTurns?.['bug-'+bug.id] && order.taskTurns['bug-'+bug.id].requesterId!==currentMember.id">未标记</el-radio-button>
                         <el-radio-button v-if="!isBugResolved(bug)" value="action" :disabled="['done','cancelled'].includes(order.status)">需处理</el-radio-button>
-                        <el-radio-button v-if="!order.taskTurns?.['bug-'+bug.id]" value="resolved">已解决</el-radio-button>
+                        <!-- 客户提的问题不能由团队直接改成已解决：点「已处理」发给客户确认 -->
+                        <el-radio-button v-if="!order.taskTurns?.['bug-'+bug.id] && !bug.customerConfirm" value="resolved">已解决</el-radio-button>
                       </el-radio-group>
                       <template v-if="order.ownerId === currentMember.id && !pendingAccept && !['done','cancelled'].includes(order.status) && ['open','action'].includes(bugStatus(bug))">
                         <HandoffCompleteButton v-if="order.taskTurns?.['bug-'+bug.id] && !processingBugs"
@@ -351,7 +352,7 @@
                           :submit="note => changeBugStatus(bug,'submitReview',note)" />
                       </template>
                       <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && !['confirm','ai_review'].includes(bug.status) && !(bug.status==='action' && order.taskTurns?.['bug-'+bug.id] && order.taskTurns['bug-'+bug.id].requesterId!==currentMember.id)"
-                        type="primary" plain size="small" :disabled="!!statusUpdatingBugId || !!deletingBugId" @click="reviewBugId=bug.id">请客户确认</el-button>
+                        type="primary" :plain="!bug.customerConfirm" size="small" :disabled="!!statusUpdatingBugId || !!deletingBugId" @click="reviewBugId=bug.id">{{ bug.customerConfirm ? '已处理' : '请客户确认' }}</el-button>
                       <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
                         {{ activeUpdateBugId === bug.id ? '收起' : '补充说明' }}
                       </el-button>
@@ -532,6 +533,7 @@ import HandoffReturn from '@/components/HandoffReturn.vue'
 import { askReturnNote } from '@/utils/handoffReturn'
 import HandoffCompleteButton from '@/components/HandoffCompleteButton.vue'
 import { finishPendingWithUndo } from '@/utils/orderUndo'
+import { sentToCustomer } from '@/utils/customerConfirm'
 import { executorName } from '@/utils/handoffs'
 import IssueNumber from '@/components/IssueNumber.vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -759,7 +761,7 @@ const processingBugs = ref(false)
 const processingBugId = ref(null)
 const bugNavigator = ref(null)
 const bugExpansion = ref(new Map())
-const bugStatusLabels = { open: '未标记', action: '需处理', confirm:'等客户确认', ai_review:'待内部验收', resolved: '已解决' }
+const bugStatusLabels = { open: '未标记', action: '需处理', confirm:'已处理 · 等客户确认', ai_review:'待内部验收', resolved: '已解决' }
 const bugDetailsId = bug => `issue-details-${props.order.id}-${bug.id}`
 function isBugExpanded(bug) {
   return bugExpansion.value.get(String(bug.id)) ?? (['action','ai_review'].includes(bugStatus(bug)))
@@ -1226,6 +1228,10 @@ async function changeBugStatus(bug, status, submitNote) {
     const result = await updateBugStatus(bug.id, status, prior, note, submission)
     if (returning) {
       ElMessage.success('已退回给' + owner + '继续处理')
+      return true
+    }
+    if (status === 'resolved' && sentToCustomer(result, bug.id)) {
+      ElMessage.success('已处理，等客户确认')
       return true
     }
     if (result?.taskTurns?.['bug-'+bug.id]?.submittedAt) {

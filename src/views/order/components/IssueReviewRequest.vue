@@ -1,5 +1,5 @@
 <template>
-  <el-dialog :model-value="true" title="请客户确认" class="issue-review-dialog" width="440px"
+  <el-dialog :model-value="true" :title="bug.customerConfirm ? '已处理，请客户确认' : '请客户确认'" class="issue-review-dialog" width="440px"
     align-center append-to-body :close-on-click-modal="false" :before-close="close">
     <form class="review-form" data-paste-zone="请客户确认" @submit.prevent="submit">
       <p class="review-subject">#{{ bug.id }} · {{ bug.content || '截图需求' }}</p>
@@ -20,14 +20,14 @@
         </div>
         <div class="field"><label for="review-note">修改说明</label>
           <textarea id="review-note" v-model="draft.text" aria-label="修改说明" rows="2"
-            maxlength="2000" placeholder="上传改后截图，或写下已改好的地方" />
+            maxlength="2000" placeholder="选填：写一句改了什么，或上传改后截图；都不填，客户看到「请确认这次修改」" />
         </div>
       </fieldset>
       <p v-if="stale" class="form-error" role="status">这条需求的确认状态已更新，请返回查看。</p>
       <p v-else-if="error" class="form-error" role="alert">{{ error }}</p>
       <div class="review-submit">
         <el-button :disabled="draft.sending" @click="close">取消</el-button>
-        <el-button type="primary" native-type="submit" :loading="draft.sending" :disabled="!ready">发送确认请求</el-button>
+        <el-button type="primary" native-type="submit" :loading="draft.sending" :disabled="!ready">{{ bug.customerConfirm ? '发给客户确认' : '发送确认请求' }}</el-button>
       </div>
     </form>
   </el-dialog>
@@ -63,7 +63,7 @@ const error = ref('')
 const stale = computed(() => (props.bug.review?.id || null)!==previousReviewId || props.bug.status==='confirm' ||
   !props.order.customerAccount || ['done','cancelled'].includes(props.order.status))
 const ready = computed(() => !stale.value && !draft.sending && !draft.uploading && !draft.attachmentWaitList.length &&
-  draft.files.every(item => item.type === 'image') && !!(draft.text.trim() || draft.files.length))
+  draft.files.every(item => item.type === 'image'))
 function close() {
   if (!draft.sending) emit('close')
 }
@@ -78,9 +78,9 @@ async function submit() {
         draft.retry = {fingerprint,key:crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join('')}
       }
       return requestIssueReview(props.bug.id,{...payload,requestKey:draft.retry.key})
-    })
+    }, {allowEmpty:true})
     if (saved) {
-      ElMessage.success('已请客户确认')
+      ElMessage.success(props.bug.customerConfirm ? '已处理，等客户确认' : '已请客户确认')
       emit('close')
     }
   } catch (e) {

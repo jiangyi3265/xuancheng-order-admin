@@ -76,8 +76,12 @@ for (const width of [390,1440]) {
     expect(employeeView.data.bugs.find(b=>b.id===bugId).attachments).toHaveLength(1)
     await change('resolved')
     await page.reload()
+    // 客户提的问题：团队做完是「已处理」，客户点「确认好了」才是已解决
+    await expect(target).toContainText('已处理，等你确认')
+    await target.getByRole('button',{name:'确认好了',exact:true}).click()
     await expect(target).toContainText('已解决')
-    await page.getByRole('button',{name:'返回列表'}).click()
+    // 确认完的面板上也有一个「返回列表」，这里用页头的返回
+    await page.getByLabel('返回列表').click()
     await showFilters()
     await expect(recentDay).toHaveAttribute('aria-pressed','true')
     await expect(page.getByRole('button',{name:/^未解决/})).toHaveAttribute('aria-pressed','true')

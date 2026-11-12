@@ -155,9 +155,10 @@ export function chatDraft(kind, id, participant = '') {
   return (kind === 'customer' ? customers : staff).get(kind, id, participant)
 }
 
-export async function sendDraft(draft, submit) {
+// allowEmpty：说明和附件都可以不填的场景（「已处理，请客户确认」）
+export async function sendDraft(draft, submit, { allowEmpty = false } = {}) {
   if (expiredDrafts.has(draft)) throw new Error('登录账号已变更，请刷新页面后再发送')
-  if (draft.sending || draft.annotating || draft.uploading || draft.attachmentWaitList.length || !(draft.text.trim() || draft.files.length)) return
+  if (draft.sending || draft.annotating || draft.uploading || draft.attachmentWaitList.length || (!allowEmpty && !(draft.text.trim() || draft.files.length))) return
   const text = draft.text
   const files = [...draft.files]
   draft.sending = true

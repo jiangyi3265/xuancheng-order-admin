@@ -77,6 +77,10 @@ test('客户收到两条需求回复：从消息直达、独立已读、原需�
 
   const url='/jiedan/portal/bug/'+firstId+'/update'
   await api(boss,'/jiedan/order/bug/'+firstId+'/status','PUT',{status:'resolved'})
+  // 客户提的问题：团队做完是「已处理」，等客户确认；客户确认后才是已解决，之后才能带图重开
+  const pending=(await api(customer,'/jiedan/portal/orders/'+projectId)).bugs.find(b=>b.id===firstId)
+  expect(pending.progressStatus).toBe('confirm')
+  await api(customer,'/jiedan/portal/bug/'+firstId+'/review/'+pending.review.id,'POST',{decision:'accept'})
   const body={content:'边距还要调整',attachments:[images[0]],reopen:true,requestKey:randomUUID()}
   await Promise.all([api(customer,url,'POST',body),api(customer,url,'POST',body)])
   const detail=await api(customer,'/jiedan/portal/orders/'+projectId)
@@ -86,7 +90,8 @@ test('客户收到两条需求回复：从消息直达、独立已读、原需�
   expect(replies).toHaveLength(1)
   expect(replies[0].senderKind).toBe('customer')
   expect(replies[0].attachments).toHaveLength(1)
+  // 最新一条团队回复是「请确认这次修改」，客户确认时已经看过
   const verified=(await summary()).find(r=>r.id===firstId).latestTeamReply
-  expect(verified.id).toBe(latest)
+  expect(verified.id).toBe(pending.review.id)
   expect(verified.unread).toBe(false)
 })

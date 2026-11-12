@@ -88,7 +88,7 @@
             </router-link>
             <router-link v-if="item.latestTeamReply" class="reply-link" :to="issueRoute(project,item,item.latestTeamReply.id)">
               <i v-if="item.latestTeamReply.unread" class="unread" aria-label="未读"></i>
-              <span class="reply-by">团队 <time :title="item.latestTeamReply.time">{{ replyTime(item.latestTeamReply.time) }}</time></span>
+              <span class="reply-by">{{ item.latestTeamReply.by || '团队' }} <time :title="item.latestTeamReply.time">{{ replyTime(item.latestTeamReply.time) }}</time></span>
               <span class="reply-text">{{ replyText(item.latestTeamReply) }}</span><el-icon aria-hidden="true"><ArrowRight /></el-icon>
             </router-link>
           </div>

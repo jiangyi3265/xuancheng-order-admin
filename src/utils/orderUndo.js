@@ -2,6 +2,7 @@ import { completeNextStep, completePendingItem, editOrder, getOrder, loadOrders,
   setNextStep, setOrderHandled, setProjectUrgency, token, updateBugStatus } from '@/mock/store'
 import { toast } from '@/utils/toast'
 import { undoToast } from '@/utils/undoToast'
+import { sentToCustomer } from '@/utils/customerConfirm'
 
 // Check the affected field just before undoing. Other people may have worked on the project meanwhile.
 export function offerOrderUndo(id, field, message, matches, restore) {
@@ -58,6 +59,11 @@ export async function finishPendingWithUndo(order, kind, bugId, message, submitN
   const id = order.id
   const updated = await completePendingItem(order, kind, bugId, submitNote, version)
   const turn = updated.taskTurns?.[kind === 'bug' ? 'bug-' + bugId : kind]
+  // 客户提的问题做完是「已处理」，已经发给客户确认，撤不回来，只提示一句
+  if (kind === 'bug' && sentToCustomer(updated, bugId)) {
+    toast.success(message)
+    return
+  }
   if (turn?.submittedAt) {
     toast.success('已提交，等' + turn.requesterName + '确认')
     return

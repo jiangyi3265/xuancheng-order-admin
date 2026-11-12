@@ -195,10 +195,13 @@ test('真实客户提交、负责人复制和管理链接、匿名 curl 与浏�
       for (const account of [boss,team]) {
         const detail=(await api('/jiedan/order/'+project.id,account)).data
         const issue=detail.bugs.find(b=>b.id===added)
-        expect(issue.status).toBe('ai_review')
-        const replies=issue.updates.filter(u=>u.createdBy==='Codex')
+        // 客户提的问题：AI 改完就是「已处理」，以负责人的名义发给客户确认；完整回报（含测试结果）留给团队，不再署名 Codex
+        expect(issue.status).toBe('confirm')
+        const replies=issue.updates.filter(u=>u.senderKind==='codex')
         expect(replies).toHaveLength(1)
         expect(replies[0].content).toContain(report.tests)
+        expect(issue.updates.some(u=>u.createdBy==='Codex')).toBe(false)
+        expect(issue.updates.at(-1).content).toBe('请确认修改：'+report.changes)
       }
       expect((await (await request.put(server+'/jiedan/order/bug/'+added+'/status',{headers:{Authorization:'Bearer '+team},data:{status:'resolved'}})).json()).code).not.toBe(200)
       for (const account of [boss,team]) {
@@ -210,20 +213,27 @@ test('真实客户提交、负责人复制和管理链接、匿名 curl 与浏�
         await receiver.addInitScript(t=>localStorage.setItem('token',t),reviewer)
         const viewer=await receiver.newPage()
         await viewer.goto('/#/messages')
-        await viewer.getByRole('tab',{name:'Codex 回复'}).click()
-        await expect(viewer.getByText('暂无 Codex 回复',{exact:true})).toBeVisible()
+        await viewer.getByRole('tab',{name:'AI 回复'}).click()
+        await expect(viewer.getByText('暂无 AI 回复',{exact:true})).toBeVisible()
         await expect(viewer.locator('.report-list').getByText('查看问题')).toHaveCount(0)
       } finally { await receiver.close() }
       await adminPage.goto('/#/order?id='+project.id+'&tab=bugs&bug='+added)
       await adminPage.reload()
       const row=adminPage.locator('.bug-item[data-notice-id="'+added+'"]')
       await expect(row).toContainText(report.changes)
-      await row.getByRole('button',{name:'通过'}).click()
+      // 客户提的问题：AI 改完就是「已处理」，团队这边没有「通过」，由客户确认
+      await expect(row).toContainText('已处理')
+      await expect(row.getByRole('button',{name:'通过'})).toHaveCount(0)
+      const reviewOf = async (bugId) => (await api('/jiedan/portal/orders/'+project.id,customer)).data.bugs.find(b=>b.id===bugId).review
+      await api('/jiedan/portal/bug/'+added+'/review/'+(await reviewOf(added)).id,customer,{decision:'accept'})
       await expect.poll(async()=> (await api('/jiedan/order/'+project.id,boss)).data.bugs.find(b=>b.id===added).status).toBe('resolved')
       expect(await submit(key,second,{...report,requestId:randomUUID()})).toBe(200)
-      await api('/jiedan/order/bug/'+second+'/status',boss,{status:'action'},'PUT')
+      // 客户说还要调整：回到需处理，AI 可以再回报一次
+      await api('/jiedan/portal/bug/'+second+'/review/'+(await reviewOf(second)).id,customer,{decision:'adjust',content:'还要再改一下'})
       expect(await submit(key,second,{...report,requestId:randomUUID(),changes:'退回后再次修改'})).toBe(200)
-      expect((await api('/jiedan/order/'+project.id,boss)).data.bugs.find(b=>b.id===second).updates.filter(u=>u.createdBy==='Codex')).toHaveLength(2)
+      const secondUpdates=(await api('/jiedan/order/'+project.id,boss)).data.bugs.find(b=>b.id===second).updates
+      expect(secondUpdates.filter(u=>u.senderKind==='codex')).toHaveLength(2)
+      expect(secondUpdates.some(u=>u.createdBy==='Codex')).toBe(false)
       await api('/jiedan/agent/orders/'+project.id+'/reply-key/disable',boss,{})
       expect(await submit(key,second,{...report,requestId:randomUUID()})).not.toBe(200)
     } finally { await manager.close() }

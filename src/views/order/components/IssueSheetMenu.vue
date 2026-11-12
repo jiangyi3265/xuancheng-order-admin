@@ -37,7 +37,7 @@
         <p v-else-if="info?.state === 'active'" class="sheet-note">链接仅在生成时显示。若遗失，可重新生成。</p>
         <section v-if="isBoss && info?.state === 'active'" class="reply-access">
           <strong>Codex 回复权限</strong>
-          <p>回复仅项目负责人和管理员可见。每条回复须写明修改内容和测试结果，提交后等你验收。</p>
+          <p>回复以项目负责人的名义显示。客户提的问题：改完就是「已处理」，修改内容发给客户确认，客户确认后才是「已解决」；测试结果只给团队看。团队自己记的问题仍先交给你验收。</p>
           <el-button size="small" :disabled="saving || verifying" @click="manageKey(true)">{{ info.replyRevision ? '更换回复凭据' : '开启回复权限' }}</el-button>
           <el-button v-if="info.replyRevision" size="small" :disabled="saving || verifying" @click="manageKey(false)">关闭回复权限</el-button>
           <el-button v-if="secret" :disabled="saving || verifying" size="small" type="primary" @click="copyInstructions">复制 Codex 回复说明</el-button>
@@ -211,7 +211,7 @@ function copyVerifiedInstructions() {
     'POST ' + origin + '/jiedan/agent/issue-reports/{需求编号}',
     '请求头 Content-Type: application/json',
     '请求头 X-Codex-Reply-Key: ' + secret.value,
-    'JSON 正文 {"requestId":"每次报告使用新UUID，重试沿用","changes":"实际修改内容","tests":"实际测试方法和结果"}',
+    'JSON 正文 {"requestId":"每次报告使用新UUID，重试沿用","changes":"给客户看的修改说明：用客户能看懂的话写改了什么、在哪里能看到，不写代码细节","tests":"实际测试方法和结果（只给团队看）"}',
     '成功以响应 JSON 的 code=200 为准。不要把回复凭据写入代码、提交记录或回复正文。'].join('\n'), '回复说明已复制')
 }
 function reset() {
