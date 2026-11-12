@@ -461,8 +461,8 @@ const overview = computed(() => [
  {label:'待验收',value:orders.filter(o=>o.status==='review').length,icon:'CircleCheck',path:'/order?status=review'},
  {label:isBoss.value?'待收款':'我的申请',value:isBoss.value?money(orders.filter(o=>o.status!=='cancelled').reduce((n,o)=>n+owed(o),0)):approvals.length,icon:isBoss.value?'Wallet':'Finished',path:isBoss.value?'/order?status=owing':'/approvals'}
 ])
-// 员工手机上的分栏：待接收的已经在「需要我处理」里，这里只分「手上的」（没开工 + 进行中）和「待验收」；
-// 已经列在「需要我处理」里的项目不再在下面重复出现
+// 员工手机上的分栏：待接收的在「轮到我」里接收，这里只分「手上的」（没开工 + 进行中）和「待验收」，
+// 自己的项目全部列出（轮到我有事的另外标出来）
 const employeeTab=ref('doing')
 const inHand=(o)=>['pending','doing'].includes(o.status)&&o.assignState!=='pending'
 // 「轮到我」里有这件事的项目（只算要我做的，不含等对方的），卡片上标一下

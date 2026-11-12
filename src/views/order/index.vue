@@ -278,9 +278,10 @@
             >{{ payText(row) || PAY_STATE[payState(row)].label }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="deadline" sortable="custom" label="截止" width="96">
+        <!-- 「逾期 · 11-10」以前在 96px 里放不下，日期被拆成两行；加宽一点并且不换行 -->
+        <el-table-column prop="deadline" sortable="custom" label="截止" width="112">
           <template #default="{ row }">
-            <span v-if="row.deadline" :class="{ 'red-text': isOverdue(row) }" :title="row.deadline">{{ isOverdue(row) ? '逾期 · ' : '' }}{{ shortDate(row.deadline) }}</span>
+            <span v-if="row.deadline" :class="{ 'red-text': isOverdue(row) }" style="white-space:nowrap" :title="row.deadline">{{ isOverdue(row) ? '逾期 · ' : '' }}{{ shortDate(row.deadline) }}</span>
             <span v-else class="unpriced">-</span>
           </template>
         </el-table-column>

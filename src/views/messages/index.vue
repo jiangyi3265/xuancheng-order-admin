@@ -1,4 +1,4 @@
-<template><div class="inbox-page"><div class="page-heading"><div><h1>消息中心</h1><p>所有项目动态都在这里；要处理的事看工作台「需要我处理」</p></div><el-button v-if="unreadCount" :loading="marking" @click="readAll">全部已读（{{ unreadCount }}）</el-button><el-icon v-else class="heading-icon"><ChatDotRound /></el-icon></div>
+<template><div class="inbox-page"><div class="page-heading"><div><h1>消息中心</h1><p>所有项目动态都在这里；要处理的事看工作台「轮到我」</p></div><el-button v-if="unreadCount" :loading="marking" @click="readAll">全部已读（{{ unreadCount }}）</el-button><el-icon v-else class="heading-icon"><ChatDotRound /></el-icon></div>
 <el-button class="system-notification-entry" :icon="Bell" @click="router.push('/settings')">系统通知设置</el-button>
 <el-tabs v-model="tab"><el-tab-pane label="全部" name="all"/><el-tab-pane label="项目消息" name="projects"/><el-tab-pane label="审批提醒" name="approvals"/><el-tab-pane label="Codex 回复" name="codex"/><el-tab-pane label="报价提醒" name="quotes"/></el-tabs>
 <section v-if="tab==='codex'" class="report-list">

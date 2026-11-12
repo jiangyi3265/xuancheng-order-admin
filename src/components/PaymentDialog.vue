@@ -20,7 +20,8 @@
       <div v-if="!Number(cur.amount)" class="pay-tip">这单还没填报价。收款照样可以记，填上报价后会自动算出还欠多少。</div>
 
       <el-tabs v-model="tab"><el-tab-pane label="收款流水" name="history"/><el-tab-pane :label="isBoss ? '登记收款' : '申请收款'" name="entry"/></el-tabs>
-      <el-form v-show="tab==='entry'" label-width="52px" class="pay-form" @submit.prevent>
+      <!-- 标签放在输入框上面、靠左；以前手机上标签单独一行却靠右对齐，看着像飘在右边 -->
+      <el-form v-show="tab==='entry'" label-position="top" class="pay-form" @submit.prevent>
         <el-form-item label="收到">
           <!-- 光标一打开就在这里并且全选：金额对就按回车，不对直接打新数字 -->
           <el-input-number ref="amountInput" v-model="form.amount" :min="0" :precision="2" :step="100" controls-position="right" style="width: 170px" @keydown.enter.prevent="submitFromAmount" />
@@ -234,11 +235,13 @@ const requestClose = useFormClose({
   color: #303133;
   margin-bottom: 12px;
 }
+/* 电脑上客户名跟在项目名后面，以前没有间隔，连成「李姐小程序商城李姐」（手机上是单独一行，不受影响） */
 .pay-customer {
   font-weight: 400;
   color: #909399;
   font-size: 13px;
 }
+@media (min-width: 769px) { .pay-customer { margin-left: 8px; } }
 .pay-sum {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

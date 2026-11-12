@@ -345,10 +345,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKey))
   gap: 12px;
   margin-top: 12px;
 }
+/* 宽度用全局的 82px（图标 + 两个字），这里以前写死 40px 盖掉了它，「客户 / 渠道 / 派给」被挤成竖排两行 */
 .qc-label {
   font-size: 14px;
   color: #606266;
-  width: 40px;
+  white-space: nowrap;
   flex-shrink: 0;
 }
 .qc-auto {
