@@ -28,7 +28,7 @@ for(const width of [360,1440]) {
     await expect(inbox.getByRole('link')).toHaveCount(2)
     await receipt('client',12,64)
     await expect(inbox.getByRole('link')).toHaveCount(1)
-    await expect(inbox.getByRole('link')).toHaveAccessibleName(/等我确认（1） 第一次确认/)
+    await expect(inbox.getByRole('link')).toHaveAccessibleName(/等我确认（1） #8 第一次确认/)
     await receipt('client',8,63)
     await expect(inbox).toHaveCount(0)
     await receipt('client',8,50)

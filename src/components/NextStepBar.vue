@@ -12,8 +12,10 @@
         </span>
         <HandoffReturn :turn="order.taskTurns?.next" />
         <span class="ns-actions">
-          <span v-if="order.taskTurns?.next?.submittedAt">等{{ order.taskTurns.next.requesterName }}确认</span>
-          <el-button v-else-if="!order.taskTurns?.next || (order.nextOwnerId ?? order.ownerId) === currentMember.id" size="small" type="success" :loading="busy" @click="complete">{{ order.taskTurns?.next ? submitLabel(order.taskTurns.next) : '完成' }}</el-button>
+          <span v-if="order.taskTurns?.next?.submittedAt">等{{ order.taskTurns.next.requesterId === currentMember.id ? '你' : order.taskTurns.next.requesterName }}确认</span>
+          <HandoffCompleteButton v-else-if="order.taskTurns?.next && (order.nextOwnerId ?? order.ownerId) === currentMember.id"
+            :item="{ order, kind:'next', turn:order.taskTurns.next }" />
+          <el-button v-else-if="!order.taskTurns?.next" size="small" type="success" :loading="busy" @click="complete">完成</el-button>
           <TaskReviewActions v-if="order.taskTurns?.next?.submittedAt && order.taskTurns.next.requesterId === currentMember.id" :item="{ order, id:order.id, kind:'nextReview' }" />
           <el-button v-if="!order.taskTurns?.next?.submittedAt" size="small" link type="primary" @click="startEdit(false)">修改</el-button>
         </span>
@@ -47,7 +49,7 @@
 
 <script setup>
 import HandoffReturn from '@/components/HandoffReturn.vue'
-import { submitLabel } from '@/utils/handoffs'
+import HandoffCompleteButton from '@/components/HandoffCompleteButton.vue'
 import TaskReviewActions from '@/components/TaskReviewActions.vue'
 import { ref, reactive, computed, nextTick } from 'vue'
 import { toast as ElMessage } from '@/utils/toast'

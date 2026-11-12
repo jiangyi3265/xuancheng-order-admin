@@ -304,6 +304,14 @@ const reminderVersions = new WeakMap()
 export function latestOrderVersion(order) {
   return Math.max(Number(order.version || 0), orderVersions.get(order) || 0)
 }
+// 打开项目会标为已读，服务端因此把版本号 +1。这一次是自己造成的，项目内容没变，
+// 记下来：之后提交验收、做完了、通过 / 退回时照样用新版本，不会被当成「项目已变化」拒绝。
+const ownReadBumps = new WeakMap()
+// 窗口打开后，如果只多了这一次「自己标已读」，就用最新版本；否则仍用打开时的版本（别人真改过，让服务端拦下）
+export function versionSince(order, opened) {
+  const latest = latestOrderVersion(order)
+  return opened != null && latest === opened + 1 && ownReadBumps.get(order) === latest ? latest : opened
+}
 function mergeOrder(current, incoming, summary = false) {
   const { unread, myMention, version: rawVersion, ...fields } = incoming
   const version = Number(rawVersion || 0)
@@ -503,8 +511,8 @@ export async function handbackOrder(id, reason) {
   dropLocal(id)
 }
 
-export async function returnOrder(id, reason) {
-  const vo = await http(`${BASE}/${id}/return`, { method: 'POST', body: JSON.stringify({ reason }) })
+export async function returnOrder(id, reason, version) {
+  const vo = await http(`${BASE}/${id}/return`, { method: 'POST', body: JSON.stringify({ reason, version }) })
   return upsert(vo)
 }
 
@@ -672,10 +680,10 @@ export async function setOrderHandled(order, handled) {
   return upsert(updated)
 }
 
-export async function setStatus(id, status) {
+export async function setStatus(id, status, delivery = {}) {
   const vo = await http(`${BASE}/status`, {
     method: 'PUT',
-    body: JSON.stringify({ id, status })
+    body: JSON.stringify({ id, status, ...delivery })
   })
   upsert(vo)
   return vo
@@ -688,6 +696,10 @@ export async function markRead(id, memberId) {
   })
   const order = orders.find(row => row.id === id)
   const version = Number(vo?.version || 0)
+  if (order && currentMember.value.id === memberId && version === latestOrderVersion(order) + 1) {
+    orderVersions.set(order, version)
+    ownReadBumps.set(order, version)
+  }
   if (order && currentMember.value.id === memberId && (reminderVersions.get(order) ?? Number(order.version || 0)) <= version) {
     reminderVersions.set(order, version)
     order.unread = (order.unread || []).filter(userId => userId !== memberId)
@@ -717,10 +729,17 @@ export async function addRevision(id) {
   return vo
 }
 
-export async function completePendingItem(order, kind, bugId) {
+export async function completePendingItem(order, kind, bugId, submitNote = '', version = latestOrderVersion(order)) {
   const updated = await http(`${BASE}/${order.id}/pending-completion`, {
     method: 'POST',
-    body: JSON.stringify({ kind, bugId, version: orderVersions.get(order) ?? order.version })
+    body: JSON.stringify({ kind, bugId, note:submitNote || undefined, version })
+  })
+  return upsert(updated)
+}
+
+export async function withdrawHandoff(order, kind, bugId, version = latestOrderVersion(order)) {
+  const updated = await http(`${BASE}/${order.id}/handoff-withdraw`, {
+    method:'PUT', body:JSON.stringify({ kind, bugId, version })
   })
   return upsert(updated)
 }

@@ -21,6 +21,7 @@
             <span class="order-no">{{ order.orderNo }}</span>
             <el-tag v-if="isMobile" class="detail-title-status" :class="'project-status-'+order.status" :type="statusMap[order.status]?.type">{{ statusMap[order.status]?.label }}</el-tag>
           </div>
+          <HandoffReturn v-if="order.taskTurns?.delivery" :turn="order.taskTurns.delivery" delivery />
           <p v-if="isMobile" class="detail-subtitle">{{ mobileSubtitle }}</p>
           <ProjectUrgency v-if="isMobile && visible" :key="order.id" :order="order" />
           <div v-if="!isMobile" class="head-tags">
@@ -46,12 +47,12 @@
           </template>
           <el-button v-if="na" type="primary" :icon="Promotion" @click="doNext">{{ na.label }}</el-button>
           <el-button
-            v-if="isBoss && ['review', 'done'].includes(order.status)"
+            v-if="canReturnDelivery"
             type="warning"
             plain
             :icon="RefreshLeft"
-            @click="returnVisible = true"
-          >退回返工…</el-button>
+            @click="openReturn()"
+          >退回返工</el-button>
           <template v-if="!pendingAccept">
             <span class="inline-label">手动设为</span>
             <el-select v-model="statusModel" size="small" class="status-select" @change="onStatus">
@@ -88,7 +89,7 @@
             <el-button @click="rejectVisible = true">拒绝…</el-button>
           </template>
           <el-button v-if="na" type="primary" @click="doNext">{{ na.label }}</el-button>
-          <el-button v-if="isBoss && ['review', 'done'].includes(order.status)" type="warning" plain @click="returnVisible = true">退回返工…</el-button>
+          <el-button v-if="canReturnDelivery" type="warning" plain @click="openReturn()">退回返工</el-button>
           <el-dropdown v-if="!pendingAccept" trigger="click" max-height="60vh" @command="onMore">
             <el-button>更多操作 <el-icon class="el-icon--right"><ArrowDown /></el-icon></el-button>
             <template #dropdown>
@@ -113,7 +114,7 @@
             </template>
           </el-dropdown>
           <!-- 以前这里还有一个「项目操作」菜单，内容和「更多操作」重复，去掉了 -->
-          <el-button v-if="!pendingAccept && !(na && isBoss && ['review', 'done'].includes(order.status))" @click="emit('edit',order)">编辑</el-button>
+          <el-button v-if="!pendingAccept && !(na && canReturnDelivery)" @click="emit('edit',order)">编辑</el-button>
         </div>
       </header>
       <ProjectHandling v-if="showHandling && !loading" :order="order" class="detail-handling" />
@@ -200,7 +201,7 @@
                     @click="setAllIssuesExpanded(!anyIssueExpanded)">{{ anyIssueExpanded ? '全部收起' : '全部展开' }}</button>
                 </div>
                 <div class="issue-tools">
-                  <IssueSheetMenu v-if="visible && mayExportIssues" :key="order.id + '-' + currentMember.id" :project="order" />
+                  <IssueSheetMenu v-if="visible && drawerReady && mayExportIssues" :key="order.id + '-' + currentMember.id" :project="order" />
                   <el-button size="small" type="primary" plain :icon="CirclePlus" @click="bugOpen = !bugOpen">
                     {{ bugOpen ? '收起' : bugHasDraft ? '继续写问题' : '记一条问题' }}
                   </el-button>
@@ -316,16 +317,17 @@
                       </div>
                     </div>
                     <div class="bug-actions">
-                      <el-button v-if="processingBugs && (!order.taskTurns?.['bug-'+bug.id] || order.ownerId === currentMember.id)" type="primary" size="small"
+                      <HandoffCompleteButton v-if="processingBugs && order.taskTurns?.['bug-'+bug.id] && order.ownerId === currentMember.id"
+                        :item="issueItem(bug)" :disabled="issueNavigationLocked || pendingAccept"
+                        :submit="(note, version) => submitIssue(bug, note, version)" />
+                      <el-button v-else-if="processingBugs && !order.taskTurns?.['bug-'+bug.id]" type="primary" size="small"
                         :loading="statusUpdatingBugId === bug.id" :disabled="issueNavigationLocked"
-                        @click="resolveCurrentIssue(bug, $event)">
-                        {{ order.taskTurns?.['bug-' + bug.id] ? submitLabel(order.taskTurns['bug-'+bug.id]) : actionableBugs.length > 1 ? '解决并继续' : '解决最后一条' }}
-                      </el-button>
+                        @click="resolveCurrentIssue(bug, $event)">完成</el-button>
                       <div v-else-if="bug.status==='ai_review'" class="issue-awaiting">
-                        待内部验收<span v-if="order.taskTurns?.['bug-'+bug.id]"> · 等{{ order.taskTurns['bug-'+bug.id].requesterName }}确认</span>
+                        待内部验收<span v-if="order.taskTurns?.['bug-'+bug.id]"> · 等{{ order.taskTurns['bug-'+bug.id].requesterId === currentMember.id ? '你' : order.taskTurns['bug-'+bug.id].requesterName }}确认</span>
                         <template v-if="order.taskTurns?.['bug-'+bug.id] ? order.taskTurns['bug-'+bug.id].requesterId === currentMember.id : isBoss">
-                          <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'resolved')">验收通过 · 已解决</el-button>
-                          <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'action')">退回给{{ executorName(order, 'bug') }}</el-button>
+                          <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'resolved')">通过</el-button>
+                          <el-button size="small" :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'action')">退回</el-button>
                         </template>
                       </div>
                       <span v-else-if="bug.status==='confirm'" class="issue-awaiting">等客户确认</span>
@@ -341,8 +343,13 @@
                         <el-radio-button v-if="!isBugResolved(bug)" value="action" :disabled="['done','cancelled'].includes(order.status)">需处理</el-radio-button>
                         <el-radio-button v-if="!order.taskTurns?.['bug-'+bug.id]" value="resolved">已解决</el-radio-button>
                       </el-radio-group>
-                      <el-button v-if="(!isBoss || order.taskTurns?.['bug-'+bug.id]) && order.ownerId === currentMember.id && !pendingAccept && !['done','cancelled'].includes(order.status) && ['open','action'].includes(bugStatus(bug))"
-                        size="small" type="primary" plain :disabled="!!statusUpdatingBugId" @click="changeBugStatus(bug,'submitReview')">{{ order.taskTurns?.['bug-'+bug.id] ? submitLabel(order.taskTurns['bug-'+bug.id]) : '提交内部验收' }}</el-button>
+                      <template v-if="order.ownerId === currentMember.id && !pendingAccept && !['done','cancelled'].includes(order.status) && ['open','action'].includes(bugStatus(bug))">
+                        <HandoffCompleteButton v-if="order.taskTurns?.['bug-'+bug.id] && !processingBugs"
+                          :item="issueItem(bug)" :disabled="!!statusUpdatingBugId" :submit="(note, version) => submitIssue(bug, note, version)" />
+                        <HandoffCompleteButton v-else-if="!order.taskTurns?.['bug-'+bug.id] && !isBoss"
+                          :item="issueItem(bug)" request-confirm :disabled="!!statusUpdatingBugId"
+                          :submit="note => changeBugStatus(bug,'submitReview',note)" />
+                      </template>
                       <el-button v-if="order.customerAccount && !pendingAccept && !['done','cancelled'].includes(order.status) && !['confirm','ai_review'].includes(bug.status) && !(bug.status==='action' && order.taskTurns?.['bug-'+bug.id] && order.taskTurns['bug-'+bug.id].requesterId!==currentMember.id)"
                         type="primary" plain size="small" :disabled="!!statusUpdatingBugId || !!deletingBugId" @click="reviewBugId=bug.id">请客户确认</el-button>
                       <el-button text type="primary" :icon="CirclePlus" @click="toggleBugUpdate(bug)">
@@ -523,7 +530,9 @@
 <script setup>
 import HandoffReturn from '@/components/HandoffReturn.vue'
 import { askReturnNote } from '@/utils/handoffReturn'
-import { executorName, submitLabel } from '@/utils/handoffs'
+import HandoffCompleteButton from '@/components/HandoffCompleteButton.vue'
+import { finishPendingWithUndo } from '@/utils/orderUndo'
+import { executorName } from '@/utils/handoffs'
 import IssueNumber from '@/components/IssueNumber.vue'
 import { useRoute, useRouter } from 'vue-router'
 import LinkText from '@/components/LinkText.vue'
@@ -560,11 +569,11 @@ import ApprovalItem from '@/components/ApprovalItem.vue'
 import ApprovalRequestDialog from '@/components/ApprovalRequestDialog.vue'
 import {
   getOrder, getOrderVersion, addProgress, colleagueSentHint, markRead, addRevision, nudge, createBug, deleteBug, appendBugUpdate,
-  updateBugStatus, currentMember, isBoss, approvals, acceptOrder, rejectOrder, handbackOrder, returnOrder, editOrder
+  updateBugStatus, currentMember, isBoss, approvals, acceptOrder, rejectOrder, handbackOrder, returnOrder, editOrder, latestOrderVersion
 } from '@/mock/store'
 import { STATUS, PRIORITY, statusMap, channelMap, priorityMap, memberMap } from '@/constants/options'
 import { colleagueTask, unreadNotes } from '@/utils/todos'
-import { nextAction } from '@/utils/workbench'
+import { canReviewDelivery, nextAction } from '@/utils/workbench'
 import { todayStr as todayLocal } from '@/utils/date'
 import { changeOrderStatus } from '@/utils/settle'
 import { PAY_STATE, payState, owed, money } from '@/utils/payment'
@@ -653,6 +662,11 @@ const accepting = ref(false)
 const rejectVisible = ref(false)
 const handbackVisible = ref(false)
 const returnVisible = ref(false)
+let returnVersion
+function openReturn() {
+  returnVersion = latestOrderVersion(props.order)
+  returnVisible.value = true
+}
 const requestVisible = ref(false)
 const requestType = ref('amount')
 const pendingAccept = computed(() => !isBoss.value && props.order?.assignState === 'pending')
@@ -690,7 +704,7 @@ async function doHandback(reason) {
   emit('update:visible', false)
 }
 async function doReturn(reason) {
-  await returnOrder(props.order.id, reason)
+  await returnOrder(props.order.id, reason, returnVersion)
   ElMessage.success('已退回返工，负责人会收到通知')
 }
 function openRequest(type) {
@@ -788,14 +802,32 @@ function moveIssue(offset) {
 
 // A successful status change removes that issue from the queue. A slow or failed
 // save must leave the same issue available, and a double-click must not resolve its successor.
+function issueItem(bug) {
+  const order = props.order
+  return { order, kind:'bug', bugId:bug.id, turn:order.taskTurns?.['bug-' + bug.id] }
+}
+function advanceIssue(bug, next) {
+  if (processingBugs.value && processingBugId.value === bug.id && next && actionableBugs.value.some(item => item.id === next.id)) {
+    processingBugId.value = next.id
+  }
+}
 async function resolveCurrentIssue(bug, event) {
   if (event.detail > 1 || issueNavigationLocked.value || processingBug.value?.id !== bug.id) return
   const next = actionableBugs.value[processingIndex.value + 1]
   processingBugId.value = bug.id
-  const finished = await changeBugStatus(bug, 'resolved')
-  if (finished && processingBugs.value && processingBugId.value === bug.id && next && actionableBugs.value.some(item => item.id === next.id)) {
-    processingBugId.value = next.id
-  }
+  if (await changeBugStatus(bug, 'resolved')) advanceIssue(bug, next)
+}
+async function submitIssue(bug, note, version) {
+  if (issueNavigationLocked.value || (processingBugs.value && processingBug.value?.id !== bug.id)) return false
+  // A legacy delegated, unmarked issue can still be submitted from detail.
+  if (bug.status === 'open') return changeBugStatus(bug, 'submitReview', note)
+  const next = actionableBugs.value[processingIndex.value + 1]
+  if (processingBugs.value) processingBugId.value = bug.id
+  statusUpdatingBugId.value = bug.id
+  try {
+    await finishPendingWithUndo(props.order, 'bug', bug.id, '已完成问题 #' + bug.id, note, version)
+    advanceIssue(bug, next)
+  } finally { statusUpdatingBugId.value = null }
 }
 
 watch(() => processingBugs.value ? processingBug.value?.id ?? 'finished' : null, async (id, _, onCleanup) => {
@@ -1035,9 +1067,11 @@ const isOverdue = computed(
 )
 
 const na = computed(() => nextAction(props.order, currentMember.value.id))
+const canReturnDelivery = computed(() => props.order && ['review','done'].includes(props.order.status)
+  && canReviewDelivery(props.order, currentMember.value.id))
 async function doNext() {
   if (!na.value) return
-  if (['review','done'].includes(na.value.to) && (isMobile.value || props.order.bugs?.some(b => !isBugResolved(b)))) { deliveryVisible.value=true; return }
+  if (na.value.to === 'review' || (na.value.to === 'done' && (props.order.status === 'review' || isMobile.value || props.order.bugs?.some(b => !isBugResolved(b))))) { deliveryVisible.value=true; return }
   try {
     await changeOrderStatus(props.order, na.value.to)
   } catch (e) {
@@ -1177,7 +1211,7 @@ async function removeBug(bug) {
     deletingBugId.value = null
   }
 }
-async function changeBugStatus(bug, status) {
+async function changeBugStatus(bug, status, submitNote) {
   if (!bug || statusUpdatingBugId.value || bugStatus(bug) === status) return false
   const reactivating = isBugResolved(bug) && status === 'action'
   statusUpdatingBugId.value = bug.id
@@ -1188,7 +1222,7 @@ async function changeBugStatus(bug, status) {
     const submission = prior === 'ai_review' && turn?.submittedAt ? { ...turn } : undefined
     const returning = prior === 'ai_review' && status === 'action'
     const owner = executorName(order, 'bug')
-    const note = returning ? await askReturnNote(order.title + ' · 问题 #' + bug.id, owner) : undefined
+    const note = returning ? await askReturnNote(order.title + ' · 问题 #' + bug.id, owner) : submitNote
     const result = await updateBugStatus(bug.id, status, prior, note, submission)
     if (returning) {
       ElMessage.success('已退回给' + owner + '继续处理')

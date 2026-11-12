@@ -1,6 +1,6 @@
 // 统一处理项目状态和完成时的收款询问。
 import { reactive } from 'vue'
-import { orders, setStatus, token } from '@/mock/store'
+import { latestOrderVersion, orders, setStatus, token } from '@/mock/store'
 import { statusMap } from '@/constants/options'
 import { owed } from '@/utils/payment'
 import { offerOrderUndo } from '@/utils/orderUndo'
@@ -15,12 +15,13 @@ export function finishSettlement() {
   offer()
 }
 
-export async function changeOrderStatus(order, status, message = '') {
+export async function changeOrderStatus(order, status, message = '', delivery = {}) {
   const before = order.status
   const id = order.id
+  if (delivery.version != null && latestOrderVersion(order) !== delivery.version) throw new Error('项目已更新，请重新打开验收窗口')
   if (before === status) return order
   const session = token.value
-  const vo = await setStatus(id, status)
+  const vo = await setStatus(id, status, delivery)
   const received = Number(vo?.receivedAmount || 0)
   const eligible = cur => cur.status === status && (status !== 'done' || Number(cur.receivedAmount || 0) === received)
   const offer = () => {

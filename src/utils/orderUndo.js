@@ -52,11 +52,11 @@ export async function finishNext(order) {
     async () => { await setNextStep(id, previous); onRestored?.() })
 }
 
-export async function finishPendingWithUndo(order, kind, bugId, message) {
+export async function finishPendingWithUndo(order, kind, bugId, message, submitNote = '', version) {
   const previous = nextSnapshot(order)
   const due = order.urgentUntil
   const id = order.id
-  const updated = await completePendingItem(order, kind, bugId)
+  const updated = await completePendingItem(order, kind, bugId, submitNote, version)
   const turn = updated.taskTurns?.[kind === 'bug' ? 'bug-' + bugId : kind]
   if (turn?.submittedAt) {
     toast.success('已提交，等' + turn.requesterName + '确认')

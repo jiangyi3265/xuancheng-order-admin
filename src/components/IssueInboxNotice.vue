@@ -1,43 +1,43 @@
 <template>
   <Teleport to="body">
-    <section v-if="item" class="issue-inbox-notice" role="region" aria-label="需要我处理的问题">
+    <section v-if="item" class="issue-inbox-notice" :class="{'above-create': ['/staff', '/customers'].includes(route.path) || (route.path === '/order' && !route.query.id)}" role="region" aria-label="需要我处理的问题">
       <div class="notice-top">
-        <strong aria-live="polite">需要我处理 <small v-if="unseen.length > 1">{{ unseen.length }} 条</small></strong>
+        <button class="notice-toggle" type="button" :aria-expanded="expanded" aria-controls="current-issue-notice"
+          :aria-label="expanded ? '收起问题提醒' : '展开问题提醒'" @click="expanded = !expanded">
+          <strong aria-live="polite">需要我处理 <small v-if="unseen.length > 1">{{ unseen.length }} 条</small></strong>
+          <span aria-hidden="true">{{ expanded ? '⌃' : '⌄' }}</span>
+        </button>
         <button type="button" class="later" title="30 分钟后再提醒" @click="snooze(item)">稍后处理 · 30 分钟</button>
       </div>
-      <div class="notice-project">{{ item.title }} · {{ item.fresh ? '客户提了新问题' : '问题' }} #{{ item.bugId }}</div>
-      <p>{{ item.text }}</p>
-      <HandoffReturn :turn="item.turn" />
-      <div class="notice-actions">
-        <button type="button" @click="openIssue(item)">查看问题</button>
-        <button v-if="!item.fresh" type="button" class="finish" :disabled="busy" @click="finish(item)">{{ busy ? '处理中…' : item.turn ? submitLabel(item.turn) : '标为已处理' }}</button>
-      </div>
+      <HandoffCard v-if="expanded" id="current-issue-notice" :item="item" @open="markViewed" />
     </section>
   </Teleport>
 </template>
 
 <script setup>
-import HandoffReturn from '@/components/HandoffReturn.vue'
-import { submitLabel } from '@/utils/handoffs'
+import HandoffCard from '@/components/HandoffCard.vue'
+import { handoffItems } from '@/utils/handoffs'
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { me, orders, ordersReady, syncOrders } from '@/mock/store'
-import { pendingItems, pendingDestination } from '@/utils/pendingItems'
-import { finishPendingWithUndo } from '@/utils/orderUndo'
+import { useRoute } from 'vue-router'
+import { isBoss, me, orders, ordersReady, syncOrders } from '@/mock/store'
+import { isMobile } from '@/utils/useMobile'
 import { toast } from '@/utils/toast'
 
 const route = useRoute()
-const router = useRouter()
-const busy = ref(false)
 const SNOOZE_MS = 30 * 60 * 1000
 const notices = ref({})
 const storageKey = computed(() => me.value?.id ? 'xc:issue-notices:' + me.value.id : '')
-const mine = computed(() => !storageKey.value || !ordersReady.value ? [] : pendingItems(orders).filter(row =>
-  row.kind === 'bug' && row.bugId && String(row.recipientId) === String(me.value.id))
+const mine = computed(() => !storageKey.value || !ordersReady.value ? [] : handoffItems(orders, me.value.id, isBoss.value).filter(row =>
+  row.mine && row.kind === 'bug' && row.bugId)
   .map(row => row.turn?.returnedAt ? { ...row, key: row.key + ':return:' + row.turn.returnedAt } : row))
 const unseen = computed(() => mine.value.filter(row => !notices.value[row.key]))
-const item = computed(() => unseen.value.find(row => !(route.query.tab === 'bugs' &&
+// 工作台和电脑上的项目管理（「待处理」面板一直展开着）已经列出这件事，不再弹一遍；手机上项目管理的面板默认收起，照常弹
+const listedOnPage = computed(() => route.path === '/workbench' || (route.path === '/order' && !route.query.id && !isMobile.value))
+const item = computed(() => listedOnPage.value ? null : unseen.value.find(row => !(route.query.tab === 'bugs' &&
   String(route.query.id) === String(row.id) && String(route.query.bug) === String(row.bugId))))
+
+const expanded = ref(true)
+watch(() => item.value?.key, () => { expanded.value = true })
 
 let timer
 let checking = false
@@ -124,34 +124,27 @@ function snooze(row) {
   changeNotices(next => { next[row.key] = Date.now() + SNOOZE_MS })
   toast.success('已稍后处理，30 分钟后提醒')
 }
-async function openIssue(row) {
-  const account = storageKey.value
-  await router.push(pendingDestination(row))
-  if (storageKey.value === account) changeNotices(next => { next[row.key] = 'viewed' })
-}
-async function finish(row) {
-  if (busy.value || !mine.value.some(entry => entry.key === row.key)) return
-  busy.value = true
-  try {
-    await finishPendingWithUndo(row.order, 'bug', row.bugId, '已处理：' + row.title + ' · 问题 #' + row.bugId)
-  } catch (err) {
-    toast.error(err.message || '处理失败，请重试')
-    await syncOrders(true).catch(() => {})
-  } finally { busy.value = false }
+function markViewed(row) {
+  if (row) changeNotices(next => { next[row.key] = 'viewed' })
 }
 </script>
 
 <style scoped>
 .issue-inbox-notice { position: fixed; z-index: 2050; right: 18px; bottom: 22px; width: min(340px, calc(100vw - 32px)); box-sizing: border-box; padding: 15px 17px; border: 1px solid #d4e3ff; border-left: 3px solid #2866e8; border-radius: 12px; background: white; box-shadow: 0 8px 36px #17386424; color: #172d50; }
 /* 临时操作优先，收起菜单或撤销提示后继续展示原提醒。 */
-:global(body:has(.el-dropdown [aria-expanded="true"], .el-message button, .el-message-box) .issue-inbox-notice) { visibility: hidden; }
-.notice-top, .notice-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+:global(body:has(.el-dropdown [aria-expanded="true"], .el-message button, .el-message-box, .bell-panel, .el-overlay:not([style*="display: none"]) > .el-overlay-dialog .el-dialog) .issue-inbox-notice) { visibility: hidden; }
+.notice-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .notice-top small { margin-left: 4px; color: #46618d; font-weight: 500; }
-.notice-project { margin-top: 9px; font-size: 12px; color: #526783; overflow-wrap: anywhere; }
-.issue-inbox-notice p { margin: 5px 0 12px; line-height: 1.4; overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
-.notice-actions { justify-content: flex-end; }
-.issue-inbox-notice button { cursor: pointer; border: 1px solid #cbdaf0; border-radius: 7px; padding: 6px 10px; color: #1754b3; background: white; font: inherit; font-size: 13px; }
-.issue-inbox-notice .later { border: none; color: #51647e; padding: 4px; }
-.issue-inbox-notice .finish { background: #205ce2; color: white; border-color: #205ce2; }
-@media(max-width: 768px) { .issue-inbox-notice { right: 12px; bottom: calc(72px + env(safe-area-inset-bottom)); } }
+.notice-top {background:white}
+.notice-toggle {display:inline-flex;align-items:center;gap:6px;cursor:pointer;border:0;background:none;color:inherit;font:inherit;padding:3px 0}
+.notice-toggle span {font-size:14px;color:#577299}
+.issue-inbox-notice :deep(.handoff-card) {margin-top:8px}
+.issue-inbox-notice .later { cursor:pointer; background:transparent; border:none; color:#51647e; padding:4px; font:inherit; font-size:13px; }
+@media(max-width:768px) {
+  .issue-inbox-notice {--notice-bottom:calc(72px + env(safe-area-inset-bottom));right:12px;bottom:var(--notice-bottom);
+    max-height:calc(100dvh - var(--notice-bottom) - 12px);overflow:auto;padding:8px 12px;overscroll-behavior:contain}
+  .issue-inbox-notice.above-create {--notice-bottom:calc(158px + env(safe-area-inset-bottom))}
+  .notice-top {position:sticky;top:-8px;z-index:1}
+  .notice-toggle,.issue-inbox-notice .later {min-height:40px}
+}
 </style>

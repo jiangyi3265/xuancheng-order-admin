@@ -1,7 +1,7 @@
 <template>
   <span class="task-decisions">
-    <button type="button" :disabled="busy" @click="decide('confirm')">确认完成</button>
-    <button type="button" :disabled="busy" @click="decide('return')">退回给{{ executor }}</button>
+    <button type="button" :disabled="busy" @click="decide('confirm')">通过</button>
+    <button type="button" :disabled="busy" @click="decide('return')">退回</button>
   </span>
 </template>
 <script setup>

@@ -62,7 +62,7 @@ for (const width of [1440, 390]) {
       await expect(links).toHaveCount(5)
       const colorRow = area.getByRole('listitem').filter({has:page.getByRole('link').filter({hasText:'改颜色'})})
       const remind = colorRow.getByRole('button',{name:/提醒/})
-      const bugId = Number(new URLSearchParams((await colorRow.getByRole('link').getAttribute('href')).split('?')[1]).get('bug'))
+      const bugId = Number(new URLSearchParams((await colorRow.getByRole('link',{name:'看一下',exact:true}).getAttribute('href')).split('?')[1]).get('bug'))
       const noticeRoute = '**' + path + '/pending-reminder'
       const requests = []
       let finishSend
@@ -98,7 +98,7 @@ for (const width of [1440, 390]) {
       await close()
       await links.filter({hasText:'手动标记'}).click()
       await expect(page.locator('.workspace-head h2')).toHaveText(title)
-      await page.locator('.detail-handling').getByRole('button',{name:'标为已处理'}).click()
+      await page.locator('.detail-handling').getByRole('button',{name:'完成'}).click()
       await expect(page.locator('.detail-handling .handling-state')).toHaveText('已处理')
       await close()
       await expect(links).toHaveCount(2)

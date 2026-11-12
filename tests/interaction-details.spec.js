@@ -19,7 +19,7 @@ for (const routeName of ['workbench','dashboard']) {
     })
     await page.goto('/#/' + routeName)
     await expect(page.getByRole('status', { name: '正在加载项目' })).toBeVisible()
-    await expect(page.getByText(/待办都清空啦|手上没有单子/)).toHaveCount(0)
+    await expect(page.getByText(/当前没有轮到你的事项|手上没有单子/)).toHaveCount(0)
     release()
     await expect(page.getByRole('alert').filter({hasText:'项目没加载出来'})).toContainText('网络暂时断开')
     online = true

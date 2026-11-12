@@ -1,18 +1,20 @@
 <template>
-  <span v-if="turn?.returnedAt" class="return-info" :class="{ resubmitted: turn.submittedAt }">
-    <strong>{{ turn.submittedAt ? '修改后重新提交' : '退回修改' }}</strong>
-    <small v-if="!compact">{{ fmtTime(turn.returnedAt) }} 退回</small>
-    <span v-if="!compact && turn.returnNote" class="return-note">{{ turn.returnNote }}</span>
+  <span v-if="turn?.returnedAt && !turn.submittedAt" class="return-info">
+    <strong>{{ turn.requesterId === currentMember.id ? '你' : (turn.requesterName || '发起人') }}{{ delivery ? '退回返工' : '退回' }}{{ turn.returnNote ? '：' + turn.returnNote : '' }}</strong>
+    <small v-if="!compact">{{ fmtTime(turn.returnedAt) }}</small>
+  </span>
+  <span v-else-if="turn?.submittedAt && turn.submitNote" class="return-info resubmitted">
+    <strong>{{ turn.submittedBy === currentMember.id ? '你' : (turn.submittedName || '提交人') }}：{{ turn.submitNote }}</strong>
   </span>
 </template>
 <script setup>
+import { currentMember } from '@/mock/store'
 import { fmtTime } from '@/utils/time'
-defineProps({ turn: Object, compact: Boolean })
+defineProps({ turn: Object, compact: Boolean, delivery: Boolean })
 </script>
 <style scoped>
 .return-info {display:inline-flex;flex-wrap:wrap;align-items:baseline;gap:3px 7px;max-width:100%;box-sizing:border-box;
   border-left:3px solid #d66c38;border-radius:3px;background:#fff3eb;color:#923f1d;padding:4px 8px;font-size:12px;line-height:1.5}
-.return-info strong {font-weight:700}.return-info small {font:inherit;font-size:11px}
-.return-note {flex-basis:100%;overflow-wrap:anywhere;white-space:pre-wrap}
+.return-info strong {font-weight:600;white-space:pre-wrap;overflow-wrap:anywhere}.return-info small {font:inherit;font-size:11px}
 .resubmitted {background:#f0f6ff;color:#2c5485;border-color:#5f8abf}
 </style>

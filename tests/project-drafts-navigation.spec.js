@@ -150,7 +150,7 @@ test('手机验收的底栏只占一行，关闭已填的退回原因可选择�
   await expect(buttons).toHaveCount(3)
   const tops = await buttons.evaluateAll(items => items.map(el => Math.round(el.getBoundingClientRect().top)))
   expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(5)
-  await bar.getByRole('button',{name:'退回返工…'}).click()
+  await bar.getByRole('button',{name:'退回返工'}).click()
   const form = page.locator('.design-reason-dialog')
   await form.locator('textarea').fill('请调整间距')
   await page.goBack()

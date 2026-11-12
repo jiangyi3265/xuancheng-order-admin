@@ -117,3 +117,23 @@ test('建成员时顺手填企业微信，成员列表里直接显示', async ({
   await expect(notice).not.toContainText('还没填')
   await expect(page.locator('.el-table').getByText('xin.tongshi', { exact: true })).toBeVisible()
 })
+
+test('同一项目的交接、客户回复和留言各一条，标签、铃铛和侧栏按同一数目显示', async ({ page }) => {
+  await as(page, 'employee', 1366)
+  const row = { ...order, title: '工作台合并验证', deadline: '', nextStep: '发送初稿', nextOwnerId: 2,
+    taskTurns: { next: { requesterId: 1, requesterName: '尚琦凯' } },
+    myMention: { from: '尚琦凯', content: '核对尺寸', time: today + ' 10:00' },
+    lastMessage: { type:'message', content:'什么时候能看', time:today + ' 09:30' } }
+  await page.route('**/jiedan/order/list', r => ok(r, [row]))
+  await page.route('**/jiedan/approval/list', r => ok(r, []))
+  await page.goto('/#/workbench')
+  const mine = page.getByRole('region', {name:'轮到我', exact:true})
+  await expect(mine.getByRole('listitem')).toHaveCount(3)
+  await expect(mine.getByText('发送初稿', {exact:true})).toHaveCount(1)
+  await expect(mine.getByRole('button', {name:'回复', exact:true})).toBeVisible()
+  await expect(mine.getByRole('button', {name:'知道了', exact:true})).toBeVisible()
+  await expect(page).toHaveTitle(/^\(3\)/)
+  await expect(page.locator('.el-menu-item').filter({hasText:'工作台'}).locator('sup')).toHaveText('3')
+  await page.getByRole('button',{name:'待处理通知，3 条'}).click()
+  await expect(page.getByRole('dialog', {name:'待处理通知'}).getByRole('listitem')).toHaveCount(3)
+})

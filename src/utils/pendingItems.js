@@ -1,15 +1,24 @@
 import { memberMap } from '@/constants/options'
 import { fmtTime } from '@/utils/time'
 
-export const pendingLabels = { urgent: '加急', bug: '问题', next: '下一步', manual: '手动标记' }
+export const pendingLabels = { urgent: '加急', bug: '问题', next: '下一步', manual: '手动标记', delivery: '项目返工' }
+
+const shanghaiDate = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' })
+export function handoffDate(offset = 0) {
+  return shanghaiDate.format(Date.now() + offset * 86400000)
+}
 
 export function pendingItems(orders) {
-  const groups = { urgent: [], bug: [], next: [], manual: [] }
+  const groups = { urgent: [], bug: [], next: [], manual: [], delivery: [] }
   for (const row of orders) {
     if (row.status === 'done' || row.status === 'cancelled') continue
-    const owner = memberMap[row.ownerId]?.name || ''
+    const owner = memberMap[row.ownerId]?.name || row.ownerName || row.collaborators?.find(person => String(person.id) === String(row.ownerId))?.name || ''
     const project = { id: row.id, title: row.title, order: row, recipientId: row.ownerId, recipient: owner }
-    if (row.urgentUntil && (!row.handled || row.urgentHandoff)) {
+    const delivery = row.taskTurns?.delivery
+    if (row.status === 'doing' && delivery && !delivery.submittedAt) {
+      groups.delivery.push({ ...project, key: row.id + '-delivery', kind: 'delivery', text: delivery.returnedAt ? '修改项目后再次提交验收' : '项目待提交验收', due: row.deadline })
+    }
+    if (!row.urgentHandoff?.submittedAt && row.urgentUntil && (!row.handled || row.urgentHandoff)) {
       groups.urgent.push({ ...project, key: row.id + '-urgent', kind: 'urgent',
         text: '截止 ' + row.urgentUntil, meta: owner, due: row.urgentUntil })
     }
@@ -46,7 +55,7 @@ export function pendingItems(orders) {
   groups.urgent.sort(dueFirst)
   groups.next.sort(dueFirst)
   groups.bug.sort((a, b) => (b.bugId || 0) - (a.bugId || 0))
-  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Shanghai' }).format(new Date())
+  const today = handoffDate()
   const dueNow = item => item.due && item.due.slice(0, 10) <= today
   const dated = [...groups.urgent, ...groups.next]
   const byDeadline = (a, b) => {
@@ -56,12 +65,14 @@ export function pendingItems(orders) {
   const ordered = [
     ...dated.filter(dueNow).sort(byDeadline),
     ...groups.urgent.filter(item => !dueNow(item)), ...groups.bug,
-    ...groups.next.filter(item => !dueNow(item)), ...groups.manual
+    ...groups.next.filter(item => !dueNow(item)), ...groups.manual, ...groups.delivery
   ]
   return ordered.map(item => {
     const key = item.kind === 'bug' ? (item.bugId ? 'bug-' + item.bugId : 'bugs') : item.kind
     const turn = item.kind === 'urgent' ? item.order.urgentHandoff : item.order.taskTurns?.[key]
-    return { ...item, turn, receipt: item.order.reminderReceipts?.[key] }
+    const receipt = item.order.reminderReceipts?.[key]
+    const currentReceipt = receipt && (receipt.recipientId == null || String(receipt.recipientId) === String(item.recipientId))
+    return { ...item, turn, receipt: currentReceipt ? receipt : null }
   })
 }
 

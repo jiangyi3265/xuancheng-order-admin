@@ -218,7 +218,7 @@ test('真实客户提交、负责人复制和管理链接、匿名 curl 与浏�
       await adminPage.reload()
       const row=adminPage.locator('.bug-item[data-notice-id="'+added+'"]')
       await expect(row).toContainText(report.changes)
-      await row.getByRole('button',{name:'验收通过 · 已解决'}).click()
+      await row.getByRole('button',{name:'通过'}).click()
       await expect.poll(async()=> (await api('/jiedan/order/'+project.id,boss)).data.bugs.find(b=>b.id===added).status).toBe('resolved')
       expect(await submit(key,second,{...report,requestId:randomUUID()})).toBe(200)
       await api('/jiedan/order/bug/'+second+'/status',boss,{status:'action'},'PUT')

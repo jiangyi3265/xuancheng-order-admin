@@ -1,14 +1,16 @@
 import { isBossId } from '@/constants/options'
 
-// 判定逻辑基于“谁是负责人(做事的人)”+ 状态 + 未读：
-// - 我是负责人：待确认/进行中 → 我要做；待验收 → 等总管理员验
-// - 总管理员：所有「待验收」的项目都要验收（包括别人负责的）
+// Old projects without a recorded reviewer remain available to a project administrator.
+export function canReviewDelivery(order, memberId) {
+  const reviewer = order?.taskTurns?.delivery?.requesterId
+  return isBossId(memberId) && (reviewer == null || String(reviewer) === String(memberId))
+}
 
 // 这个单子是否“需要我现在处理”
 export function isMyTodo(order, memberId) {
   if (!order || ['done', 'cancelled'].includes(order.status)) return false
   if (order.nextStep && order.nextOwnerId === memberId) return true
-  if (isBossId(memberId) && order.status === 'review') return true
+  if (canReviewDelivery(order, memberId) && order.status === 'review') return true
   return order.ownerId === memberId && (order.assignState === 'pending' || Number(order.actionBugCount) > 0)
 }
 
@@ -28,13 +30,14 @@ export function nextAction(order, memberId) {
   if (!order || ['done', 'cancelled'].includes(order.status)) return null
   // 老板刚派过来、还没接收的项目：先接收（或拒绝），不能直接开工
   if (order.assignState === 'pending') return null
-  if (isBossId(memberId) && order.status === 'review') {
+  if (canReviewDelivery(order, memberId) && order.status === 'review') {
     return { to: 'done', label: '验收通过' }
   }
   if (order.ownerId === memberId) {
     if (order.status === 'pending') return { to: 'doing', label: '开始做' }
     if (order.status === 'doing') {
       // 总管理员自己负责的项目没有别人来验收，做完直接完成；下属负责的才走「提交验收」
+      if (order.taskTurns?.delivery?.returnedAt) return { to: 'review', label: '改好了，再提交验收' }
       return isBossId(memberId) ? { to: 'done', label: '完成' } : { to: 'review', label: '提交验收' }
     }
   }

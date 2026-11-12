@@ -39,13 +39,13 @@ for (const width of [1440, 390]) {
       const rows = drawer.getByRole('listitem').filter({hasText:title})
       await expect(rows).toHaveCount(4)
       await expect(page.getByText('没有开启成功',{exact:false})).toHaveCount(0)
-      await rows.filter({hasText:'修复测试问题'}).getByRole('link').click()
+      await rows.filter({hasText:'修复测试问题'}).getByRole('link',{name:'看一下',exact:true}).click()
       await expect(page.locator('.bug-item.notice-target')).toContainText('修复测试问题')
       await page.goBack()
       await expect(page.locator('.workspace-head')).toBeHidden()
       await bell.click()
       for (const [i, text] of ['修复测试问题','电话确认需求','加急','手动标记'].entries()) {
-        await rows.filter({hasText:text}).getByRole('button').click()
+        await rows.filter({hasText:text}).getByRole('button',{name:'完成',exact:true}).click()
         await expect(rows).toHaveCount(3-i)
       }
       await page.reload()
@@ -85,11 +85,11 @@ test('同一项目分给两人时，各自的铃铛只显示自己要处理的�
     await loaded
     const drawer = tab.getByRole('dialog', {name:'待处理通知'})
     const all = drawer.getByRole('listitem')
-    const mine = all.filter({hasText:title})
-    await expect(mine.locator('.item-head small')).toHaveText(expected)
+    const mine = all.filter({has:tab.locator('.handoff-card')}).filter({hasText:title})
+    await expect(mine.locator('.handoff-card header span')).toHaveText(expected)
     const count = await all.count()
     await expect(bell).toHaveAttribute('aria-label','待处理通知，'+count+' 条')
-    await expect(drawer.getByText('我的待处理 '+count+' 条',{exact:true})).toBeVisible()
+    await expect(drawer.getByText('轮到我 '+count,{exact:true})).toBeVisible()
     await tab.keyboard.press('Escape')
     await expect(drawer).toBeHidden()
   }

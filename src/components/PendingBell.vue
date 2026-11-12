@@ -1,128 +1,66 @@
 <template>
   <button type="button" class="pending-bell" aria-haspopup="dialog" :aria-expanded="open"
-    :aria-label="'待处理通知，' + items.length + ' 条'" title="查看待处理通知" @click="show">
+    :aria-label="'待处理通知，' + todoItems.length + ' 条'" title="查看待处理通知" @click="show">
     <el-icon aria-hidden="true"><Bell /></el-icon>
-    <span v-if="items.length" class="bell-count" aria-hidden="true">{{ items.length > 99 ? '99+' : items.length }}</span>
+    <span v-if="todoItems.length" class="bell-count" aria-hidden="true">{{ todoItems.length }}</span>
   </button>
-  <el-drawer v-if="drawerMounted" v-model="open" @closed="drawerMounted = open" title="待处理通知" :size="isMobile ? '100%' : '470px'" append-to-body destroy-on-close>
-    <div class="bell-panel">
-      <div class="panel-tools">
-        <strong>我的待处理 {{ items.length }} 条</strong>
-        <router-link to="/settings" @click="open = false">通知设置</router-link>
-      </div>
-      <div v-if="loadError" role="alert" class="load-error">{{ loadError }} <button type="button" @click="refresh" :disabled="loading">重试</button></div>
-      <p v-if="!items.length && !loadError" role="status">{{ loading ? '正在加载…' : '当前没有分给你的待处理事项' }}</p>
-      <section v-for="group in groups" :key="group.key" :aria-label="group.label" class="bell-group">
-        <h3>{{ group.label }} <small>{{ group.rows.length }}</small></h3>
-        <ul>
-        <li v-for="item in group.rows" :key="item.key">
-          <router-link :to="pendingDestination(item, route.path === '/order' ? route.query : {})" @click="open = false">
-            <span class="item-head"><small :class="item.kind">{{ (pendingLabels[item.kind] || reviewLabels[item.kind]) }}</small><strong>{{ item.title }}</strong></span>
-            <span class="item-text"><IssueNumber v-if="item.kind === 'bug' && item.bugId" :id="item.bugId" /> {{ item.text }}</span>
-            <HandoffStatus :item="item" />
-            <span v-if="item.kind === 'next' && item.due" class="meta">截止 {{ item.due }}</span>
-          </router-link>
-          <UrgentReviewActions v-if="item.kind === 'urgentReview'" :order="item.order" />
-          <TaskReviewActions v-else-if="['manualReview','nextReview','issueReview'].includes(item.kind)" :item="item" />
-          <button v-else-if="reviewLabels[item.kind]" class="complete" @click="open = false; router.push(pendingDestination(item))">查看验收</button>
-          <button v-else-if="item.needsAcceptance" class="complete"
-            type="button" @click="open = false; router.push(pendingDestination(item))">去接单</button>
-          <button v-else-if="!item.fresh && (item.kind !== 'bug' || item.bugId)" class="complete" type="button"
-            :disabled="loading || !!loadError || busy.has(item.id)" :aria-label="finishLabel(item) + '，' + actionTitle(item)" :title="actionTitle(item)" @click="finish(item)">
-            {{ busy.get(item.id) === item.key ? '处理中…' : finishLabel(item) }}
-          </button>
-        </li>
-        </ul>
-      </section>
-    </div>
+  <el-drawer v-if="mounted" v-model="open" @closed="mounted = open" title="待处理通知"
+    :size="isMobile ? '100%' : '470px'" append-to-body destroy-on-close>
+    <section class="bell-panel" aria-label="轮到我">
+      <header><strong>轮到我 {{ todoItems.length }}</strong><router-link to="/settings" @click="open = false">通知设置</router-link></header>
+      <p v-if="error" role="alert">{{ error }} <button type="button" :disabled="loading" @click="refresh">重试</button></p>
+      <p v-else-if="!todoItems.length" role="status">{{ loading ? '正在加载…' : '当前没有轮到你的事项' }}</p>
+      <ul><li v-for="item in todoItems" :key="item.key">
+        <HandoffCard v-if="item.handoff" :item="item" @open="open = false" />
+        <ApprovalItem v-else-if="item.approval" :a="item.approval" />
+        <router-link v-else class="legacy-todo" :to="destination(item)" @click="open = false">
+          <strong>{{ item.order.title }}</strong><span>{{ item.text }}</span><span class="open-action">{{ item.kind === 'reply' ? '回复客户' : '去处理' }}</span>
+        </router-link>
+      </li></ul>
+    </section>
   </el-drawer>
 </template>
-
 <script setup>
-import HandoffStatus from './HandoffStatus.vue'
-import IssueNumber from '@/components/IssueNumber.vue'
-import { computed, reactive, ref } from 'vue'
-import TaskReviewActions from './TaskReviewActions.vue'
-import UrgentReviewActions from './UrgentReviewActions.vue'
-import { handoffItems, handoffGroups, reviewLabels, submitLabel } from '@/utils/handoffs'
-import { useRoute, useRouter } from 'vue-router'
+import { ref } from 'vue'
 import { Bell } from '@element-plus/icons-vue'
-import { toast as ElMessage } from '@/utils/toast'
-import { finishPendingWithUndo } from '@/utils/orderUndo'
-import { loadOrders, me, orders, isBoss } from '@/mock/store'
-import { pendingLabels, pendingDestination } from '@/utils/pendingItems'
+import HandoffCard from './HandoffCard.vue'
+import ApprovalItem from './ApprovalItem.vue'
+import { loadApprovals, loadOrders } from '@/mock/store'
+import { todoItems } from '@/utils/todos'
 import { isMobile } from '@/utils/useMobile'
-
-const route = useRoute()
-const router = useRouter()
 const open = ref(false)
-const drawerMounted = ref(false)
+const mounted = ref(false)
 const loading = ref(false)
-const loadError = ref('')
-const busy = reactive(new Map())
-const items = computed(() => handoffItems(orders, me.value?.id, isBoss.value).filter(item => item.mine))
-const groups = computed(() => handoffGroups(items.value).filter(group => group.rows.length))
-
-function finishLabel(item) {
-  return item.turn ? submitLabel(item.turn) : '标为已处理'
+const error = ref('')
+function destination(item) {
+  const query = { id: String(item.order.id) }
+  if (item.kind === 'reply') query.tab = 'chat'
+  if (['mention','nudge'].includes(item.kind)) query.tab = 'internal'
+  return { path: '/order', query }
 }
-
-function actionTitle(item) {
-  const actions = { bug: '解决问题', next: '完成下一步', urgent: '结束本次加急', manual: '将项目标为已处理' }
-  return item.title + '：' + actions[item.kind] + (item.bugId ? ' #' + item.bugId : '')
-}
-
 async function refresh() {
   if (loading.value) return
   loading.value = true
-  loadError.value = ''
-  try { await loadOrders() }
-  catch (err) { loadError.value = err.message || '加载待处理通知失败' }
+  error.value = ''
+  try { await Promise.all([loadOrders(), loadApprovals()]) }
+  catch (err) { error.value = err.message || '加载失败，请重试' }
   finally { loading.value = false }
 }
-
 function show() {
-  drawerMounted.value = true
+  mounted.value = true
   open.value = true
   refresh()
 }
-
-async function finish(item) {
-  if (busy.has(item.id)) return
-  busy.set(item.id, item.key)
-  try {
-    await finishPendingWithUndo(item.order, item.kind, item.bugId, '已处理：' + item.title + ' · ' + (pendingLabels[item.kind] || reviewLabels[item.kind]))
-  } catch (err) {
-    ElMessage.error(err.message || '标记失败，请重试')
-    await refresh()
-  } finally {
-    busy.delete(item.id)
-  }
-}
 </script>
-
 <style scoped>
 .pending-bell { position: relative; display: inline-grid; flex: none; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: #526581; font-size: 20px; cursor: pointer; }
 .pending-bell:hover, .pending-bell:focus-visible { color: #1757c7; background: #edf3ff; }
 .bell-count { position: absolute; top: 0; right: -5px; min-width: 16px; padding: 0 3px; box-sizing: border-box; border-radius: 10px; background: #c43535; color: white; font: 600 11px/16px system-ui; }
-.panel-tools, .item-head { display: flex; align-items: center; gap: 8px; }
-.panel-tools { justify-content: space-between; margin-bottom: 12px; color: #213653; }
-.panel-tools a { color: #1757c7; font-size: 13px; }
-.bell-group h3 {margin:14px 0 6px;color:#233957;font-size:14px}
-.bell-group h3 small {margin-left:4px;color:#536b88}
-.bell-panel ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
-.bell-panel li { display: flex; flex-wrap:wrap; align-items: center; gap: 12px; padding: 12px; border: 1px solid #e0e7f2; border-radius: 10px; background: #f8faff; }
-.bell-panel li a { min-width: min(100%,220px); flex:1 1 220px; display: grid; gap: 5px; color: #263958; text-decoration: none; overflow-wrap: anywhere; }
-.bell-panel li a:hover strong { color: #1757c7; text-decoration: underline; }
-.item-head { align-items: baseline; }
-.item-head small { flex: none; padding: 2px 5px; border-radius: 5px; color: #2456a4; background: #e7efff; }
-.item-head .urgent { color: #a4312a; background: #ffebe9; }
-.item-head .bug { color: #814601; background: #fff0d6; }
-.item-text { font-size: 14px; }
-.meta, .bell-panel p { color: #596d89; font-size: 13px; }
-.complete, .load-error button { border: 1px solid #c4d5f1; border-radius: 7px; background: white; color: #1757c7; padding: 7px 9px; font: inherit; font-size: 13px; cursor: pointer; }
-.complete {max-width:100%;white-space:normal;min-height:36px;font-weight:650}
-.complete:disabled { opacity: .6; cursor: wait; }
-.load-error { color: #a33230; margin-bottom: 12px; }
-@media (max-width: 768px) { .pending-bell, .complete { min-height: 44px; } .pending-bell { min-width: 44px; } }
+
+header {display:flex;align-items:center;justify-content:space-between;color:#243957;margin-bottom:12px}
+header a,.open-action {font-size:13px;color:#2158aa}
+ul {display:grid;gap:8px;margin:0;padding:0;list-style:none}
+.legacy-todo {display:grid;gap:6px;padding:12px 14px;border:1px solid #dce5f1;border-radius:10px;color:#304760;text-decoration:none;overflow-wrap:anywhere}
+.legacy-todo span,p {font-size:14px}
+@media(max-width:768px){.pending-bell {min-width:44px;min-height:44px}}
 </style>

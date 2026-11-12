@@ -46,9 +46,12 @@ test('分配反馈后负责人看到内容、直达具体问题、一键处理�
     }
     await send('普通草稿',false)
     await send('请处理：首页颜色',true,true)
+    await expect(staff.locator('.handoff-card').filter({hasText:'请处理：首页颜色'})).toHaveCount(1,{timeout:15000})
+    await expect(notice).toHaveCount(0)
+    await staff.goto('/#/order')
     await expect(notice).toContainText('请处理：首页颜色',{timeout:15000})
     await expect(boss.getByRole('region',{name:'需要我处理的问题'}).filter({hasText:title})).toHaveCount(0)
-    await notice.getByRole('button',{name:'查看问题'}).click()
+    await notice.getByRole('link',{name:'看一下',exact:true}).click()
     await expect(staff.locator('.bug-item.notice-target')).toContainText('请处理：首页颜色')
     await send('请处理：反馈截图',true)
     await expect(notice).toContainText('请处理：反馈截图',{timeout:15000})
@@ -61,10 +64,16 @@ test('分配反馈后负责人看到内容、直达具体问题、一键处理�
     await expect(notice).toHaveCount(0)
     await staff.clock.fastForward(10 * 60 * 1000)
     await expect(notice).toContainText('请处理：反馈截图')
-    await notice.getByRole('button',{name:/交给.+验收/}).click()
+    await notice.getByRole('button',{name:'做完了',exact:true}).click()
+    const note=staff.getByRole('textbox',{name:/做了什么/})
+    await expect(note).not.toBeFocused()
+    await note.fill('已核对反馈截图')
+    await note.press('Enter')
     const read=()=>api(boss,'/jiedan/order/'+id)
     await expect.poll(async()=>(await read()).bugs.find(row=>row.content==='请处理：反馈截图').status).toBe('ai_review')
-    const bugs=(await read()).bugs
+    const result=await read()
+    const bugs=result.bugs
+    expect(result.taskTurns['bug-'+bugs.find(row=>row.content==='请处理：反馈截图').id].submitNote).toBe('已核对反馈截图')
     expect(bugs.find(row=>row.content==='普通草稿').status).toBe('open')
     expect(bugs.find(row=>row.content==='请处理：首页颜色').status).toBe('action')
   } finally {

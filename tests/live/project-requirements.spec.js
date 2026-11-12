@@ -14,17 +14,19 @@ async function login(request, username, password) {
   expect(result.code,result.msg).toBe(200)
   return result.token
 }
-async function customerPage(page) {
+async function customerPage(page, username='cust_a', projectTitle='甲客户的需求') {
   await page.goto('/client/#/intake')
-  await page.getByPlaceholder('请输入登录账号').fill('cust_a')
+  await page.getByPlaceholder('请输入登录账号').fill(username)
   await page.getByPlaceholder('请输入密码',{exact:true}).fill('customer123')
   await page.getByRole('button',{name:'登录',exact:true}).click()
-  await expect(page.locator('.project-context')).toContainText('甲客户的需求')
+  await expect(page.locator('.project-context')).toContainText(projectTitle)
 }
 for (const width of [390,1440]) {
   test('一条需求归入绑定项目，免填电话，管理端处理、客户端查看 '+width,async({page,request})=>{
     await page.setViewportSize({width,height:860})
-    await customerPage(page)
+    // The admin handles their own customer's project in this scenario.
+    // The other seed customer is bound to an unmigrated legacy owner with no login.
+    await customerPage(page, 'cust_b', '乙客户的需求')
     const text='首页按钮改为确认到店 '+randomUUID().slice(0,8)
     await page.getByLabel('要改什么？').fill(text)
     await page.locator('input[type=file]').setInputFiles({name:'修改参考.txt',mimeType:'text/plain',buffer:Buffer.from('确认到店')})
@@ -36,7 +38,7 @@ for (const width of [390,1440]) {
     const received=await (await response).json()
     expect(received.code,received.msg).toBe(200)
     const {id,bugId}=received.data
-    expect(id).toBe(3);expect(bugId).toBeGreaterThan(0)
+    expect(id).toBe(4);expect(bugId).toBeGreaterThan(0)
     await page.getByRole('button',{name:'查看处理进度'}).click()
     const target=page.locator('#requirement-'+bugId)
     await expect(target).toContainText(text)

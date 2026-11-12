@@ -1,13 +1,11 @@
 <template>
-  <span class="handoff-status" :class="item.lane">
+  <span class="handoff-status" :class="[item.lane, { returned: item.turn?.returnedAt && !item.review }]">
     <span class="turn-owner"><el-icon aria-hidden="true"><component :is="item.review ? Checked : item.mine ? UserFilled : Clock" /></el-icon>{{ item.currentAction }}</span>
     <span v-if="item.handoffNote" class="direction">{{ item.handoffNote }}</span>
-    <HandoffReturn :turn="item.turn" />
   </span>
 </template>
 <script setup>
 import { Checked, Clock, UserFilled } from '@element-plus/icons-vue'
-import HandoffReturn from './HandoffReturn.vue'
 defineProps({ item: { type: Object, required: true } })
 </script>
 <style scoped>
@@ -18,4 +16,6 @@ defineProps({ item: { type: Object, required: true } })
 .review .turn-owner {color:#874200;background:#ffedcd}
 .work .turn-owner {color:#164b9b;background:#e1edff}
 .direction {font-size:12px;color:#52647b;line-height:1.5;overflow-wrap:anywhere}
+.returned .turn-owner {background:#fff0e7;color:#8e3b13}
+.direction {flex-basis:100%;white-space:pre-wrap}
 </style>

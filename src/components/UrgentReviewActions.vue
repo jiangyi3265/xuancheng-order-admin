@@ -1,7 +1,7 @@
 <template>
   <span class="urgent-decisions" @click.stop>
-    <el-button size="small" type="primary" :disabled="busy" @click="decide('confirm')">确认加急完成</el-button>
-    <el-button v-if="!['done', 'cancelled'].includes(order.status)" size="small" :disabled="busy" @click="decide('return')">退回给{{ executor }}</el-button>
+    <el-button size="small" type="primary" :disabled="busy" @click="decide('confirm')">通过</el-button>
+    <el-button v-if="!['done', 'cancelled'].includes(order.status)" size="small" :disabled="busy" @click="decide('return')">退回</el-button>
   </span>
 </template>
 <script setup>

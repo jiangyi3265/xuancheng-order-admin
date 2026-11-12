@@ -21,7 +21,7 @@
             <span class="menu-title">{{ r.meta.title }}</span>
             <el-badge
               v-if="badgeOf(r.path)"
-              :value="badgeOf(r.path)"
+              :value="r.path === 'workbench' ? String(todoCount) : badgeOf(r.path)"
               :is-dot="r.path === 'messages'"
               :max="99"
               class="menu-badge"
@@ -72,7 +72,7 @@
 
     <nav class="mobile-nav" aria-label="主导航">
       <router-link v-for="item in primaryNav" :key="item.path" :to="item.path" :class="{selected: route.path === item.path}" :aria-label="item.label">
-        <el-badge :is-dot="(item.path === '/workbench' && todoCount > 0) || (item.path === '/messages' && hasUnreadMessages)"><el-icon><component :is="route.path===item.path && item.icon==='House'?'HomeFilled':route.path===item.path && item.icon==='User'?'UserFilled':item.icon" /></el-icon></el-badge><span>{{ item.label }}</span>
+        <el-badge :value="item.path === '/workbench' ? String(todoCount) : undefined" :is-dot="item.path === '/messages'" :hidden="item.path === '/workbench' ? !todoCount : item.path !== '/messages' || !hasUnreadMessages"><el-icon><component :is="route.path===item.path && item.icon==='House'?'HomeFilled':route.path===item.path && item.icon==='User'?'UserFilled':item.icon" /></el-icon></el-badge><span>{{ item.label }}</span>
       </router-link>
     </nav>
     <QuickCapture ref="quickCapture" :show-fab="false" />
@@ -153,6 +153,7 @@ function refreshOrders(force = false) {
     if (me) {
       const initial = colleagueOwner !== me
       if (initial) closeColleagueNotices()
+      checkApprovals(me, initial)
       checkColleagueMessages(me, initial)
       colleagueOwner = me
     }
@@ -201,11 +202,7 @@ async function doLogout() {
   catch(e){ ElMessage.error(e.message || '退出未完成，请重试') }
 }
 
-const todoCount = computed(
-  () =>
-    // 和工作台「需要我处理」同一份清单（含老板的审批），再加上待处理的报价单
-    todoItems.value.length + unreadQuotes.value.length
-)
+const todoCount = computed(() => todoItems.value.length)
 
 // 换页面时回到顶部（以前会停在上一个页面滚到的位置，打开项目管理看到的是半截看板）
 const mainRef = ref(null)
@@ -270,7 +267,32 @@ function notifyItem(title, body, path) {
 let colleagueOwner = null
 const colleagueSnapshots = new Map()
 const colleagueNotices = new Map()
+const approvalIds = new Set()
+const approvalNotices = new Set()
+
+function checkApprovals(me, initial) {
+  for (const order of orders) {
+    const events = order.recentApprovalEvents || []
+    // The API returns newest first. Present simultaneous approvals in the order they happened.
+    for (const event of [...events].reverse()) {
+      if (Number(event.submitterId) !== Number(me) || approvalIds.has(event.id)) continue
+      approvalIds.add(event.id)
+      if (initial) continue
+      const query = { id: order.id }
+      if (event.bugId) Object.assign(query, { tab: 'bugs', bug: event.bugId })
+      const notice = ElNotification({
+        title: order.title, message: event.text, duration: 6500, position: 'top-right',
+        onClick() { router.push({ path: '/order', query }); notice.close() },
+        onClose() { approvalNotices.delete(notice) }
+      })
+      approvalNotices.add(notice)
+    }
+  }
+}
 function closeColleagueNotices() {
+  approvalIds.clear()
+  for (const notice of approvalNotices) notice.close()
+  approvalNotices.clear()
   colleagueSnapshots.clear()
   for (const notice of colleagueNotices.values()) notice.close()
   colleagueNotices.clear()

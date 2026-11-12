@@ -24,7 +24,7 @@ for (const [width, mode] of [[1440,'list'], [375,'list'], [1440,'kanban'], [375,
     await expect(page.locator('.customer-wait-badges').getByText('2 条问题未解决',{exact:true})).toHaveCount(0)
     await expect(page).toHaveURL(/status=waiting/)
     await page.goto('/#/workbench')
-    await expect(page.getByText('需要我处理',{exact:true}).first()).toBeVisible()
+    await expect(page.getByRole('region',{name:'轮到我',exact:true})).toBeVisible()
     await page.goto('/#/order')
     await expect(chip).toHaveClass(/on/)
     current.lastMessage={...customerMessage,type:'reply'}

@@ -73,11 +73,13 @@ test('欠款、搜索、页码与排序切菜单恢复；工作台链接覆盖�
 
 test('手机顶部待处理可展开，项目列表滚动接着显示',async ({page})=>{
   await visit(page,{mobile:true})
-  const toggle=page.locator('.pending-toggle')
+  const panel=page.getByRole('region',{name:'待处理',exact:true})
+  const toggle=panel.getByRole('button',{name:/^待处理/})
   await expect(toggle).toHaveAttribute('aria-expanded','false')
-  await expect(page.locator('.pending-link')).not.toBeVisible()
+  await expect(panel.getByRole('link',{name:/核对日期/})).not.toBeVisible()
   await toggle.click()
-  await expect(page.locator('.pending-link')).toBeVisible()
+  await panel.getByRole('button',{name:/^全部/}).click()
+  await expect(panel.getByRole('link',{name:/核对日期/})).toBeVisible()
   await toggle.click()
   await expect(page.locator('.mobile-project-entry').nth(1)).toBeInViewport({ratio:1})
   await expect(page.locator('.mobile-project-entry')).toHaveCount(20)

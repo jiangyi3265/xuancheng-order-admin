@@ -126,7 +126,7 @@ test('工作台和看板：等客户验收的项目能直接催，卡片上写�
   const sent = []
   await page.route('**/jiedan/order/progress', async (r) => { sent.push(r.request().postDataJSON()); await ok(r, review) })
   await page.goto('/#/workbench')
-  const cards = page.locator('.row-card.todo')
+  const cards = page.locator('.handoff-card[data-kind="deliveryReview"]')
   const card = cards.filter({ hasText: '等客户验收的单' })
   await expect(card.getByRole('button', { name: '验收通过' })).toBeVisible()
   await expect(cards.filter({ hasText: '没绑客户的单' }).getByRole('button', { name: '催客户验收' })).toHaveCount(0)

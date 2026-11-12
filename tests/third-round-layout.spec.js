@@ -45,6 +45,8 @@ test('手机问题清单和待收款入口',async({page})=>{
   const header=page.locator('.bug-panel .section-head')
   await expect(header.locator('.head-note')).toBeVisible()
   const tools=header.locator('.issue-tools')
+  // 「复制给 AI」要等详情抽屉展开完才渲染出来，先等它出现再量位置
+  await expect(tools.locator('button')).not.toHaveCount(1)
   const boxes=await tools.locator('button').evaluateAll(nodes=>nodes.filter(n=>n.offsetWidth).map(n=>n.getBoundingClientRect().top))
   expect(boxes.length).toBeGreaterThan(1)
   expect(Math.max(...boxes)-Math.min(...boxes)).toBeLessThan(8)
